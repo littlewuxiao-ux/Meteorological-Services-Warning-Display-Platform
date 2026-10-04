@@ -3377,6 +3377,11 @@ function startAutoRefresh() {
                     silentTokenReinjection();
                 }
                 airportData = data.data.airports;
+                if (!window.__carrierMenuOpen && Array.isArray(data.data.carriers)) {
+                    currentCarriers = data.data.carriers;
+                    window.carriers = currentCarriers;
+                    if (typeof updateCarrierDisplay === 'function') updateCarrierDisplay();
+                }
                 // 从 metar 数据同步入库告警状态
                 if (typeof syncAlertStateFromMetarData === 'function') {
                     syncAlertStateFromMetarData(airportData);

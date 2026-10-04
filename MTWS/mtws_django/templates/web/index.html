@@ -105,8 +105,13 @@
     <div class="filter-row">
       <div class="carrier-section">
         <span class="filter-title carrier-title">承运人</span>
-        <div class="carrier-display" id="carrier-display">
-          {{ carriers|join:" " }}
+        <div class="carrier-picker" id="carrier-picker">
+          <button type="button" class="carrier-display" id="carrier-display" aria-expanded="false" aria-haspopup="true">
+            {{ carrier_label|default:"未选择" }}
+          </button>
+          <div class="carrier-menu" id="carrier-menu" hidden>
+            <div class="carrier-matrix" id="carrier-matrix"></div>
+          </div>
         </div>
       </div>
 
@@ -332,7 +337,6 @@
       <button class="settings-tab active" data-tab="airport-info">机场信息</button>
       <button class="settings-tab" data-tab="area-options">区域信息</button>
       <button class="settings-tab" data-tab="data-refresh-timer">数据更新</button>
-      <button class="settings-tab" data-tab="carrier">承运人</button>
       <button class="settings-tab" data-tab="popup">弹窗设置</button>
       <button class="settings-tab" data-tab="alert-thresholds">告警阈值</button>
       <button class="settings-tab" data-tab="weather-type">天气类型</button>
@@ -503,53 +507,7 @@
         <div class="settings-msg" id="timer-msg"></div>
       </div>
 
-      <!-- Tab4: 承运人 -->
-      <div class="settings-tab-pane" id="settings-pane-carrier">
-        <div class="settings-split">
-          <div class="settings-list-panel">
-            <div class="settings-list-toolbar">
-              <button class="settings-add-btn" id="carrier-add-btn">+ 新增承运人</button>
-            </div>
-            <div class="settings-list-scroll">
-              <table class="settings-table" id="carrier-table">
-                <thead><tr><th>二字代码</th><th>名称</th><th>状态</th><th>操作</th></tr></thead>
-                <tbody id="carrier-tbody"></tbody>
-              </table>
-            </div>
-          </div>
-          <div class="settings-form-panel" id="carrier-form-panel" style="display:none;">
-            <h4 id="carrier-form-title">新增承运人</h4>
-            <div class="settings-form-row">
-              <label>承运人二字代码 <span class="settings-required">*</span></label>
-              <input type="text" id="cf-code" maxlength="2" placeholder="恰好2位字符" class="settings-input settings-input-sm">
-            </div>
-            <div class="settings-form-row">
-              <label>承运人名称</label>
-              <input type="text" id="cf-name" maxlength="20" placeholder="20位以内（选填）" class="settings-input">
-            </div>
-            <div class="settings-form-row">
-              <label>生效状态 <span class="settings-required">*</span></label>
-              <div class="settings-toggle-wrap">
-                <label class="settings-toggle-label">
-                  <input type="checkbox" id="cf-active-chk" class="settings-toggle-chk">
-                  <div class="settings-toggle-track">
-                    <span class="settings-toggle-side">否</span>
-                    <span class="settings-toggle-side">是</span>
-                    <div class="settings-toggle-thumb"></div>
-                  </div>
-                </label>
-              </div>
-            </div>
-            <div class="settings-form-actions">
-              <button class="settings-btn-save" id="carrier-save-btn">保存</button>
-              <button class="settings-btn-cancel" id="carrier-cancel-btn">取消</button>
-            </div>
-          </div>
-        </div>
-        <div class="settings-msg" id="carrier-msg"></div>
-      </div>
-
-      <!-- Tab5: 弹窗设置 -->
+      <!-- Tab4: 弹窗设置 -->
       <div class="settings-tab-pane" id="settings-pane-popup">
         <div class="settings-popup-form">
           <p class="settings-hint">主页【运行类】【停场类】【降级免打扰】为各席位本地开关，不在此保存。此处仅维护全站解析规则。</p>

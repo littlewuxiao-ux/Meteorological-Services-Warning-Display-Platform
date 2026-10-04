@@ -358,6 +358,10 @@ body.trend-alert-locked .filter-btn[data-group="international"]:hover {
   flex-shrink: 0;
 }
 
+.carrier-picker {
+  position: relative;
+}
+
 /* 承运人显示区域 */
 .carrier-display {
   padding: 6px 14px;
@@ -373,10 +377,52 @@ body.trend-alert-locked .filter-btn[data-group="international"]:hover {
   max-width: 130px;
   text-align: center;
   word-spacing: 8px;
-  overflow: hidden; /* 新增：隐藏溢出内容 */
-  text-overflow: ellipsis; /* 新增：显示省略号 */
-  white-space: nowrap; /* 新增：防止换行 */
-  cursor: help; /* 可选：鼠标悬停时显示帮助图标 */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.carrier-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 3000;
+  min-width: 280px;
+  max-height: 70vh;
+  overflow: auto;
+  padding: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.85);
+  border-radius: 6px;
+  background: #1b2836;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+.carrier-matrix {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(48px, 1fr));
+  gap: 6px;
+  color: #d5e4f0;
+  font-size: 13px;
+}
+
+.carrier-cell {
+  height: 32px;
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  border-radius: 4px;
+  background: transparent;
+  color: white;
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.carrier-cell.is-on {
+  background: white;
+  color: #2c3e50;
+  border-color: white;
+  font-weight: 700;
 }
 
 
@@ -3850,9 +3896,6 @@ body.map-mode #international-button-group .filter-btn {
 }
 .settings-table tr:hover td { background: #f5f8ff; }
 .settings-table tr.editing td { background: #e8f4fd; }
-
-/* Carrier inactive style */
-.settings-carrier-inactive { opacity: 0.4; }
 
 /* Form rows */
 .settings-form-row {

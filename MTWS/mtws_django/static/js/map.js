@@ -1461,6 +1461,12 @@ function _radarListQuery() {
     return `scope=${scope}&future_hours=${_mapFutureHours()}`;
 }
 
+window.addEventListener('mtws-carriers-changed', () => {
+    _prefetchFlightStatus();
+    updateMapAlert();
+    _refreshRadarAlerts();
+});
+
 function _refreshRadarAlerts() {
     if (typeof currentTimeMode === 'undefined') return;
     if (!_accessAllows('map_radar', 'display')) {

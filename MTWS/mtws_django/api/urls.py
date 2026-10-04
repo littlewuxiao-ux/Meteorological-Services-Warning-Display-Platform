@@ -13,7 +13,6 @@ from .settings_views import (
     settings_airport_info, settings_airport_info_detail,
     settings_area_options, settings_area_options_detail,
     settings_data_refresh_timer, settings_data_refresh_timer_detail,
-    settings_carrier, settings_carrier_detail,
     settings_popup,
     settings_alert_thresholds, settings_alert_thresholds_detail,
     settings_weather_type, settings_weather_type_detail,
@@ -91,6 +90,7 @@ urlpatterns = [
 
     # 地图告警：机场实况状态批量接口（Tooltip用）
     path('airport-flight-status/', views.get_airport_flight_status, name='airport_flight_status'),
+    path('flight-carriers/', views.flight_carriers, name='flight_carriers'),
 
     # ===== 设置管理API =====
     path('settings/airport-info/', settings_airport_info, name='settings_airport_info'),
@@ -99,8 +99,6 @@ urlpatterns = [
     path('settings/area-options/<int:option_id>/', settings_area_options_detail, name='settings_area_options_detail'),
     path('settings/data-refresh-timer/', settings_data_refresh_timer, name='settings_data_refresh_timer'),
     path('settings/data-refresh-timer/<int:timer_id>/', settings_data_refresh_timer_detail, name='settings_data_refresh_timer_detail'),
-    path('settings/carrier/', settings_carrier, name='settings_carrier'),
-    path('settings/carrier/<int:carrier_id>/', settings_carrier_detail, name='settings_carrier_detail'),
     path('settings/popup/', settings_popup, name='settings_popup'),
     path('settings/alert-thresholds/', settings_alert_thresholds, name='settings_alert_thresholds'),
     path('settings/alert-thresholds/<str:airport_4code>/', settings_alert_thresholds_detail, name='settings_alert_thresholds_detail'),

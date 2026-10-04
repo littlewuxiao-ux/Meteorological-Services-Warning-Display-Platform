@@ -1,6 +1,6 @@
 """
 设置管理API视图
-提供机场信息、区域选项、数据刷新定时器、承运人、弹窗设置的增删改查接口
+提供机场信息、区域选项、数据刷新定时器、弹窗设置的增删改查接口
 所有操作记录写入日志
 """
 
@@ -11,7 +11,7 @@ from django.views.decorators.http import require_http_methods
 from django.views.decorators.csrf import csrf_exempt
 
 from core.models import (
-    AirportInfo, AreaOptions, DataRefreshTimer, Carrier, PopupSettings,
+    AirportInfo, AreaOptions, DataRefreshTimer, PopupSettings,
     AirportAlertThresholds, WeatherTypeInfo, WeatherAlertLevels, AirportLocation,
 )
 
@@ -329,97 +329,6 @@ def settings_data_refresh_timer_detail(request, timer_id, time_mode='current'):
         return JsonResponse({'success': False, 'error': f'数据格式错误: {e}'}, status=400)
     except Exception as e:
         logger.error(f"修改定时器配置失败: {e}")
-        return JsonResponse({'success': False, 'error': str(e)}, status=500)
-
-
-# ===================== 承运人 =====================
-
-@csrf_exempt
-@require_http_methods(["GET", "POST"])
-def settings_carrier(request, time_mode='current'):
-    user_code = _get_user_code(request, time_mode)
-
-    if request.method == 'GET':
-        try:
-            carriers = list(
-                Carrier.objects.values('id', 'carrier_code', 'carrier_name', 'is_active')
-                .order_by('carrier_code')
-            )
-            return JsonResponse({'success': True, 'data': carriers})
-        except Exception as e:
-            logger.error(f"获取承运人失败: {e}")
-            return JsonResponse({'success': False, 'error': str(e)}, status=500)
-
-    # POST: 新增
-    denied = _deny_settings_write(request, 'settings_carrier')
-    if denied:
-        return denied
-    try:
-        data = json.loads(request.body)
-        code = (data.get('carrier_code') or '').strip()
-        if len(code) != 2:
-            return JsonResponse({'success': False, 'error': '承运人代码必须为恰好2位字符'}, status=400)
-        if Carrier.objects.filter(carrier_code=code).exists():
-            return JsonResponse({'success': False, 'error': f'承运人代码 {code} 已存在'}, status=400)
-
-        carrier = Carrier.objects.create(
-            carrier_code=code,
-            carrier_name=data.get('carrier_name') or None,
-            is_active=bool(data.get('is_active', True)),
-        )
-        logger.info(f"[设置] 用户 {user_code} 新增承运人: {code}")
-        return JsonResponse({'success': True, 'message': '新增成功', 'id': carrier.id})
-    except (json.JSONDecodeError, ValueError) as e:
-        return JsonResponse({'success': False, 'error': f'数据格式错误: {e}'}, status=400)
-    except Exception as e:
-        logger.error(f"新增承运人失败: {e}")
-        return JsonResponse({'success': False, 'error': str(e)}, status=500)
-
-
-@csrf_exempt
-@require_http_methods(["PUT", "DELETE"])
-def settings_carrier_detail(request, carrier_id, time_mode='current'):
-    user_code = _get_user_code(request, time_mode)
-    denied = _deny_settings_write(request, 'settings_carrier')
-    if denied:
-        return denied
-
-    try:
-        carrier = Carrier.objects.get(id=carrier_id)
-    except Carrier.DoesNotExist:
-        return JsonResponse({'success': False, 'error': '承运人不存在'}, status=404)
-
-    if request.method == 'PUT':
-        try:
-            data = json.loads(request.body)
-            if 'carrier_code' in data:
-                code = (data['carrier_code'] or '').strip()
-                if len(code) != 2:
-                    return JsonResponse({'success': False, 'error': '承运人代码必须为恰好2位字符'}, status=400)
-                if Carrier.objects.filter(carrier_code=code).exclude(id=carrier_id).exists():
-                    return JsonResponse({'success': False, 'error': f'承运人代码 {code} 已被占用'}, status=400)
-                carrier.carrier_code = code
-            if 'carrier_name' in data:
-                carrier.carrier_name = data['carrier_name'] or None
-            if 'is_active' in data:
-                carrier.is_active = bool(data['is_active'])
-            carrier.save(update_fields=['carrier_code', 'carrier_name', 'is_active'])
-            logger.info(f"[设置] 用户 {user_code} 修改承运人: id={carrier_id} code={carrier.carrier_code}")
-            return JsonResponse({'success': True, 'message': '修改成功'})
-        except (json.JSONDecodeError, ValueError) as e:
-            return JsonResponse({'success': False, 'error': f'数据格式错误: {e}'}, status=400)
-        except Exception as e:
-            logger.error(f"修改承运人失败: {e}")
-            return JsonResponse({'success': False, 'error': str(e)}, status=500)
-
-    # DELETE
-    try:
-        code = carrier.carrier_code
-        carrier.delete()
-        logger.info(f"[设置] 用户 {user_code} 删除承运人: {code}")
-        return JsonResponse({'success': True, 'message': f'承运人 {code} 已删除'})
-    except Exception as e:
-        logger.error(f"删除承运人失败: {e}")
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
 
 

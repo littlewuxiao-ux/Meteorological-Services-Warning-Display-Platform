@@ -13,11 +13,18 @@ from datetime import datetime, timedelta, timezone
 import json
 import logging
 
-from core.models import AirportInfo, AirportAlertThresholds, Carrier, WeatherAlertLevels, AreaOptions, DataRefreshTimer
+from core.models import AirportInfo, AirportAlertThresholds, WeatherAlertLevels, AreaOptions, DataRefreshTimer
 from parsers.models import Flight, Metar, Taf, ParseLog
 from parsers.taf_parser import calc_taf_expected_issue_ms
 from parsers.parsing_manager import ParsingManager
 from utils.time_manager import TimeManager
+from utils.flight_selection import (
+    distinct_flight_carriers,
+    save_selected_carriers,
+    selected_carrier_codes,
+    selected_events,
+    sort_carrier_codes,
+)
 from utils.marks_alert_calculator import computed_alerts_from_flight
 from utils.popup_utils import PopupManager, get_seat_identity, get_popup_trace_hours
 from data_adapters.adapter_factory import AdapterFactory
@@ -98,7 +105,7 @@ def airports_overview(request, time_mode='current'):
                 'success': True,
                 'data': {
                     'airports': [],
-                    'carriers': list(Carrier.objects.filter(is_active=True).values_list('carrier_code', flat=True)),
+                    'carriers': sort_carrier_codes(selected_carrier_codes()),
                     'timestamp': datetime.now().isoformat(),
                     'auth_status': get_overview_auth_status(time_mode),
                     'seat_identity': get_seat_identity(request),
@@ -115,6 +122,7 @@ def airports_overview(request, time_mode='current'):
         
         # 3. 构建机场数据
         airports_data = []
+        chosen_carriers = selected_carrier_codes()
         for airport_code in active_airports:
             # 获取机场信息，如果未配置则使用default配置
             if airport_code in configured_airports:
@@ -165,7 +173,7 @@ def airports_overview(request, time_mode='current'):
                 'flight_data': {
                     'has_flight': flight_data.has_flight,
                     'time_slots': flight_data.as_time_slots(),
-                    'events': flight_data.as_events(),
+                    'events': selected_events(flight_data.as_events(), chosen_carriers),
                     'last_updated': flight_data.created_at.isoformat()
                 },
                 'metar_data': [
@@ -297,7 +305,7 @@ def airports_overview(request, time_mode='current'):
             airports_data.append(airport_data)
         
         # 4. 获取航空公司数据
-        carriers = list(Carrier.objects.filter(is_active=True).values_list('carrier_code', flat=True))
+        carriers = sort_carrier_codes(chosen_carriers)
         
         # 5. 获取区域选项数据（带缓存）
         area_options = get_cached_area_options()
@@ -1595,7 +1603,7 @@ def _get_system_airport_search_data(code):
         'flight_data': {
             'has_flight': flight_data.has_flight if flight_data else False,
             'time_slots': flight_data.as_time_slots() if flight_data else [False] * 48,
-            'events': flight_data.as_events() if flight_data else [],
+            'events': selected_events(flight_data.as_events()) if flight_data else [],
         },
         'metar_data': [_serialize_metar(m) for m in metar_qs],
         'taf_data': [_serialize_taf(taf_record)] if taf_record else [],
@@ -1806,6 +1814,37 @@ def airport_search(request, time_mode='current'):
 
     except Exception as e:
         logger.error(f"[搜索] airport_search 失败: {e}")
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["GET", "POST"])
+def flight_carriers(request, time_mode='current'):
+    """主页承运人矩阵：全量代码来自 flight，勾选结果写入 carrier。"""
+    try:
+        if request.method == 'GET':
+            return JsonResponse({
+                'success': True,
+                'all': distinct_flight_carriers(),
+                'selected': sort_carrier_codes(selected_carrier_codes()),
+            })
+        data = json.loads(request.body or '{}')
+        raw = data.get('selected')
+        visible = data.get('all')
+        if not isinstance(raw, list):
+            return JsonResponse({'success': False, 'error': 'selected 必须是承运人代码数组'}, status=400)
+        if visible is not None and not isinstance(visible, list):
+            return JsonResponse({'success': False, 'error': 'all 必须是承运人代码数组'}, status=400)
+        selected = save_selected_carriers(raw, visible, time_mode)
+        return JsonResponse({
+            'success': True,
+            'all': distinct_flight_carriers(),
+            'selected': selected,
+        })
+    except json.JSONDecodeError:
+        return JsonResponse({'success': False, 'error': '数据格式错误'}, status=400)
+    except Exception as e:
+        logger.error(f"承运人勾选失败: {e}", exc_info=True)
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
 
 

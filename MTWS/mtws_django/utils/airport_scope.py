@@ -56,15 +56,21 @@ def _in_window(ts, begin: int, end: int) -> bool:
     return begin <= value <= end
 
 
-def event_in_operation_window(events, now_ms: int, future_hours: int) -> bool:
+def event_in_operation_window(events, now_ms: int, future_hours: int, carriers=None) -> bool:
     """过去固定 2 小时，未来 future_hours 小时。有一条命中即真。
 
     起飞看 dep/odp 的 at。落地看 arr/enr/oar/oen 的 at 或 link。
+    只统计已选承运人。
     """
+    from utils.flight_selection import event_is_selected, selected_carrier_codes
+
+    chosen = selected_carrier_codes() if carriers is None else carriers
     begin = int(now_ms) - PAST_WINDOW_MS
     end = int(now_ms) + clamp_future_hours(future_hours) * HOUR_MS
     for event in _as_event_list(events):
         if not isinstance(event, dict):
+            continue
+        if not event_is_selected(event, chosen):
             continue
         kind = event.get('kind')
         if kind in _DEPARTURE_KINDS and _in_window(event.get('at'), begin, end):
@@ -131,14 +137,17 @@ def airport_codes_for_scope(scope: str, future_hours=FUTURE_HOURS_DEFAULT, now_m
     chosen = (scope or 'has_flight').strip()
     if chosen != 'recent2h':
         return sorted(get_flight_airport_codes())
+    from utils.flight_selection import selected_carrier_codes
+
     now_ms = int(now_ms if now_ms is not None else time.time() * 1000)
     hours = clamp_future_hours(future_hours)
+    carriers = selected_carrier_codes()
     found = []
     rows = Flight.objects.values('airport_4code', 'events')
     for row in rows:
         code = str(row.get('airport_4code') or '').strip().upper()
         if not code:
             continue
-        if event_in_operation_window(row.get('events'), now_ms, hours):
+        if event_in_operation_window(row.get('events'), now_ms, hours, carriers):
             found.append(code)
     return sorted(set(found))

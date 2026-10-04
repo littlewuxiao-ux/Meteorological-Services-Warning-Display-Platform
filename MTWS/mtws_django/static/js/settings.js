@@ -10,7 +10,6 @@
   let areaOptions = {};          // { '国内': [...], '国际': [...] }
   let airportEditCode = null;    // 正在编辑的机场四字代码，null=新增
   let areaEditId = null;
-  let carrierEditId = null;
 
   // ========== 工具 ==========
   function apiUrl(path) {
@@ -88,7 +87,6 @@
       case 'airport-info': await loadAirportInfo(); break;
       case 'area-options': await loadAreaOptions(); break;
       case 'data-refresh-timer': await loadTimers(); break;
-      case 'carrier': await loadCarriers(); break;
       case 'popup': await loadPopupSettings(); break;
       case 'alert-thresholds': await loadAlertThresholds(); break;
       case 'weather-type': await loadWeatherType(); break;
@@ -340,70 +338,7 @@
     showMsg('timer-msg', res.success ? res.message : res.error, res.success ? 'success' : 'error');
   }
 
-  // ========== Tab4: 承运人 ==========
-  async function loadCarriers() {
-    const res = await apiFetch(apiUrl('settings/carrier/'));
-    if (!res.success) { showMsg('carrier-msg', res.error, 'error'); return; }
-    const tbody = document.getElementById('carrier-tbody');
-    tbody.innerHTML = res.data.map(c => `
-      <tr>
-        <td class="${c.is_active ? '' : 'settings-carrier-inactive'}">${escHtml(c.carrier_code)}</td>
-        <td>${escHtml(c.carrier_name)}</td>
-        <td>${c.is_active ? '生效' : '<span style="color:#aaa">停用</span>'}</td>
-        <td>
-          <button class="settings-edit-btn" onclick="SettingsModal.editCarrier(${c.id})">编辑</button>
-          <button class="settings-del-btn" onclick="SettingsModal.deleteCarrier(${c.id})">删除</button>
-        </td>
-      </tr>`).join('');
-    hideCarrierForm();
-  }
-
-  function showCarrierForm(data) {
-    const panel = document.getElementById('carrier-form-panel');
-    panel.style.display = 'flex';
-    panel.style.flexDirection = 'column';
-    document.getElementById('carrier-form-title').textContent = data ? '编辑承运人' : '新增承运人';
-    document.getElementById('cf-code').disabled = !!data;
-    document.getElementById('cf-code').value = data ? (data.carrier_code || '') : '';
-    document.getElementById('cf-name').value = data ? (data.carrier_name || '') : '';
-    const chk = document.getElementById('cf-active-chk');
-    chk.checked = data ? !!data.is_active : true;
-  }
-
-  function hideCarrierForm() {
-    document.getElementById('carrier-form-panel').style.display = 'none';
-    carrierEditId = null;
-  }
-
-  async function saveCarrier() {
-    const code = document.getElementById('cf-code').value.trim();
-    const name = document.getElementById('cf-name').value.trim();
-    const isActive = document.getElementById('cf-active-chk').checked;
-
-    if (!code || code.length !== 2) {
-      showMsg('carrier-msg', '承运人代码必须为恰好2位字符', 'error'); return;
-    }
-    if (name && name.length > 20) {
-      showMsg('carrier-msg', '承运人名称不超过20位字符', 'error'); return;
-    }
-
-    const payload = { carrier_code: code, carrier_name: name || null, is_active: isActive };
-    const isEdit = carrierEditId !== null;
-    const url = isEdit
-      ? apiUrl(`settings/carrier/${carrierEditId}/`)
-      : apiUrl('settings/carrier/');
-    const method = isEdit ? 'PUT' : 'POST';
-
-    const res = await apiFetch(url, { method, body: JSON.stringify(payload) });
-    if (res.success) {
-      showMsg('carrier-msg', res.message, 'success');
-      await loadCarriers();
-    } else {
-      showMsg('carrier-msg', res.error, 'error');
-    }
-  }
-
-  // ========== Tab5: 弹窗设置 ==========
+  // ========== Tab4: 弹窗设置 ==========
   let opLevelTrack, parkLevelTrack;
 
   async function loadPopupSettings() {
@@ -1407,14 +1342,6 @@
     document.getElementById('area-save-btn').addEventListener('click', saveArea);
     document.getElementById('area-cancel-btn').addEventListener('click', hideAreaForm);
 
-    // 承运人表单按钮
-    document.getElementById('carrier-add-btn').addEventListener('click', () => {
-      carrierEditId = null;
-      showCarrierForm(null);
-    });
-    document.getElementById('carrier-save-btn').addEventListener('click', saveCarrier);
-    document.getElementById('carrier-cancel-btn').addEventListener('click', hideCarrierForm);
-
     // 弹窗设置保存
     document.getElementById('popup-save-btn').addEventListener('click', savePopupSettings);
 
@@ -1470,7 +1397,6 @@
       'airport-info': 'settings_airport_info',
       'area-options': 'settings_area_options',
       'data-refresh-timer': 'settings_data_refresh',
-      'carrier': 'settings_carrier',
       'popup': 'settings_popup',
       'alert-thresholds': 'settings_alert_thresholds',
       'weather-type': 'settings_weather_type',
@@ -1629,20 +1555,6 @@
       }
     },
 
-    // 承运人
-    editCarrier(id) {
-      carrierEditId = id;
-      apiFetch(apiUrl('settings/carrier/')).then(res => {
-        const c = res.data && res.data.find(x => x.id === id);
-        if (c) showCarrierForm(c);
-      });
-    },
-    async deleteCarrier(id) {
-      if (!confirm('确定删除该承运人？')) return;
-      const res = await apiFetch(apiUrl(`settings/carrier/${id}/`), { method: 'DELETE' });
-      showMsg('carrier-msg', res.success ? res.message : res.error, res.success ? 'success' : 'error');
-      if (res.success) await loadCarriers();
-    },
   };
 
   // DOM ready

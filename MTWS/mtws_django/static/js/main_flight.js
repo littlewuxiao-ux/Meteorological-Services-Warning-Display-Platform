@@ -643,8 +643,11 @@ function createMarksFlightTimeline(flightData, airportCode) {
     const events = Array.isArray(flightData.events) ? flightData.events : [];
     const winStart = getMarksWindowStartMs();
     const winEnd = winStart + getMarksWindowDurationMs();
-    // 前端自裁：丢弃窗口外
+    const selectedCarriers = new Set(sortCarrierCodes(currentCarriers));
+    // 前端自裁：只画已选承运人，并丢弃窗口外
     const visible = events.filter((e) => {
+        const code = String((e && e.carrier) || '').trim().toUpperCase();
+        if (!selectedCarriers.has(code)) return false;
         const at = Number(e.at);
         return Number.isFinite(at) && at >= winStart && at <= winEnd;
     });
@@ -733,28 +736,187 @@ function createMarksFlightTimeline(flightData, airportCode) {
         </div>`;
 }
 
+function sortCarrierCodes(codes) {
+    const uniq = [];
+    const seen = new Set();
+    (codes || []).forEach((raw) => {
+        const code = String(raw || '').trim().toUpperCase();
+        if (!code || seen.has(code)) return;
+        seen.add(code);
+        uniq.push(code);
+    });
+    uniq.sort();
+    const o3 = uniq.indexOf('O3');
+    if (o3 > 0) {
+        uniq.splice(o3, 1);
+        uniq.unshift('O3');
+    }
+    return uniq;
+}
+
+function carrierLabel(codes) {
+    const list = sortCarrierCodes(codes);
+    if (!list.length) return '未选择';
+    const shown = list.slice(0, 2);
+    const extra = list.length - shown.length;
+    return extra > 0 ? `${shown.join(' ')} +${extra}` : shown.join(' ');
+}
+
 // 更新承运人显示
 function updateCarrierDisplay() {
     const carrierDisplay = document.getElementById('carrier-display');
-    if (currentCarriers && currentCarriers.length > 0) {
-        const shown = currentCarriers.slice(0, 2);
-        const extra = currentCarriers.length - 2;
-        const text = extra > 0
-            ? `${shown.join(' ')} +${extra}`
-            : shown.join(' ');
-        carrierDisplay.textContent = text;
-        carrierDisplay.title = currentCarriers.join(' ');
-    } else {
-        carrierDisplay.textContent = '暂无承运人数据';
-        carrierDisplay.title = '暂无承运人数据';
-    }
+    if (!carrierDisplay) return;
+    const list = sortCarrierCodes(currentCarriers);
+    carrierDisplay.textContent = carrierLabel(list);
+    carrierDisplay.title = list.length ? list.join(' ') : '未选择承运人';
 }
 
 function loadCarrierData() {
-    if (window.carriers && window.carriers.length > 0) {
-        currentCarriers = window.carriers;
-        updateCarrierDisplay();
+    currentCarriers = sortCarrierCodes(window.carriers || []);
+    window.carriers = currentCarriers;
+    updateCarrierDisplay();
+    bindCarrierPicker();
+}
+
+function bindCarrierPicker() {
+    const picker = document.getElementById('carrier-picker');
+    const button = document.getElementById('carrier-display');
+    const menu = document.getElementById('carrier-menu');
+    if (!picker || !button || !menu || picker.dataset.bound) return;
+    picker.dataset.bound = '1';
+    button.addEventListener('click', (event) => {
+        event.stopPropagation();
+        if (menu.hidden) openCarrierMenu();
+        else closeCarrierMenu();
+    });
+    document.addEventListener('click', (event) => {
+        if (!picker.contains(event.target)) closeCarrierMenu();
+    });
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') closeCarrierMenu();
+    });
+}
+
+function closeCarrierMenu() {
+    const menu = document.getElementById('carrier-menu');
+    const button = document.getElementById('carrier-display');
+    if (menu) menu.hidden = true;
+    if (button) button.setAttribute('aria-expanded', 'false');
+    window.__carrierMenuOpen = false;
+}
+
+function openCarrierMenu() {
+    const menu = document.getElementById('carrier-menu');
+    const button = document.getElementById('carrier-display');
+    const matrix = document.getElementById('carrier-matrix');
+    if (!menu || !matrix) return;
+    menu.hidden = false;
+    if (button) button.setAttribute('aria-expanded', 'true');
+    window.__carrierMenuOpen = true;
+    matrix.textContent = '加载中';
+    const headers = typeof getRequestHeaders === 'function' ? getRequestHeaders() : {};
+    fetch(`/${currentTimeMode}/api/flight-carriers/`, { headers })
+        .then((res) => res.json())
+        .then((data) => {
+            if (!data.success) throw new Error(data.error || '读取承运人失败');
+            renderCarrierMatrix(data.all || [], data.selected || []);
+        })
+        .catch((err) => {
+            matrix.textContent = err.message || '读取承运人失败';
+        });
+}
+
+function renderCarrierMatrix(all, selected) {
+    const matrix = document.getElementById('carrier-matrix');
+    if (!matrix) return;
+    const codes = sortCarrierCodes(all);
+    const picked = new Set(sortCarrierCodes(selected));
+    if (!codes.length) {
+        matrix.textContent = '暂无航班承运人';
+        return;
     }
+    matrix.innerHTML = codes.map((code) => {
+        const on = picked.has(code);
+        const safe = String(code).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+        return `<button type="button" class="carrier-cell${on ? ' is-on' : ''}" data-carrier="${safe}" aria-pressed="${on ? 'true' : 'false'}">${safe}</button>`;
+    }).join('');
+    matrix.querySelectorAll('.carrier-cell').forEach((cell) => {
+        cell.addEventListener('click', (event) => {
+            event.stopPropagation();
+            cell.classList.toggle('is-on');
+            const on = cell.classList.contains('is-on');
+            cell.setAttribute('aria-pressed', on ? 'true' : 'false');
+            const shown = Array.from(matrix.querySelectorAll('.carrier-cell')).map((el) => el.dataset.carrier);
+            const shownSet = new Set(shown);
+            const kept = sortCarrierCodes(currentCarriers).filter((code) => !shownSet.has(code));
+            const checked = Array.from(matrix.querySelectorAll('.carrier-cell.is-on')).map((el) => el.dataset.carrier);
+            const next = sortCarrierCodes(kept.concat(checked));
+            currentCarriers = next;
+            window.carriers = next;
+            updateCarrierDisplay();
+            if (typeof updateAllAirportGrids === 'function') updateAllAirportGrids();
+            queueCarrierSave(checked, shown);
+        });
+    });
+}
+
+let _carrierSaveChain = Promise.resolve();
+
+function queueCarrierSave(selected, allCodes) {
+    const payload = sortCarrierCodes(selected);
+    const shown = sortCarrierCodes(allCodes);
+    _carrierSaveChain = _carrierSaveChain
+        .catch(() => {})
+        .then(() => postCarrierSelection(payload, shown));
+}
+
+function postCarrierSelection(selected, allCodes) {
+    const headers = Object.assign(
+        { 'Content-Type': 'application/json' },
+        typeof getRequestHeaders === 'function' ? getRequestHeaders() : {}
+    );
+    return fetch(`/${currentTimeMode}/api/flight-carriers/`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ selected, all: allCodes }),
+    })
+        .then((res) => res.json())
+        .then((data) => {
+            if (!data.success) throw new Error(data.error || '保存承运人失败');
+            if (!window.__carrierMenuOpen) {
+                currentCarriers = sortCarrierCodes(data.selected || []);
+                window.carriers = currentCarriers;
+                updateCarrierDisplay();
+            }
+            return reloadAirportsAfterCarrierChange();
+        })
+        .catch((err) => {
+            console.error('保存承运人失败', err);
+        });
+}
+
+function reloadAirportsAfterCarrierChange() {
+    const headers = typeof getRequestHeaders === 'function' ? getRequestHeaders() : {};
+    return fetch(`/${currentTimeMode}/api/airports/overview/`, { headers })
+        .then((res) => res.json())
+        .then((data) => {
+            if (!data.success || !data.data) return;
+            airportData = data.data.airports || [];
+            if (!window.__carrierMenuOpen && Array.isArray(data.data.carriers)) {
+                currentCarriers = sortCarrierCodes(data.data.carriers);
+                window.carriers = currentCarriers;
+                updateCarrierDisplay();
+            }
+            if (typeof syncAlertStateFromMetarData === 'function') syncAlertStateFromMetarData(airportData);
+            if (typeof syncAlertStateFromTafData === 'function') syncAlertStateFromTafData(airportData);
+            if (typeof applyFilters === 'function') applyFilters();
+            if (typeof updateAllAirportGrids === 'function') updateAllAirportGrids();
+            if (typeof nwpEnabled !== 'undefined' && nwpEnabled && typeof fetchNwpDataAndRender === 'function') {
+                fetchNwpDataAndRender();
+            }
+            window.dispatchEvent(new CustomEvent('mtws-carriers-changed'));
+        })
+        .catch((err) => console.error('承运人变更后刷新机场失败', err));
 }
 
 function createFlightTimeline(flightData, tafData = null, metarData = null, airport = null) {

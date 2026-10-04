@@ -446,6 +446,10 @@
     }
     load();
   };
+  window.addEventListener('mtws-carriers-changed', () => {
+    load();
+  });
+
   window.syncTrendHomeFilter = function () {
     const panel = document.getElementById('trend-panel');
     if (!panel || panel.style.display === 'none' || !payload) return;

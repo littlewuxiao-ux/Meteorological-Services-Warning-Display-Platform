@@ -8,7 +8,7 @@ from pathlib import Path
 from django.shortcuts import render
 from django.http import FileResponse, Http404, HttpResponse
 import json
-from core.models import Carrier
+from utils.flight_selection import selected_carrier_codes, sort_carrier_codes
 from utils.time_manager import TimeManager
 from django.conf import settings as django_settings
 
@@ -18,8 +18,8 @@ def index(request, time_mode='current'):
     # 获取时间模式（从URL参数或默认为current）
     time_mode = request.GET.get('time_mode', time_mode)
     
-    # 获取承运人数据
-    carriers = list(Carrier.objects.filter(is_active=True).values_list('carrier_code', flat=True))
+    # 已选承运人，打开页面时从 carrier 表读取
+    carriers = sort_carrier_codes(selected_carrier_codes())
     
     # 获取测试时间（如果是测试模式）
     test_time_iso = None
@@ -33,6 +33,7 @@ def index(request, time_mode='current'):
     context = {
         'time_mode': time_mode,
         'carriers': json.dumps(carriers),  # 转换为JSON字符串传递给前端
+        'carrier_label': ' '.join(carriers),
         'test_time_iso': test_time_iso,  # 传递测试时间给前端
         'chart_default_hours': chart_default_hours,  # 传递图表默认小时数给前端
     }

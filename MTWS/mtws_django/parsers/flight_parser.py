@@ -10,9 +10,9 @@ import logging
 
 from django.utils import timezone
 from django.conf import settings
-from core.models import Carrier
 from parsers.models import Flight
 from data_adapters.adapter_factory import AdapterFactory
+from utils.flight_selection import airport_flags_from_events, selected_carrier_codes, selected_events
 from utils.time_manager import TimeManager
 from utils.marks_alert_calculator import (
     default_warning,
@@ -73,17 +73,15 @@ class FlightParser:
                 self._update_flight_status(success=False)
                 return {'success': False, 'message': '未获取到航班数据', 'record_count': 0, 'data_preserved': True}
             
-            logger.info(f"获取到航班原始数据 {len(df)} 行")
-            
-            # 2. 过滤航班数据 (移植原始程序的过滤逻辑)
-            df_filtered = self._filter_flight_data(df)
-            logger.info(f"过滤后航班数据 {len(df_filtered)} 行")
+            logger.info(f"获取到航班原始数据 {len(df)} 行，全量入库")
+            selected = selected_carrier_codes()
+            logger.info(f"已选承运人 {sorted(selected) or '无'}，派生字段只统计这些承运人")
 
             old_by_airport = {}
             for row in Flight.objects.all().order_by('created_at'):
                 old_by_airport[row.airport_4code] = row
 
-            airports = self._get_airports(df_filtered)
+            airports = self._get_airports(df)
             logger.info(f"发现 {len(airports)} 个机场")
 
             processed_count = 0
@@ -96,8 +94,8 @@ class FlightParser:
 
             for airport in airports:
                 try:
-                    events = self._build_airport_events(df_filtered, airport)
-                    flags = self._marks_airport_flags(events)
+                    events = self._build_airport_events(df, airport)
+                    flags = airport_flags_from_events(selected_events(events, selected))
                     has_flight = flags['has_flight']
                     old = old_by_airport.get(airport)
                     en_route = flags['en_route']
@@ -184,54 +182,6 @@ class FlightParser:
                 'record_count': 0,
                 'execution_time': execution_time
             }
-    
-    def _filter_flight_data(self, df: pd.DataFrame) -> pd.DataFrame:
-        """
-        过滤航班数据 - 修改后的过滤逻辑
-        
-        Args:
-            df: 原始航班数据
-            
-        Returns:
-            DataFrame: 过滤后的航班数据
-        """
-        # 1. 获取启用的航空公司代码
-        enabled_carriers = self._get_enabled_carriers()
-        
-        # 筛选条件: carrier字段与航空公司表相同的航班信息
-        if 'carrier' in df.columns and enabled_carriers:
-            final_condition = df['carrier'].isin(enabled_carriers)
-            logger.info(f"筛选条件（承运人匹配）: {final_condition.sum()} 行")
-        else:
-            if 'carrier' not in df.columns:
-                logger.warning("API数据中未找到'carrier'字段")
-            if not enabled_carriers:
-                logger.warning("没有启用的航空公司")
-            # 如果没有carrier字段或没有启用的航空公司，则不过滤任何数据
-            final_condition = pd.Series([True] * len(df))
-        
-        filtered_df = df[final_condition].copy()
-        
-        logger.info(f"筛选后航班数据: {len(filtered_df)} 行")
-        
-        if filtered_df.empty:
-            logger.warning("筛选后没有符合条件的航班数据")
-        
-        return filtered_df
-    
-    def _get_enabled_carriers(self) -> List[str]:
-        """
-        获取启用的航空公司代码（带缓存）
-        
-        Returns:
-            List[str]: 启用的航空公司代码列表
-        """
-        try:
-            return list(Carrier.objects.filter(is_active=True).values_list('carrier_code', flat=True))
-            
-        except Exception as e:
-            logger.error(f"获取启用的航空公司代码失败: {str(e)}")
-            return []
     
     def _get_airports(self, df: pd.DataFrame) -> List[str]:
         """
@@ -379,49 +329,6 @@ class FlightParser:
 
         events.sort(key=lambda e: (e['at'], e['kind']))
         return events
-
-    def _marks_airport_flags(self, events: list) -> Dict:
-        """由本机场 events 汇总入库字段（不再用 48 格 slots）。
-
-        kind：arr=未起未到；enr=已起未到；lnd=本场已落地；
-        oar=对方未起且落地已过；oen=已起且落地已过未落地；
-        dep=本场未起；off=本场已起对方未落；dst=本场已起对方已落；
-        odp=本场超时未起。
-        has_flight：仅 off/lnd/dst 则为假。en_route：有 enr 或 oen。
-        """
-        idle = {'off', 'lnd', 'dst'}
-        has_flight = False
-        en_route = 0
-        closest_arr_link = None
-        closest_lnd_at = None
-        closest_dep_at = None
-        for ev in events or []:
-            if not isinstance(ev, dict):
-                continue
-            kind = ev.get('kind')
-            if kind not in idle:
-                has_flight = True
-            if kind in ('enr', 'oen'):
-                en_route = 1
-            if kind in ('arr', 'oar'):
-                link = ev.get('link')
-                if link is not None and (closest_arr_link is None or link < closest_arr_link):
-                    closest_arr_link = link
-            if kind in ('enr', 'arr', 'oen', 'oar'):
-                at = ev.get('at')
-                if at is not None and (closest_lnd_at is None or at < closest_lnd_at):
-                    closest_lnd_at = at
-            if kind in ('dep', 'odp'):
-                at = ev.get('at')
-                if at is not None and (closest_dep_at is None or at < closest_dep_at):
-                    closest_dep_at = at
-        return {
-            'has_flight': has_flight,
-            'en_route': en_route,
-            'closest_arr_link': closest_arr_link,
-            'closest_lnd_at': closest_lnd_at,
-            'closest_dep_at': closest_dep_at,
-        }
 
     def _merge_event_warnings(self, old_events: list, new_events: list):
         """沿用未变航班的 warning；返回 (events, 是否全场重算, 变化键列表)。"""

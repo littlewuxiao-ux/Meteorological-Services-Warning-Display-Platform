@@ -114,6 +114,8 @@ class MarksAlertCalculator:
         }
         if not full and not partial:
             return
+        from utils.flight_selection import selected_carrier_codes
+        self.selected_carriers = selected_carrier_codes()
         for code in full:
             try:
                 self._recalc_airport(code, keys=None)
@@ -145,8 +147,15 @@ class MarksAlertCalculator:
             .first()
         )
         windows = self._build_windows(metar, taf)
+        from utils.flight_selection import event_is_selected
+        selected = getattr(self, 'selected_carriers', None)
+        if selected is None:
+            from utils.flight_selection import selected_carrier_codes
+            selected = selected_carrier_codes()
         changed = False
         for ev in events:
+            if not event_is_selected(ev, selected):
+                continue
             if keys is not None and event_identity(ev) not in keys:
                 continue
             new_w = self._warning_for_event(ev, windows)
@@ -156,7 +165,8 @@ class MarksAlertCalculator:
             elif not warning_is_ready(ev.get('warning')):
                 ev['warning'] = new_w
                 changed = True
-        metar_h, taf_h, air_h = self._airport_alert_levels(events, windows)
+        scoped = [ev for ev in events if event_is_selected(ev, selected)]
+        metar_h, taf_h, air_h = self._airport_alert_levels(scoped, windows)
         filters = {'airport_4code': airport}
         if row.pk is not None:
             filters['pk'] = row.pk
