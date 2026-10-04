@@ -220,8 +220,8 @@ def _fetch_history_obj(
     end_ms: Optional[int] = None,
 ):
     """
-    调用与趋势图相同的原始历史报文接口（airportMetList），返回 (obj列表, now_ms)。
-    失败时 obj 为空列表。可传入 start_ms/end_ms 覆盖默认的近 72 小时窗口。
+    调用与趋势图相同的原始历史报文接口（airportMetList），返回 (obj列表, now_ms, 是否成功)。
+    失败时 obj 为空列表且成功标志为 False。可传入 start_ms/end_ms 覆盖默认的近 72 小时窗口。
     """
     now_ms = int(datetime.now(tz=timezone.utc).timestamp() * 1000)
     end = int(end_ms if end_ms is not None else now_ms)
@@ -262,24 +262,24 @@ def _fetch_history_obj(
             logger.error(
                 f'历史报文请求失败 [{airport_code}]: HTTP {response.status_code}'
             )
-            return [], now_ms
+            return [], now_ms, False
         resp_data = response.json()
     except Exception as exc:
         logger.error(f'历史报文请求异常 [{airport_code}]: {exc}')
-        return [], now_ms
+        return [], now_ms, False
 
     if not resp_data.get('success'):
         logger.error(
             f'历史报文接口返回失败 [{airport_code}]: '
             f'{resp_data.get("errorMessage", "未知错误")}'
         )
-        return [], now_ms
+        return [], now_ms, False
 
     obj = resp_data.get('obj') or []
     if not obj:
         logger.info(f'历史报文无数据 [{airport_code}] {ws_types}')
-        return [], now_ms
-    return obj, now_ms
+        return [], now_ms, True
+    return obj, now_ms, True
 
 
 def _item_wtype(item: dict, content: str) -> str:
@@ -312,7 +312,7 @@ def fetch_raw_met_list(
     每项: {content, wtype, sort_time}
     可传入 start_ms/end_ms 限定时间范围；默认近 72 小时。
     """
-    obj, now_ms = _fetch_history_obj(
+    obj, now_ms, _ok = _fetch_history_obj(
         airport_code,
         time_mode,
         token,
@@ -380,7 +380,7 @@ def fetch_and_parse_metar_history(
         metar_observation_time, metar_wind_speed_val, metar_gust_val,
         metar_visibility_val, rvr_min_val, metar_min_cloud_height, metar_temp_val
     """
-    obj, now_ms = _fetch_history_obj(airport_code, time_mode, token)
+    obj, now_ms, _ok = _fetch_history_obj(airport_code, time_mode, token)
     if not obj:
         return []
 

@@ -1,4 +1,4 @@
-"""按需解析机场坐标：先读 airport_location，没有或读失败时再请求跑道接口并写回。"""
+"""按需解析机场坐标：先读 airport_info，没有坐标时再请求跑道接口并写回。"""
 
 import logging
 
@@ -27,9 +27,9 @@ def _normalize_codes(codes):
 
 def _read_local_coords(codes):
     """返回 {code: (lat, lon)}。查询失败时抛出 DatabaseError。"""
-    from core.models import AirportLocation
+    from core.models import AirportInfo
 
-    rows = AirportLocation.objects.filter(airport_4code__in=codes).values(
+    rows = AirportInfo.objects.filter(airport_4code__in=codes).values(
         'airport_4code', 'latitude', 'longitude'
     )
     found = {}
@@ -80,27 +80,37 @@ def fetch_aviationweather_airport(code):
 
 
 def store_airport_coord(code, lat, lon, name=None):
-    """没有坐标行时写入；已有经纬度则保持原值。"""
-    from core.models import AirportLocation
+    """没有坐标时写入 airport_info。已有中文名称不被接口英文名覆盖。"""
+    from core.airport_directory import apply_prefix_if_blank
+    from core.models import AirportInfo
 
-    obj, created = AirportLocation.objects.get_or_create(
-        airport_4code=code,
-        defaults={
-            'latitude': float(lat),
-            'longitude': float(lon),
-            'airport_name': name,
-        },
-    )
+    obj = AirportInfo.objects.filter(airport_4code=code).first()
+    created = obj is None
     if created:
-        logger.info(f"机场{code} 坐标已写入 airport_location: lat={lat}, lon={lon}")
+        obj = AirportInfo(
+            airport_4code=code,
+            catalog_only=True,
+            latitude=float(lat),
+            longitude=float(lon),
+            airport_name=name or None,
+        )
+        apply_prefix_if_blank(obj)
+        obj.save()
+        logger.info(f"机场{code} 坐标已写入 airport_info: lat={lat}, lon={lon}")
         return
+    updates = []
     if obj.latitude is None or obj.longitude is None:
         obj.latitude = float(lat)
         obj.longitude = float(lon)
-        if name and not obj.airport_name:
-            obj.airport_name = name
-        obj.save(update_fields=['latitude', 'longitude', 'airport_name'])
-        logger.info(f"机场{code} 空坐标已补写: lat={lat}, lon={lon}")
+        updates.extend(['latitude', 'longitude'])
+    if name and not (obj.airport_name or '').strip():
+        obj.airport_name = name
+        updates.append('airport_name')
+    if apply_prefix_if_blank(obj):
+        updates.extend(['classification', 'area'])
+    if updates:
+        obj.save(update_fields=list(dict.fromkeys(updates)))
+        logger.info(f"机场{code} 空坐标或空名称已补写: lat={lat}, lon={lon}")
 
 
 def resolve_airport_coords(codes):
@@ -118,7 +128,7 @@ def resolve_airport_coords(codes):
     try:
         found = _read_local_coords(codes)
     except DatabaseError as exc:
-        logger.warning(f"读取 airport_location 失败，改为按需请求接口: {exc}")
+        logger.warning(f"读取 airport_info 坐标失败，改为按需请求接口: {exc}")
         found = {}
 
     errors = []

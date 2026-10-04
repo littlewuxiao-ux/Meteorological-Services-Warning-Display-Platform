@@ -104,7 +104,7 @@ function showAirportDetailModal(airportData, source) {
 
   // 第1行：机场代码和名称（代码在上，名称在下）
   document.getElementById('airport-title-code').textContent = airport.airport_4code;
-  document.getElementById('airport-title-name').textContent = airport.airport_name || '';
+  document.getElementById('airport-title-name').textContent = airport.airport_name || '机场名称未配置';
 
   // 联系方式（使用主页已有的字段）
   const showContact = canShowHeaderInfo('contact');
@@ -1096,7 +1096,7 @@ function openAirportDetailFromSearchResult(code) {
  */
 function _buildSearchAirportHeader(airport) {
   const code = airport.airport_4code;
-  const name = airport.airport_name || '';
+  const name = airport.airport_name || '机场名称未配置';
   const areaCode = airport.area_code || 'N/A';
   const forecastPhone = airport.forecast_phone || 'N/A';
   const obsPhone = airport.observation_phone || 'N/A';

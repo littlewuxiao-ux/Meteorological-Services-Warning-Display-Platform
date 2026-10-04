@@ -263,26 +263,10 @@ class DatabaseManager:
             AirportInfo: 机场信息对象
         """
         try:
-            # 优先查找具体机场的信息
-            try:
-                return AirportInfo.objects.get(airport_4code=airport_4code)
-            except ObjectDoesNotExist:
-                # 如果没有找到，使用默认信息
-                try:
-                    from copy import deepcopy
-                    default_info = AirportInfo.objects.get(airport_4code='default')
-                    
-                    # 创建一个新对象，复制所有信息但使用实际机场代码
-                    modified_info = deepcopy(default_info)
-                    modified_info.airport_4code = airport_4code  # 使用实际机场代码
-                    modified_info.airport_name = f'未配置机场 ({airport_4code})'  # 合理的名称
-                    
-                    return modified_info
-                    
-                except ObjectDoesNotExist:
-                    logger.warning(f"未找到机场 {airport_4code} 和默认信息配置")
-                    return None
-                    
+            return AirportInfo.objects.get(airport_4code=airport_4code)
+        except ObjectDoesNotExist:
+            logger.warning(f"未找到机场 {airport_4code} 的信息")
+            return None
         except Exception as e:
             logger.error(f"获取机场信息失败: {e}")
             return None

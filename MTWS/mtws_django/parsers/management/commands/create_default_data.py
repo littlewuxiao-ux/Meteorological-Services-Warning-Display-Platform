@@ -6,7 +6,7 @@
 from django.core.management.base import BaseCommand
 from django.db import transaction
 
-from core.models import AirportInfo, AirportAlertThresholds
+from core.models import AirportAlertThresholds
 
 
 class Command(BaseCommand):
@@ -26,25 +26,6 @@ class Command(BaseCommand):
         
         try:
             with transaction.atomic():
-                # 创建默认机场信息
-                default_airport_info, created = AirportInfo.objects.update_or_create(
-                    airport_4code='default',
-                    defaults={
-                        'airport_name': '默认机场',
-                        'area': '其它',
-                        'revision_history': '',
-                    }
-                )
-                
-                if created:
-                    self.stdout.write(
-                        self.style.SUCCESS('成功创建默认机场信息')
-                    )
-                else:
-                    self.stdout.write(
-                        self.style.WARNING('默认机场信息已存在，已更新')
-                    )
-                
                 # 创建默认告警阈值
                 default_thresholds, created = AirportAlertThresholds.objects.update_or_create(
                     airport_4code='default',

@@ -1,11 +1,10 @@
 """
 管理命令：import_airport_locations
-从 airport_loc.csv（GBK 编码）向 airport_location 表导入机场坐标数据。
-DMS 格式坐标在导入时一次性转换为十进制度数。
+从 airport_loc.csv（GBK 编码）把机场坐标写入 airport_info。
+已有机场只补经纬度，不覆盖名称。新机场记为坐标目录。
 
 用法：
-  python manage.py import_airport_locations              # 增量导入（跳过已存在）
-  python manage.py import_airport_locations --clear     # 清空后全量重导
+  python manage.py import_airport_locations
 """
 
 import csv
@@ -13,7 +12,8 @@ from pathlib import Path
 
 from django.core.management.base import BaseCommand, CommandError
 
-from core.models import AirportLocation
+from core.airport_directory import apply_prefix_if_blank
+from core.models import AirportInfo
 
 
 _CSV_PATH = (
@@ -57,14 +57,9 @@ def _dms_to_decimal(dms_str: str):
 
 
 class Command(BaseCommand):
-    help = '从 airport_loc.csv 导入机场坐标到 airport_location 表'
+    help = '从 airport_loc.csv 把机场坐标写入 airport_info'
 
     def add_arguments(self, parser):
-        parser.add_argument(
-            '--clear',
-            action='store_true',
-            help='导入前清空 airport_location 表（全量重导）',
-        )
         parser.add_argument(
             '--csv',
             type=str,
@@ -77,19 +72,16 @@ class Command(BaseCommand):
         if not csv_path.exists():
             raise CommandError(f'CSV 文件未找到：{csv_path}')
 
-        if options['clear']:
-            deleted, _ = AirportLocation.objects.all().delete()
-            self.stdout.write(self.style.WARNING(f'已清空 airport_location 表（删除 {deleted} 条）'))
-
-        batch = []
         seen_codes = set()
         skipped_invalid = 0
         skipped_dup = 0
+        created = 0
+        updated = 0
 
         with open(csv_path, newline='', encoding='gbk', errors='replace') as f:
             reader = csv.DictReader(f)
             for row in reader:
-                code = row.get('CODE_ICAO', '').strip()
+                code = row.get('CODE_ICAO', '').strip().upper()
                 if not code or len(code) != 4:
                     skipped_invalid += 1
                     continue
@@ -104,21 +96,28 @@ class Command(BaseCommand):
                     continue
 
                 seen_codes.add(code)
-                batch.append(AirportLocation(
+                name = row.get('TXT_NAME', '').strip() or None
+                existing = AirportInfo.objects.filter(airport_4code=code).first()
+                if existing:
+                    existing.latitude = lat
+                    existing.longitude = lon
+                    existing.save(update_fields=['latitude', 'longitude'])
+                    updated += 1
+                    continue
+                airport = AirportInfo(
                     airport_4code=code,
                     latitude=lat,
                     longitude=lon,
-                    airport_name=(row.get('TXT_NAME', '').strip() or None),
-                ))
-
-        created = 0
-        if batch:
-            result = AirportLocation.objects.bulk_create(batch, ignore_conflicts=True)
-            created = len(result)
+                    airport_name=name,
+                    catalog_only=True,
+                )
+                apply_prefix_if_blank(airport)
+                airport.save()
+                created += 1
 
         self.stdout.write(
             self.style.SUCCESS(
-                f'导入完成：写入 {created} 条 | '
+                f'导入完成：新增 {created} 条，更新坐标 {updated} 条 | '
                 f'无效/坐标缺失 {skipped_invalid} 条 | '
                 f'文件内重复 {skipped_dup} 条'
             )

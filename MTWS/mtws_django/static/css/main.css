@@ -4224,6 +4224,18 @@ p.settings-hint {
   font-size: 13px;
   color: #333;
 }
+.airport-info-search {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+.airport-info-form-card {
+  max-width: 420px;
+}
+.airport-info-form-card .settings-form-scroll {
+  flex: none;
+  overflow: visible;
+}
 
 /* Toast/message bar */
 .settings-msg {

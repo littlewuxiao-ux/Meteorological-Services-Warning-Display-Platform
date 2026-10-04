@@ -24,11 +24,11 @@ class AirportInfo(models.Model):
     forecast_phone = models.CharField(max_length=100, blank=True, null=True, verbose_name='预报电话')
     observation_phone = models.CharField(max_length=100, blank=True, null=True, verbose_name='观测电话')
     other_phone = models.CharField(max_length=100, blank=True, null=True, verbose_name='其他电话')
-    
-    # TAF相关配置字段
-    taf_init_time = models.SmallIntegerField(default=1, verbose_name='TAF初始时间')
-    import_check_interval = models.SmallIntegerField(default=20, verbose_name='TAF平均延迟')
-    taf_max_delay = models.SmallIntegerField(blank=True, null=True, default=30, verbose_name='TAF最大延迟')
+
+    latitude = models.FloatField(blank=True, null=True, verbose_name='纬度（十进制度）')
+    longitude = models.FloatField(blank=True, null=True, verbose_name='经度（十进制度）')
+    catalog_only = models.BooleanField(default=False, verbose_name='仅坐标目录')
+    taf_infer_attempted = models.BooleanField(default=False, verbose_name='已尝试推断预报入库配置')
     
     # 预留字段
     extraInfo4 = models.TextField(blank=True, null=True, verbose_name='预留字段4')
@@ -296,28 +296,39 @@ class WeatherTypeInfo(models.Model):
         return f"{self.weather_type_code} - {self.description_cn or self.description_en or ''}"
 
 
-class AirportLocation(models.Model):
-    """
-    机场地理坐标表
-    坐标来源：airport_loc.csv，导入时已将 DMS 格式转换为十进制度数。
-    供 NWP 解析器等需要机场坐标的模块使用。
-    """
-    airport_4code = models.CharField(
-        max_length=4, primary_key=True, verbose_name='机场四字代码'
-    )
-    latitude = models.FloatField(verbose_name='纬度（十进制度）')
-    longitude = models.FloatField(verbose_name='经度（十进制度）')
-    airport_name = models.CharField(
-        max_length=100, blank=True, null=True, verbose_name='机场名称'
-    )
+class AirportTafImportConfig(models.Model):
+    """预报入库配置。主键为机场四字代码，与机场资料分开维护。"""
+
+    airport_4code = models.CharField(max_length=4, primary_key=True, verbose_name='机场四字代码')
+    taf_init_time = models.SmallIntegerField(blank=True, null=True, verbose_name='首份预报发布整点')
+    import_check_interval = models.SmallIntegerField(blank=True, null=True, verbose_name='发布间隔小时')
+    taf_max_delay = models.SmallIntegerField(blank=True, null=True, verbose_name='接收延迟分钟')
 
     class Meta:
-        db_table = 'airport_location'
-        verbose_name = '机场坐标'
-        verbose_name_plural = '机场坐标'
+        db_table = 'airport_taf_import_config'
+        verbose_name = '预报入库配置'
+        verbose_name_plural = '预报入库配置'
 
     def __str__(self):
-        return f'{self.airport_4code} ({self.latitude:.4f}, {self.longitude:.4f})'
+        return self.airport_4code
+
+
+class AirportPrefixArea(models.Model):
+    """四字码前缀对应的国内/国际与区域。只在机场区域为空时写入，之后只读已保存的区域。"""
+
+    prefix = models.CharField(max_length=4, primary_key=True, verbose_name='前缀')
+    classification = models.CharField(max_length=10, verbose_name='性质')
+    area = models.CharField(max_length=20, verbose_name='区域')
+    remark = models.TextField(blank=True, default='', verbose_name='备注')
+
+    class Meta:
+        db_table = 'airport_prefix_area'
+        verbose_name = '前缀区域'
+        verbose_name_plural = '前缀区域'
+        ordering = ['prefix']
+
+    def __str__(self):
+        return f'{self.prefix} {self.classification}/{self.area}'
 
 
 class WxmsgImportAlert(models.Model):

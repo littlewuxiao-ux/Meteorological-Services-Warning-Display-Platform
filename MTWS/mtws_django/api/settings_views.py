@@ -11,8 +11,8 @@ from django.views.decorators.http import require_http_methods
 from django.views.decorators.csrf import csrf_exempt
 
 from core.models import (
-    AirportInfo, AreaOptions, DataRefreshTimer, PopupSettings,
-    AirportAlertThresholds, WeatherTypeInfo, WeatherAlertLevels, AirportLocation,
+    AirportInfo, AirportPrefixArea, AirportTafImportConfig, AreaOptions, DataRefreshTimer, PopupSettings,
+    AirportAlertThresholds, WeatherTypeInfo, WeatherAlertLevels,
 )
 
 logger = logging.getLogger('mtws.settings')
@@ -54,6 +54,54 @@ def _deny_settings_write(request, module_code: str):
     return None
 
 
+def _blank_to_none(value):
+    if value is None:
+        return None
+    if isinstance(value, str) and not value.strip():
+        return None
+    return value
+
+
+def _optional_float(value):
+    if value is None or value == '':
+        return None
+    return float(value)
+
+
+def _airport_info_fields(data, airport_3code):
+    fields = {
+        'airport_3code': airport_3code,
+        'airport_name': _blank_to_none(data.get('airport_name')),
+        'classification': _blank_to_none(data.get('classification')),
+        'area': _blank_to_none(data.get('area')),
+        'area_code': _blank_to_none(data.get('area_code')),
+        'forecast_phone': _blank_to_none(data.get('forecast_phone')),
+        'observation_phone': _blank_to_none(data.get('observation_phone')),
+        'other_phone': _blank_to_none(data.get('other_phone')),
+    }
+    if 'latitude' in data:
+        fields['latitude'] = _optional_float(data.get('latitude'))
+    if 'longitude' in data:
+        fields['longitude'] = _optional_float(data.get('longitude'))
+    return fields
+
+
+def _airport_info_payload(airport):
+    return {
+        'airport_4code': airport.airport_4code,
+        'airport_3code': airport.airport_3code,
+        'airport_name': airport.airport_name,
+        'classification': airport.classification,
+        'area': airport.area,
+        'latitude': None if airport.latitude is None else float(airport.latitude),
+        'longitude': None if airport.longitude is None else float(airport.longitude),
+        'area_code': airport.area_code,
+        'forecast_phone': airport.forecast_phone,
+        'observation_phone': airport.observation_phone,
+        'other_phone': airport.other_phone,
+    }
+
+
 # ===================== 机场信息 =====================
 
 @csrf_exempt
@@ -62,18 +110,8 @@ def settings_airport_info(request, time_mode='current'):
     user_code = _get_user_code(request, time_mode)
 
     if request.method == 'GET':
-        try:
-            airports = list(
-                AirportInfo.objects.values(
-                    'airport_4code', 'airport_3code', 'airport_name', 'classification',
-                    'area', 'taf_init_time', 'import_check_interval', 'taf_max_delay',
-                    'area_code', 'forecast_phone', 'observation_phone', 'other_phone'
-                ).order_by('classification', 'area', 'airport_4code')
-            )
-            return JsonResponse({'success': True, 'data': airports})
-        except Exception as e:
-            logger.error(f"获取机场信息失败: {e}")
-            return JsonResponse({'success': False, 'error': str(e)}, status=500)
+        # 合并后机场很多，列表不整表返回。设置页按四字代码查单条。
+        return JsonResponse({'success': True, 'data': []})
 
     # POST: 新增
     denied = _deny_settings_write(request, 'settings_airport_info')
@@ -86,27 +124,21 @@ def settings_airport_info(request, time_mode='current'):
             return JsonResponse({'success': False, 'error': '机场四字代码必须为恰好4位英文大写字母'}, status=400)
         if code == 'DEFAULT':
             return JsonResponse({'success': False, 'error': '不可使用保留代码 DEFAULT'}, status=400)
-        if AirportInfo.objects.filter(airport_4code=code).exists():
-            return JsonResponse({'success': False, 'error': f'机场代码 {code} 已存在'}, status=400)
-
         a3 = (data.get('airport_3code') or '').strip().upper() or None
         if a3 and (len(a3) != 3 or not a3.isalpha()):
             return JsonResponse({'success': False, 'error': '机场三字代码必须为恰好3位英文大写字母'}, status=400)
 
-        AirportInfo.objects.create(
-            airport_4code=code,
-            airport_3code=a3,
-            airport_name=data.get('airport_name', ''),
-            classification=data.get('classification', ''),
-            area=data.get('area', ''),
-            taf_init_time=int(data.get('taf_init_time', 0)),
-            import_check_interval=int(data.get('import_check_interval', 6)),
-            taf_max_delay=int(data.get('taf_max_delay', 30)),
-            area_code=data.get('area_code') or None,
-            forecast_phone=data.get('forecast_phone') or None,
-            observation_phone=data.get('observation_phone') or None,
-            other_phone=data.get('other_phone') or None,
-        )
+        fields = _airport_info_fields(data, a3)
+        existing = AirportInfo.objects.filter(airport_4code=code).first()
+        if existing and not existing.catalog_only:
+            return JsonResponse({'success': False, 'error': f'机场代码 {code} 已存在'}, status=400)
+        if existing:
+            for key, value in fields.items():
+                setattr(existing, key, value)
+            existing.catalog_only = False
+            existing.save()
+        else:
+            AirportInfo.objects.create(airport_4code=code, catalog_only=False, **fields)
         logger.info(f"[设置] 用户 {user_code} 新增机场: {code}")
         return JsonResponse({'success': True, 'message': f'机场 {code} 新增成功'})
     except (json.JSONDecodeError, ValueError) as e:
@@ -117,20 +149,22 @@ def settings_airport_info(request, time_mode='current'):
 
 
 @csrf_exempt
-@require_http_methods(["PUT", "DELETE"])
+@require_http_methods(["GET", "PUT", "DELETE"])
 def settings_airport_info_detail(request, airport_4code, time_mode='current'):
     user_code = _get_user_code(request, time_mode)
+    code = (airport_4code or '').strip().upper()
+
+    try:
+        airport = AirportInfo.objects.get(airport_4code=code)
+    except AirportInfo.DoesNotExist:
+        return JsonResponse({'success': False, 'error': f'未找到 {code} 的机场信息'}, status=404)
+
+    if request.method == 'GET':
+        return JsonResponse({'success': True, 'data': _airport_info_payload(airport)})
+
     denied = _deny_settings_write(request, 'settings_airport_info')
     if denied:
         return denied
-
-    if airport_4code.upper() == 'DEFAULT':
-        return JsonResponse({'success': False, 'error': 'default 行不可修改或删除'}, status=403)
-
-    try:
-        airport = AirportInfo.objects.get(airport_4code=airport_4code)
-    except AirportInfo.DoesNotExist:
-        return JsonResponse({'success': False, 'error': '机场不存在'}, status=404)
 
     if request.method == 'PUT':
         try:
@@ -139,16 +173,10 @@ def settings_airport_info_detail(request, airport_4code, time_mode='current'):
             if a3 and (len(a3) != 3 or not a3.isalpha()):
                 return JsonResponse({'success': False, 'error': '机场三字代码必须为恰好3位英文大写字母'}, status=400)
 
-            for field in ['airport_name', 'classification', 'area',
-                          'taf_init_time', 'import_check_interval', 'taf_max_delay',
-                          'area_code', 'forecast_phone', 'observation_phone', 'other_phone']:
-                if field in data:
-                    val = data[field]
-                    if val == '':
-                        val = None
-                    setattr(airport, field, val)
-            if 'airport_3code' in data:
-                airport.airport_3code = a3
+            fields = _airport_info_fields(data, a3)
+            for key, value in fields.items():
+                setattr(airport, key, value)
+            airport.catalog_only = False
             airport.save()
             logger.info(f"[设置] 用户 {user_code} 修改机场: {airport_4code}")
             return JsonResponse({'success': True, 'message': '修改成功'})
@@ -736,102 +764,203 @@ def settings_weather_alert_detail(request, alert_id, time_mode='current'):
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
 
 
-# ===================== 机场坐标 =====================
+def _backfill_prefix(rule: AirportPrefixArea):
+    """只补分类或区域仍为空的机场，不改已经写过的区域。"""
+    from core.airport_directory import match_prefix
+    prefix = (rule.prefix or '').upper()
+    if not prefix:
+        return
+    for airport in AirportInfo.objects.filter(airport_4code__startswith=prefix).iterator():
+        if (airport.classification or '').strip() and (airport.area or '').strip():
+            continue
+        matched = match_prefix(airport.airport_4code)
+        if matched is None or matched.prefix != prefix:
+            continue
+        changed = []
+        if not (airport.classification or '').strip():
+            airport.classification = rule.classification
+            changed.append('classification')
+        if not (airport.area or '').strip():
+            airport.area = rule.area
+            changed.append('area')
+        if changed:
+            airport.save(update_fields=changed)
+
+
+def _prefix_payload(data):
+    prefix = (data.get('prefix') or '').strip().upper()
+    classification = (data.get('classification') or '').strip()
+    area = (data.get('area') or '').strip()
+    remark = data.get('remark') or ''
+    if not prefix or len(prefix) > 4 or not prefix.isalpha():
+        raise ValueError('前缀须为 1–4 位英文字母')
+    if classification not in ('国内', '国际'):
+        raise ValueError('性质只能是国内或国际')
+    if not area:
+        raise ValueError('请填写区域')
+    return prefix, classification, area, remark
+
+
+# ===================== 机场区域 =====================
 
 @csrf_exempt
 @require_http_methods(["GET", "POST"])
-def settings_airport_location(request, time_mode='current'):
+def settings_prefix_area(request, time_mode='current'):
     user_code = _get_user_code(request, time_mode)
-
     if request.method == 'GET':
-        try:
-            rows = list(AirportLocation.objects.values(
-                'airport_4code', 'latitude', 'longitude', 'airport_name'
-            ).order_by('airport_4code'))
-            return JsonResponse({'success': True, 'data': rows})
-        except Exception as e:
-            logger.error(f"获取机场坐标失败: {e}")
-            return JsonResponse({'success': False, 'error': str(e)}, status=500)
+        rows = list(AirportPrefixArea.objects.values(
+            'prefix', 'classification', 'area', 'remark'
+        ).order_by('prefix'))
+        return JsonResponse({'success': True, 'data': rows})
 
-    denied = _deny_settings_write(request, 'settings_airport_location')
+    denied = _deny_settings_write(request, 'settings_prefix_area')
     if denied:
         return denied
     try:
         data = json.loads(request.body)
-        code = (data.get('airport_4code') or '').strip().upper()
-        if len(code) != 4 or not code.isalpha():
-            return JsonResponse({'success': False, 'error': '机场四字代码必须为4位英文大写字母'}, status=400)
-        if AirportLocation.objects.filter(airport_4code=code).exists():
-            return JsonResponse({'success': False, 'error': f'{code} 坐标记录已存在'}, status=400)
-
-        lat = data.get('latitude')
-        lon = data.get('longitude')
-        if lat is None or lon is None or lat == '' or lon == '':
-            return JsonResponse({'success': False, 'error': '纬度和经度为必填项'}, status=400)
-
-        AirportLocation.objects.create(
-            airport_4code=code,
-            latitude=float(lat),
-            longitude=float(lon),
-            airport_name=data.get('airport_name') or None,
+        prefix, classification, area, remark = _prefix_payload(data)
+        if AirportPrefixArea.objects.filter(prefix=prefix).exists():
+            return JsonResponse({'success': False, 'error': f'前缀 {prefix} 已存在'}, status=400)
+        rule = AirportPrefixArea.objects.create(
+            prefix=prefix, classification=classification, area=area, remark=remark,
         )
-        logger.info(f"[设置] 用户 {user_code} 新增机场坐标: {code}")
-        return JsonResponse({'success': True, 'message': f'{code} 坐标新增成功'})
+        _backfill_prefix(rule)
+        logger.info(f"[设置] 用户 {user_code} 新增前缀区域: {prefix}")
+        return JsonResponse({'success': True, 'message': f'前缀 {prefix} 已保存'})
     except (json.JSONDecodeError, ValueError) as e:
-        return JsonResponse({'success': False, 'error': f'数据格式错误: {e}'}, status=400)
+        return JsonResponse({'success': False, 'error': str(e)}, status=400)
     except Exception as e:
-        logger.error(f"新增机场坐标失败: {e}")
+        logger.error(f"新增前缀区域失败: {e}")
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["PUT", "DELETE"])
+def settings_prefix_area_detail(request, prefix, time_mode='current'):
+    user_code = _get_user_code(request, time_mode)
+    denied = _deny_settings_write(request, 'settings_prefix_area')
+    if denied:
+        return denied
+    try:
+        rule = AirportPrefixArea.objects.get(prefix=prefix.upper())
+    except AirportPrefixArea.DoesNotExist:
+        return JsonResponse({'success': False, 'error': '前缀不存在'}, status=404)
+
+    if request.method == 'DELETE':
+        rule.delete()
+        logger.info(f"[设置] 用户 {user_code} 删除前缀区域: {prefix}")
+        return JsonResponse({'success': True, 'message': '已删除'})
+
+    try:
+        data = json.loads(request.body)
+        _prefix, classification, area, remark = _prefix_payload({**data, 'prefix': rule.prefix})
+        rule.classification = classification
+        rule.area = area
+        rule.remark = remark
+        rule.save()
+        _backfill_prefix(rule)
+        logger.info(f"[设置] 用户 {user_code} 修改前缀区域: {rule.prefix}")
+        return JsonResponse({'success': True, 'message': '修改成功'})
+    except (json.JSONDecodeError, ValueError) as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=400)
+    except Exception as e:
+        logger.error(f"修改前缀区域失败: {e}")
+        return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+
+def _taf_payload(data):
+    code = (data.get('airport_4code') or '').strip().upper()
+    if len(code) != 4 or not code.isalpha():
+        raise ValueError('机场四字代码必须为恰好4位英文大写字母')
+    hour = int(data.get('taf_init_time'))
+    interval = int(data.get('import_check_interval'))
+    delay = int(data.get('taf_max_delay'))
+    if hour < 0 or hour > 23:
+        raise ValueError('首份预报发布时间须为 0–23 的整数')
+    if interval not in (3, 6):
+        raise ValueError('发布间隔只能是 3 或 6 小时')
+    if delay < 0 or delay > 60:
+        raise ValueError('接收延迟须为 0–60 的整数')
+    return code, hour, interval, delay
+
+
+# ===================== 预报入库告警 =====================
+
+@csrf_exempt
+@require_http_methods(["GET", "POST"])
+def settings_taf_import(request, time_mode='current'):
+    user_code = _get_user_code(request, time_mode)
+    if request.method == 'GET':
+        rows = list(AirportTafImportConfig.objects.values(
+            'airport_4code', 'taf_init_time', 'import_check_interval', 'taf_max_delay'
+        ).order_by('airport_4code'))
+        return JsonResponse({'success': True, 'data': rows})
+
+    denied = _deny_settings_write(request, 'settings_taf_import')
+    if denied:
+        return denied
+    try:
+        data = json.loads(request.body)
+        code, hour, interval, delay = _taf_payload(data)
+        if AirportTafImportConfig.objects.filter(airport_4code=code).exists():
+            return JsonResponse({'success': False, 'error': f'{code} 的预报入库告警已存在'}, status=400)
+        AirportTafImportConfig.objects.create(
+            airport_4code=code,
+            taf_init_time=hour,
+            import_check_interval=interval,
+            taf_max_delay=delay,
+        )
+        AirportInfo.objects.filter(airport_4code=code).update(taf_infer_attempted=True)
+        logger.info(f"[设置] 用户 {user_code} 新增预报入库配置: {code}")
+        return JsonResponse({'success': True, 'message': f'{code} 预报入库告警已保存'})
+    except (json.JSONDecodeError, ValueError, TypeError) as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=400)
+    except Exception as e:
+        logger.error(f"新增预报入库配置失败: {e}")
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
 
 
 @csrf_exempt
 @require_http_methods(["GET", "PUT", "DELETE"])
-def settings_airport_location_detail(request, airport_4code, time_mode='current'):
+def settings_taf_import_detail(request, airport_4code, time_mode='current'):
     user_code = _get_user_code(request, time_mode)
-
-    try:
-        obj = AirportLocation.objects.get(airport_4code=airport_4code.upper())
-    except AirportLocation.DoesNotExist:
-        return JsonResponse({'success': False, 'error': f'未找到 {airport_4code.upper()} 的坐标记录'}, status=404)
-
+    code = airport_4code.upper()
     if request.method == 'GET':
+        obj = AirportTafImportConfig.objects.filter(airport_4code=code).first()
+        if not obj:
+            return JsonResponse({'success': False, 'error': '尚未配置'}, status=404)
         return JsonResponse({'success': True, 'data': {
             'airport_4code': obj.airport_4code,
-            'latitude': float(obj.latitude),
-            'longitude': float(obj.longitude),
-            'airport_name': obj.airport_name,
+            'taf_init_time': obj.taf_init_time,
+            'import_check_interval': obj.import_check_interval,
+            'taf_max_delay': obj.taf_max_delay,
         }})
 
-    denied = _deny_settings_write(request, 'settings_airport_location')
+    denied = _deny_settings_write(request, 'settings_taf_import')
     if denied:
         return denied
-
-    if request.method == 'PUT':
-        try:
-            data = json.loads(request.body)
-            if 'latitude' in data:
-                if data['latitude'] == '':
-                    return JsonResponse({'success': False, 'error': '纬度为必填项'}, status=400)
-                obj.latitude = float(data['latitude'])
-            if 'longitude' in data:
-                if data['longitude'] == '':
-                    return JsonResponse({'success': False, 'error': '经度为必填项'}, status=400)
-                obj.longitude = float(data['longitude'])
-            if 'airport_name' in data:
-                obj.airport_name = data['airport_name'] or None
-            obj.save()
-            logger.info(f"[设置] 用户 {user_code} 修改机场坐标: {airport_4code}")
-            return JsonResponse({'success': True, 'message': '修改成功'})
-        except (json.JSONDecodeError, ValueError) as e:
-            return JsonResponse({'success': False, 'error': f'数据格式错误: {e}'}, status=400)
-        except Exception as e:
-            logger.error(f"修改机场坐标失败: {e}")
-            return JsonResponse({'success': False, 'error': str(e)}, status=500)
+    if request.method == 'DELETE':
+        AirportTafImportConfig.objects.filter(airport_4code=code).delete()
+        logger.info(f"[设置] 用户 {user_code} 删除预报入库配置: {code}")
+        return JsonResponse({'success': True, 'message': '已删除'})
 
     try:
-        obj.delete()
-        logger.info(f"[设置] 用户 {user_code} 删除机场坐标: {airport_4code}")
-        return JsonResponse({'success': True, 'message': f'{airport_4code} 坐标已删除'})
+        data = json.loads(request.body)
+        data['airport_4code'] = code
+        _code, hour, interval, delay = _taf_payload(data)
+        AirportTafImportConfig.objects.update_or_create(
+            airport_4code=code,
+            defaults={
+                'taf_init_time': hour,
+                'import_check_interval': interval,
+                'taf_max_delay': delay,
+            },
+        )
+        AirportInfo.objects.filter(airport_4code=code).update(taf_infer_attempted=True)
+        logger.info(f"[设置] 用户 {user_code} 修改预报入库配置: {code}")
+        return JsonResponse({'success': True, 'message': '修改成功'})
+    except (json.JSONDecodeError, ValueError, TypeError) as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=400)
     except Exception as e:
-        logger.error(f"删除机场坐标失败: {e}")
+        logger.error(f"修改预报入库配置失败: {e}")
         return JsonResponse({'success': False, 'error': str(e)}, status=500)

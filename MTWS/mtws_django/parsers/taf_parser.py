@@ -16,7 +16,7 @@ from typing import List, Dict, Any, Optional, Tuple
 
 from django.conf import settings
 from parsers.models import Taf, ParseLog
-from core.models import AirportAlertThresholds, AirportInfo, WeatherAlertLevels
+from core.models import AirportAlertThresholds, AirportTafImportConfig, WeatherAlertLevels
 from parsers.cloud_amount import (
     cloud_amount_qualifies,
     cloud_object_amount,
@@ -1948,9 +1948,7 @@ class TafParser:
         # 批量查询所有相关机场的 airport_info 配置
         airport_configs = {
             a.airport_4code: a
-            for a in AirportInfo.objects.filter(airport_4code__in=airport_codes).only(
-                'airport_4code', 'taf_init_time', 'taf_max_delay', 'import_check_interval'
-            )
+            for a in AirportTafImportConfig.objects.filter(airport_4code__in=airport_codes)
         }
 
         # --- 步骤1：对有 N 行且未告警的机场做入库检查 ---
@@ -1960,7 +1958,12 @@ class TafParser:
         for row in rows_to_check:
             airport_code = row['airport_4code']
             cfg = airport_configs.get(airport_code)
-            if not cfg:
+            if (
+                not cfg
+                or cfg.taf_init_time is None
+                or cfg.taf_max_delay is None
+                or cfg.import_check_interval is None
+            ):
                 continue
 
             check_obs_time = calc_taf_expected_issue_ms(

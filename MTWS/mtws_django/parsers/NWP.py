@@ -3,7 +3,7 @@
 从 open-meteo API 获取各有航班机场的温度预报数据，
 截取当前时刻起 48 小时内符合极端温度阈值的数据并缓存。
 
-机场坐标来源：airport_location。本次解析用到、而表中没有的机场，才请求跑道接口并写回。
+机场坐标来源：airport_info。本次解析用到、而表中没有坐标的机场，才请求跑道接口并写回。
 """
 
 import logging
@@ -49,7 +49,7 @@ class NwpParser:
 
         流程：
           1. 查询有航班（has_flight=True）的机场四字代码
-          2. 从 airport_location 表批量获取机场坐标（十进制度数，无需转换）
+          2. 从 airport_info 批量获取机场坐标（十进制度数，无需转换）
           3. 调用 open-meteo API（一次请求涵盖所有机场）
           4. 截取当前 UTC 时刻起向后 48 小时的数据
           5. 仅保留 temperature_2m >= 33 或 <= -38 的时刻

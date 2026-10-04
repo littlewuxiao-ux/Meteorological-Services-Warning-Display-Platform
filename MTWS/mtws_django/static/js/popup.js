@@ -669,7 +669,7 @@ function createPopupContentHTML(airport) {
             <div class="metar-popup-header">
                 <div class="metar-popup-airport">
                     <div class="airport-code">${latestPopup.airport_4code}</div>
-                    <div class="airport-name">${latestPopup.airport_name || ''}</div>
+                    <div class="airport-name">${latestPopup.airport_name || '机场名称未配置'}</div>
                 </div>
                 <div class="popup-header-divider"></div>
                 ${warningBadgesHTML}

@@ -13,7 +13,10 @@ from datetime import datetime, timedelta, timezone
 import json
 import logging
 
-from core.models import AirportInfo, AirportAlertThresholds, WeatherAlertLevels, AreaOptions, DataRefreshTimer
+from core.models import (
+    AirportInfo, AirportAlertThresholds, AirportTafImportConfig,
+    WeatherAlertLevels, AreaOptions, DataRefreshTimer,
+)
 from parsers.models import Flight, Metar, Taf, ParseLog
 from parsers.taf_parser import calc_taf_expected_issue_ms
 from parsers.parsing_manager import ParsingManager
@@ -112,30 +115,36 @@ def airports_overview(request, time_mode='current'):
                 }
             })
         
-        # 2. 获取机场信息（包括未配置的机场）
-        configured_airports = {info.airport_4code: info for info in AirportInfo.objects.filter(
-            airport_4code__in=active_airports
-        ).select_related()}
-        
-        # 获取default配置用于未配置的机场
-        default_airport_info = AirportInfo.objects.filter(airport_4code='default').first()
+        # 2. 补齐缺失资料后读取机场信息。资料不全仍保留在列表中。
+        from core.airport_directory import (
+            airport_config_gaps, display_airport_name, ensure_flight_airports,
+        )
+        try:
+            ensure_flight_airports(
+                list(active_airports),
+                time_mode=time_mode,
+                token=_request_token(request, time_mode),
+            )
+        except Exception as exc:
+            logger.error(f"补齐机场资料失败: {exc}")
+        configured_airports = {
+            info.airport_4code: info
+            for info in AirportInfo.objects.filter(airport_4code__in=active_airports)
+        }
+        taf_configs = {
+            cfg.airport_4code: cfg
+            for cfg in AirportTafImportConfig.objects.filter(airport_4code__in=active_airports)
+        }
         
         # 3. 构建机场数据
         airports_data = []
         chosen_carriers = selected_carrier_codes()
         for airport_code in active_airports:
-            # 获取机场信息，如果未配置则使用default配置
-            if airport_code in configured_airports:
-                airport = configured_airports[airport_code]
-            elif default_airport_info:
-                # 使用default配置创建临时机场信息对象
-                from copy import deepcopy
-                airport = deepcopy(default_airport_info)
-                airport.airport_4code = airport_code
-                airport.airport_name = f'未配置机场 ({airport_code})'
-            else:
-                # 如果连default都没有，跳过该机场
-                continue
+            airport = configured_airports.get(airport_code)
+            in_directory = airport is not None
+            if airport is None:
+                airport = AirportInfo(airport_4code=airport_code)
+            gaps = airport_config_gaps(airport, taf_configs.get(airport_code))
             # 获取最新的航班数据
             flight_data = Flight.objects.filter(
                 airport_4code=airport.airport_4code,
@@ -161,8 +170,12 @@ def airports_overview(request, time_mode='current'):
             # 构建机场数据
             airport_data = {
                 'airport_4code': airport.airport_4code,
-                'airport_name': airport.airport_name,
-                'is_configured': airport_code in configured_airports,
+                'airport_name': display_airport_name(airport.airport_name),
+                'is_configured': not gaps,
+                'in_directory': in_directory,
+                'config_gaps': gaps,
+                'latitude': None if airport.latitude is None else float(airport.latitude),
+                'longitude': None if airport.longitude is None else float(airport.longitude),
                 'area': airport.area,
                 'area_code': airport.area_code,
                 'classification': airport.classification,
@@ -1286,7 +1299,7 @@ def get_taf_import_alerts(request, time_mode):
     未处理：data_status IN ('N','C') 且 import_alert='Y' 且 import_alert_handle_time IS NULL。
     已处理：import_alert='Y' 且 import_alert_handle_time IS NOT NULL（含 H 行自动处理记录）。
     排序：未处理在前，已处理在后，均按 created_at 降序。
-    taf_type 字段由 airport_info.taf_init_time 决定：6→FT，3→FC，其他→TAF。
+    taf_type 由预报发布间隔决定：6→FT，3→FC，其他→TAF。配置不完整时不算应发时间。
     """
     from utils.access_control import resolve_access_identity, has_perm
     if not has_perm(resolve_access_identity(request), 'import_alert', 'activate'):
@@ -1321,27 +1334,33 @@ def get_taf_import_alerts(request, time_mode):
         airport_codes = list({t.airport_4code for t in sorted_alerts})
         airport_cfg = {
             a.airport_4code: a
-            for a in AirportInfo.objects.filter(airport_4code__in=airport_codes).only(
-                'airport_4code', 'taf_init_time', 'taf_max_delay', 'import_check_interval'
-            )
+            for a in AirportTafImportConfig.objects.filter(airport_4code__in=airport_codes)
         }
         try:
             leeway_minutes = settings.MTWS_CONFIG['TAF_IMPORT_ALERT']['TAF_ISSUE_LEEWAY_MINUTES']
         except (KeyError, TypeError):
             leeway_minutes = 30
 
+        def _taf_ready(cfg):
+            return (
+                cfg is not None
+                and cfg.taf_init_time is not None
+                and cfg.taf_max_delay is not None
+                and cfg.import_check_interval is not None
+            )
+
         def _taf_type(airport_code):
             cfg = airport_cfg.get(airport_code)
-            init_t = cfg.taf_init_time if cfg else None
-            if init_t == 6:
+            interval = cfg.import_check_interval if cfg else None
+            if interval == 6:
                 return 'FT'
-            elif init_t == 3:
+            if interval == 3:
                 return 'FC'
             return 'TAF'
 
         def _expected_issue_time(t):
             cfg = airport_cfg.get(t.airport_4code)
-            if not cfg:
+            if not _taf_ready(cfg):
                 return None
             # 未处理随当前时刻滚动；已处理停在告警发生时算出的那个应发点
             ref_ms = t.import_alert_time if t.import_alert_handle_time else int(datetime.now(timezone.utc).timestamp() * 1000)
@@ -1567,16 +1586,27 @@ def _serialize_taf(taf):
     return result
 
 
-def _get_system_airport_search_data(code):
+def _request_token(request, time_mode):
+    if time_mode != 'current':
+        return None
+    auth_header = request.headers.get('Authorization') or ''
+    if auth_header.startswith('Bearer '):
+        return auth_header[7:]
+    try:
+        from parsers.scheduler import get_scheduler_token
+        return get_scheduler_token()
+    except Exception:
+        return None
+
+
+def _get_system_airport_search_data(code, time_mode='current', token=None):
     """从数据库读取系统内机场（has_flight=True）的搜索数据"""
+    from core.airport_directory import display_airport_name, ensure_flight_airports
+    try:
+        ensure_flight_airports([code], time_mode=time_mode, token=token)
+    except Exception as exc:
+        logger.error(f"补齐机场 {code} 资料失败: {exc}")
     airport = AirportInfo.objects.filter(airport_4code=code).first()
-    if not airport:
-        default_airport_info = AirportInfo.objects.filter(airport_4code='default').first()
-        if default_airport_info:
-            from copy import deepcopy
-            airport = deepcopy(default_airport_info)
-            airport.airport_4code = code
-            airport.airport_name = f'未配置机场 ({code})'
 
     flight_data = Flight.objects.filter(
         airport_4code=code, has_flight=True
@@ -1592,7 +1622,7 @@ def _get_system_airport_search_data(code):
 
     return {
         'airport_4code': code,
-        'airport_name': airport.airport_name if airport else code,
+        'airport_name': display_airport_name(airport.airport_name) if airport else display_airport_name(''),
         'is_system_airport': True,
         'area': airport.area if airport else '',
         'area_code': airport.area_code if airport else '',
@@ -1615,15 +1645,9 @@ def _get_external_airport_search_data(code, time_mode, token):
     """从外部 METAR/TAF API 实时获取系统外机场数据，不写入数据库"""
     import pandas as pd
 
-    # 尝试从 airport_location 表获取机场名称
-    airport_name = code
-    try:
-        from core.models import AirportLocation
-        loc = AirportLocation.objects.filter(airport_4code=code).values('airport_name').first()
-        if loc and loc.get('airport_name'):
-            airport_name = loc['airport_name']
-    except Exception:
-        pass
+    from core.airport_directory import display_airport_name
+    loc = AirportInfo.objects.filter(airport_4code=code).values('airport_name').first()
+    airport_name = display_airport_name(loc['airport_name']) if loc else code
 
     metar_result = []
     taf_result = []
@@ -1792,7 +1816,7 @@ def airport_search(request, time_mode='current'):
                 try:
                     is_system = Flight.objects.filter(airport_4code=code, has_flight=True).exists()
                     if is_system:
-                        data = _get_system_airport_search_data(code)
+                        data = _get_system_airport_search_data(code, time_mode, token)
                     else:
                         data = _get_external_airport_search_data(code, time_mode, token)
                     result.append(data)

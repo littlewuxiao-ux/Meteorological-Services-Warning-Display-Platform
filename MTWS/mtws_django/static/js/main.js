@@ -2381,14 +2381,14 @@ function createContextMenu(airportCode, x, y) {
         menu.appendChild(makeItem(pinText, () => toggleAirportPin(airportCode)));
     }
 
-    // 机场信息配置
+    // 机场信息配置：等同于在设置里输入该四字代码并查询，再进入配置页
     menu.appendChild(makeItem('机场信息配置', () => {
-        if (!window.SettingsModal) return;
-        if (isUnconfigured) {
-            window.SettingsModal.newAirportWithCode(airportCode);
-        } else {
-            window.SettingsModal.openAndEdit(airportCode);
-        }
+        if (!window.SettingsModal || !window.SettingsModal.openAndEdit) return;
+        window.SettingsModal.openAndEdit(airportCode);
+    }));
+    menu.appendChild(makeItem('预报入库告警', () => {
+        if (!window.SettingsModal || !window.SettingsModal.openAndEditTaf) return;
+        window.SettingsModal.openAndEditTaf(airportCode);
     }));
 
     document.body.appendChild(menu);
@@ -2446,7 +2446,8 @@ function createAirportRow(airport) {
                 <div class="airport-code-container" style="${airportCodeContainerStyle}">
                     <div class="airport-code">${airport.airport_4code}</div>
                 </div>
-                <div class="airport-name">${airport.airport_name || ''}</div>
+                <div class="airport-name">${airport.airport_name || '机场名称未配置'}</div>
+                ${(airport.config_gaps && airport.config_gaps.length) ? `<div class="airport-config-gap" style="color:#c0392b;font-size:12px;line-height:1.35;margin-top:2px;">${airport.config_gaps.join('；')}</div>` : ''}
             </div>
             ${buildWeatherInfoDiv(airport.airport_4code, latestMetar)}
             <div class="forecast-timeline">

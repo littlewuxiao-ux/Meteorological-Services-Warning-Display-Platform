@@ -89,7 +89,7 @@ function createPlainRow(airport) {
     <div class="plain-row" data-code="${code}">
       <div class="plain-airport" oncontextmenu="handleAirportRightClick(event, '${code}')">
         <div class="plain-code${codeClass}"${codeStyle} onclick="showAirportDetail('${code}')">${code}</div>
-        <div class="plain-name">${airport.airport_name || ''}</div>
+        <div class="plain-name">${airport.airport_name || '机场名称未配置'}</div>
       </div>
       <div class="plain-body">
         <div class="plain-line plain-line-metar">

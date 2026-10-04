@@ -9,6 +9,7 @@
   // ========== 状态 ==========
   let areaOptions = {};          // { '国内': [...], '国际': [...] }
   let airportEditCode = null;    // 正在编辑的机场四字代码，null=新增
+  let airportCurrentCode = null; // 当前查询的四字代码
   let areaEditId = null;
 
   // ========== 工具 ==========
@@ -85,13 +86,14 @@
   async function loadTab(tabName) {
     switch (tabName) {
       case 'airport-info': await loadAirportInfo(); break;
+      case 'prefix-area': await loadPrefixAreas(); break;
+      case 'taf-import': await loadTafImport(); break;
       case 'area-options': await loadAreaOptions(); break;
       case 'data-refresh-timer': await loadTimers(); break;
       case 'popup': await loadPopupSettings(); break;
       case 'alert-thresholds': await loadAlertThresholds(); break;
       case 'weather-type': await loadWeatherType(); break;
       case 'weather-alert': await loadWeatherAlert(); break;
-      case 'airport-location': await loadAirportLocation(); break;
       case 'radar-alert': await loadRadarAlertSettings(); break;
       case 'map-style': await loadMapStyleSettings(); break;
       case 'trend-alert':
@@ -100,31 +102,78 @@
     }
   }
 
-  // ========== Tab1: 机场信息 ==========
+  // ========== Tab1: 机场信息（按四字代码查询） ==========
   async function loadAirportInfo() {
     await refreshAreaOptionsCache();
-    const res = await apiFetch(apiUrl('settings/airport-info/'));
-    if (!res.success) { showMsg('airport-msg', res.error, 'error'); return; }
-    const tbody = document.getElementById('airport-tbody');
-    tbody.innerHTML = res.data.map(a => {
-      const isDefault = a.airport_4code === 'default';
-      const ops = isDefault
-        ? '<span class="settings-readonly-badge">系统默认</span>'
-        : `<button class="settings-edit-btn" onclick="SettingsModal.editAirport('${escHtml(a.airport_4code)}')">编辑</button>
-           <button class="settings-del-btn" onclick="SettingsModal.deleteAirport('${escHtml(a.airport_4code)}')">删除</button>`;
-      return `<tr class="${isDefault ? 'settings-row-readonly' : ''}">
-        <td>${escHtml(a.airport_4code)}</td>
-        <td>${escHtml(a.airport_name)}</td>
-        <td>${escHtml(a.classification)}</td>
-        <td>${escHtml(a.area)}</td>
-        <td>${escHtml(a.taf_init_time)}</td>
-        <td>${a.import_check_interval}h</td>
-        <td>${escHtml(a.taf_max_delay)}</td>
-        <td>${escHtml(a.airport_3code)}</td>
-        <td>${ops}</td>
-      </tr>`;
-    }).join('');
+    const input = document.getElementById('airport-search-input');
+    if (input) input.value = '';
+    const area = document.getElementById('airport-result-area');
+    if (area) area.innerHTML = '';
     hideAirportForm();
+    airportCurrentCode = null;
+  }
+
+  function renderAirportResult(a) {
+    const area = document.getElementById('airport-result-area');
+    if (!area) return;
+    area.innerHTML = `
+      <table class="settings-table settings-table-auto loc-result-table">
+        <thead><tr><th>四字代码</th><th>名称</th><th>类别</th><th>区域</th><th>纬度</th><th>经度</th><th>三字代码</th><th>操作</th></tr></thead>
+        <tbody><tr>
+          <td>${escHtml(a.airport_4code)}</td>
+          <td>${escHtml(a.airport_name || '')}</td>
+          <td>${escHtml(a.classification || '')}</td>
+          <td>${escHtml(a.area || '')}</td>
+          <td>${a.latitude == null ? '' : a.latitude}</td>
+          <td>${a.longitude == null ? '' : a.longitude}</td>
+          <td>${escHtml(a.airport_3code || '')}</td>
+          <td>
+            <button class="settings-edit-btn" onclick="SettingsModal.editAirport('${escHtml(a.airport_4code)}')">编辑</button>
+            <button class="settings-del-btn" onclick="SettingsModal.deleteAirport('${escHtml(a.airport_4code)}')">删除</button>
+          </td>
+        </tr></tbody>
+      </table>`;
+  }
+
+  function renderAirportNotFound(code) {
+    const area = document.getElementById('airport-result-area');
+    if (!area) return;
+    area.innerHTML = `
+      <div class="loc-not-found">
+        未找到 <strong>${escHtml(code)}</strong> 的机场信息
+        <button class="settings-add-btn loc-add-inline-btn" onclick="SettingsModal.addAirportForCode('${escHtml(code)}')">+ 新增</button>
+      </div>`;
+  }
+
+  async function searchAirport(presetCode, openForm) {
+    const raw = presetCode != null ? presetCode : document.getElementById('airport-search-input').value;
+    const code = String(raw || '').trim().toUpperCase();
+    const input = document.getElementById('airport-search-input');
+    if (input) input.value = code;
+    if (code.length !== 4 || !/^[A-Z]{4}$/.test(code)) {
+      showMsg('airport-msg', '请输入4位英文大写四字代码', 'error');
+      return;
+    }
+    airportCurrentCode = code;
+    hideAirportForm();
+    const res = await apiFetch(apiUrl(`settings/airport-info/${code}/`));
+    if (res.success && res.data) {
+      renderAirportResult(res.data);
+      if (openForm) {
+        airportEditCode = code;
+        showAirportForm(res.data);
+      }
+    } else if (res && res.error && String(res.error).indexOf('未找到') !== 0) {
+      const area = document.getElementById('airport-result-area');
+      if (area) area.innerHTML = '';
+      showMsg('airport-msg', res.error, 'error');
+    } else {
+      renderAirportNotFound(code);
+      if (openForm) {
+        airportEditCode = null;
+        showAirportForm(null, code);
+      }
+    }
   }
 
   async function refreshAreaOptionsCache() {
@@ -137,25 +186,26 @@
     });
   }
 
-  function updateAreaSelect(classification) {
+  function updateAreaSelect(classification, current) {
     const sel = document.getElementById('af-area');
     const areas = areaOptions[classification] || [];
-    sel.innerHTML = areas.map(a => `<option value="${escHtml(a)}">${escHtml(a)}</option>`).join('');
+    sel.innerHTML = '<option value="">请选择</option>' + areas.map(a => `<option value="${escHtml(a)}">${escHtml(a)}</option>`).join('');
+    if (current) sel.value = current;
   }
 
-  function showAirportForm(data) {
+  function showAirportForm(data, presetCode) {
     const panel = document.getElementById('airport-form-panel');
-    panel.style.display = 'flex';
-    panel.style.flexDirection = 'column';
+    panel.style.display = 'block';
     document.getElementById('airport-form-title').textContent = data ? '编辑机场' : '新增机场';
 
     const isEdit = !!data;
-    document.getElementById('af-4code').disabled = isEdit;
-    document.getElementById('af-4code').value = data ? data.airport_4code : '';
+    const codeEl = document.getElementById('af-4code');
+    codeEl.disabled = isEdit || !!presetCode;
+    codeEl.value = data ? data.airport_4code : (presetCode || '');
     document.getElementById('af-3code').value = data ? (data.airport_3code || '') : '';
     document.getElementById('af-name').value = data ? (data.airport_name || '') : '';
-    document.getElementById('af-taf-init').value = data ? (data.taf_init_time ?? '') : '';
-    document.getElementById('af-max-delay').value = data ? (data.taf_max_delay ?? '') : '';
+    document.getElementById('af-lat').value = data && data.latitude != null ? data.latitude : '';
+    document.getElementById('af-lon').value = data && data.longitude != null ? data.longitude : '';
     document.getElementById('af-area-code').value = data ? (data.area_code || '') : '';
     document.getElementById('af-forecast-phone').value = data ? (data.forecast_phone || '') : '';
     document.getElementById('af-obs-phone').value = data ? (data.observation_phone || '') : '';
@@ -164,11 +214,7 @@
     const classification = data ? (data.classification || '国内') : '国内';
     const chk = document.getElementById('af-classification-chk');
     chk.checked = classification === '国际';
-    updateAreaSelect(classification);
-    if (data && data.area) document.getElementById('af-area').value = data.area;
-
-    const intervalChk = document.getElementById('af-interval-chk');
-    intervalChk.checked = data ? (parseInt(data.import_check_interval) === 6) : false;
+    updateAreaSelect(classification, data ? data.area : '');
   }
 
   function hideAirportForm() {
@@ -183,10 +229,8 @@
     const classificationChk = document.getElementById('af-classification-chk').checked;
     const classification = classificationChk ? '国际' : '国内';
     const area = document.getElementById('af-area').value;
-    const tafInit = document.getElementById('af-taf-init').value;
-    const intervalChk = document.getElementById('af-interval-chk').checked;
-    const importInterval = intervalChk ? 6 : 3;
-    const maxDelay = document.getElementById('af-max-delay').value;
+    const lat = document.getElementById('af-lat').value;
+    const lon = document.getElementById('af-lon').value;
 
     if (!code || code.length !== 4 || !/^[A-Z]{4}$/.test(code)) {
       showMsg('airport-msg', '机场四字代码必须为恰好4位英文大写字母', 'error'); return;
@@ -194,14 +238,11 @@
     if (a3 && (a3.length !== 3 || !/^[A-Z]{3}$/.test(a3))) {
       showMsg('airport-msg', '机场三字代码必须为恰好3位英文大写字母', 'error'); return;
     }
-    if (!name || name.length < 3 || name.length > 15) {
-      showMsg('airport-msg', '机场名称为3–15位字符', 'error'); return;
+    if (name.length > 100) {
+      showMsg('airport-msg', '机场名称不能超过100个字符', 'error'); return;
     }
-    if (!area) { showMsg('airport-msg', '请选择区域', 'error'); return; }
-    if (tafInit === '' || isNaN(tafInit)) { showMsg('airport-msg', '请填写首份预报发布时间', 'error'); return; }
-    if (maxDelay === '' || isNaN(maxDelay) || maxDelay < 0 || maxDelay > 99) {
-      showMsg('airport-msg', '预报接收延迟时间需为0–99的整数', 'error'); return;
-    }
+    if (lat !== '' && isNaN(lat)) { showMsg('airport-msg', '纬度须为数字', 'error'); return; }
+    if (lon !== '' && isNaN(lon)) { showMsg('airport-msg', '经度须为数字', 'error'); return; }
 
     const payload = {
       airport_4code: code,
@@ -209,9 +250,8 @@
       airport_name: name,
       classification,
       area,
-      taf_init_time: parseInt(tafInit),
-      import_check_interval: importInterval,
-      taf_max_delay: parseInt(maxDelay),
+      latitude: lat === '' ? null : parseFloat(lat),
+      longitude: lon === '' ? null : parseFloat(lon),
       area_code: document.getElementById('af-area-code').value.trim() || null,
       forecast_phone: document.getElementById('af-forecast-phone').value.trim() || null,
       observation_phone: document.getElementById('af-obs-phone').value.trim() || null,
@@ -227,7 +267,9 @@
     const res = await apiFetch(url, { method, body: JSON.stringify(payload) });
     if (res.success) {
       showMsg('airport-msg', res.message, 'success');
-      await loadAirportInfo();
+      const savedCode = airportEditCode || code;
+      hideAirportForm();
+      await searchAirport(savedCode, false);
     } else {
       showMsg('airport-msg', res.error, 'error');
     }
@@ -596,101 +638,7 @@
     else showMsg('walert-msg', res.error, 'error');
   }
 
-  // ========== Tab9: 机场坐标（按需查询） ==========
-  let locEditCode = null;
-  let locCurrentCode = null;  // 当前查询的四字代码
-
-  function loadAirportLocation() {
-    // Tab切换时只重置到搜索状态，不发请求
-    document.getElementById('loc-search-input').value = '';
-    document.getElementById('loc-result-area').innerHTML = '';
-    document.getElementById('loc-form-panel').style.display = 'none';
-    locCurrentCode = null;
-    locEditCode = null;
-  }
-
-  async function searchLocation() {
-    const code = document.getElementById('loc-search-input').value.trim().toUpperCase();
-    if (code.length !== 4 || !/^[A-Z]{4}$/.test(code)) {
-      showMsg('loc-msg', '请输入4位英文大写四字代码', 'error'); return;
-    }
-    locCurrentCode = code;
-    hideLocForm();
-    const res = await apiFetch(apiUrl(`settings/airport-location/${code}/`));
-    const area = document.getElementById('loc-result-area');
-    if (res.success) {
-      const r = res.data;
-      area.innerHTML = `
-        <table class="settings-table settings-table-auto loc-result-table">
-          <thead><tr><th>四字代码</th><th>纬度</th><th>经度</th><th>机场名称</th><th>操作</th></tr></thead>
-          <tbody><tr>
-            <td>${escHtml(r.airport_4code)}</td>
-            <td>${r.latitude}</td>
-            <td>${r.longitude}</td>
-            <td>${escHtml(r.airport_name)}</td>
-            <td>
-              <button class="settings-edit-btn" onclick="SettingsModal.editLocation('${escHtml(r.airport_4code)}')">编辑</button>
-              <button class="settings-del-btn" onclick="SettingsModal.deleteLocation('${escHtml(r.airport_4code)}')">删除</button>
-            </td>
-          </tr></tbody>
-        </table>`;
-    } else {
-      area.innerHTML = `
-        <div class="loc-not-found">
-          未找到 <strong>${escHtml(code)}</strong> 的坐标记录
-          <button class="settings-add-btn loc-add-inline-btn" onclick="SettingsModal.addLocationForCode('${escHtml(code)}')">+ 新增</button>
-        </div>`;
-    }
-  }
-
-  function showLocForm(data, preset4code) {
-    const panel = document.getElementById('loc-form-panel');
-    panel.style.display = 'block';
-    document.getElementById('loc-form-title').textContent = data ? '编辑机场坐标' : '新增机场坐标';
-    const codeEl = document.getElementById('lf-4code');
-    codeEl.disabled = !!data || !!preset4code;
-    codeEl.value = data ? data.airport_4code : (preset4code || '');
-    document.getElementById('lf-lat').value = data ? data.latitude : '';
-    document.getElementById('lf-lon').value = data ? data.longitude : '';
-    document.getElementById('lf-name').value = data ? (data.airport_name || '') : '';
-  }
-  function hideLocForm() {
-    document.getElementById('loc-form-panel').style.display = 'none';
-    locEditCode = null;
-  }
-
-  async function saveLocation() {
-    const code = document.getElementById('lf-4code').value.trim().toUpperCase();
-    if (!locEditCode && (code.length !== 4 || !/^[A-Z]{4}$/.test(code))) {
-      showMsg('loc-msg', '机场四字代码必须为4位英文大写字母', 'error'); return;
-    }
-    const lat = document.getElementById('lf-lat').value;
-    const lon = document.getElementById('lf-lon').value;
-    if (lat === '' || isNaN(lat)) { showMsg('loc-msg', '纬度为必填数字', 'error'); return; }
-    if (lon === '' || isNaN(lon)) { showMsg('loc-msg', '经度为必填数字', 'error'); return; }
-    const payload = {
-      airport_4code: code,
-      latitude: parseFloat(lat),
-      longitude: parseFloat(lon),
-      airport_name: document.getElementById('lf-name').value.trim() || null,
-    };
-    const isEdit = !!locEditCode;
-    const url = isEdit ? apiUrl(`settings/airport-location/${locEditCode}/`) : apiUrl('settings/airport-location/');
-    const res = await apiFetch(url, { method: isEdit ? 'PUT' : 'POST', body: JSON.stringify(payload) });
-    if (res.success) {
-      showMsg('loc-msg', res.message, 'success');
-      hideLocForm();
-      // 保存后自动刷新搜索结果
-      const savedCode = locEditCode || code;
-      document.getElementById('loc-search-input').value = savedCode;
-      locCurrentCode = savedCode;
-      await searchLocation();
-    } else {
-      showMsg('loc-msg', res.error, 'error');
-    }
-  }
-
-  // ========== Tab10: 雷达告警 ==========
+  // ========== 雷达告警 ==========
   let _radarCfg = null;
 
   async function loadRadarAlertSettings() {
@@ -1335,16 +1283,26 @@
     const afClassChk = document.getElementById('af-classification-chk');
     if (afClassChk) {
       afClassChk.addEventListener('change', () => {
-        updateAreaSelect(afClassChk.checked ? '国际' : '国内');
+        updateAreaSelect(afClassChk.checked ? '国际' : '国内', document.getElementById('af-area').value);
       });
     }
 
-    // 机场表单按钮
-    document.getElementById('airport-add-btn').addEventListener('click', () => {
-      airportEditCode = null;
-      showAirportForm(null);
-    });
+    // 机场信息 — 按四字代码查询
+    const airportSearchInput = document.getElementById('airport-search-input');
+    if (airportSearchInput) {
+      airportSearchInput.addEventListener('keydown', e => { if (e.key === 'Enter') searchAirport(); });
+    }
+    const airportSearchBtn = document.getElementById('airport-search-btn');
+    if (airportSearchBtn) airportSearchBtn.addEventListener('click', () => searchAirport());
     document.getElementById('airport-save-btn').addEventListener('click', saveAirport);
+    const prefixAdd = document.getElementById('prefix-add-btn');
+    if (prefixAdd) prefixAdd.addEventListener('click', () => showPrefixForm(null));
+    const prefixSave = document.getElementById('prefix-save-btn');
+    if (prefixSave) prefixSave.addEventListener('click', savePrefix);
+    const tafAdd = document.getElementById('taf-add-btn');
+    if (tafAdd) tafAdd.addEventListener('click', () => showTafForm(null));
+    const tafSave = document.getElementById('taf-save-btn');
+    if (tafSave) tafSave.addEventListener('click', saveTafImport);
     document.getElementById('airport-cancel-btn').addEventListener('click', hideAirportForm);
 
     // 区域表单按钮
@@ -1372,13 +1330,6 @@
     document.getElementById('walert-add-btn').addEventListener('click', () => { walertEditId = null; showWAlertForm(null); });
     document.getElementById('walert-save-btn').addEventListener('click', saveWeatherAlert);
     document.getElementById('walert-cancel-btn').addEventListener('click', hideWAlertForm);
-
-    // 机场坐标 — 搜索
-    const locSearchInput = document.getElementById('loc-search-input');
-    locSearchInput.addEventListener('keydown', e => { if (e.key === 'Enter') searchLocation(); });
-    document.getElementById('loc-search-btn').addEventListener('click', searchLocation);
-    document.getElementById('loc-save-btn').addEventListener('click', saveLocation);
-    document.getElementById('loc-cancel-btn').addEventListener('click', hideLocForm);
 
     // 雷达告警
     const radarSave = document.getElementById('radar-save-btn');
@@ -1408,13 +1359,14 @@
   function applySettingsTabVisibility() {
     const TAB_PERM = {
       'airport-info': 'settings_airport_info',
+      'prefix-area': 'settings_prefix_area',
+      'taf-import': 'settings_taf_import',
       'area-options': 'settings_area_options',
       'data-refresh-timer': 'settings_data_refresh',
       'popup': 'settings_popup',
       'alert-thresholds': 'settings_alert_thresholds',
       'weather-type': 'settings_weather_type',
       'weather-alert': 'settings_weather_alert',
-      'airport-location': 'settings_airport_location',
       'radar-alert': 'settings_radar_alert',
       'map-style': 'settings_map_style',
       'trend-alert': 'settings_trend_alert',
@@ -1425,6 +1377,115 @@
       const ok = typeof hasAccess !== 'function' || hasAccess(TAB_PERM[tab], 'display');
       btn.style.display = ok ? '' : 'none';
     });
+  }
+
+  // ========== 机场区域 ==========
+  let prefixEdit = null;
+
+  async function loadPrefixAreas() {
+    const res = await apiFetch(apiUrl('settings/prefix-area/'));
+    if (!res.success) { showMsg('prefix-msg', res.error, 'error'); return; }
+    const tbody = document.getElementById('prefix-tbody');
+    tbody.innerHTML = (res.data || []).map(row => `<tr>
+      <td>${escHtml(row.prefix)}</td>
+      <td>${escHtml(row.classification)}</td>
+      <td>${escHtml(row.area)}</td>
+      <td>${escHtml(row.remark || '')}</td>
+      <td>
+        <button class="settings-edit-btn" onclick="SettingsModal.editPrefix('${escHtml(row.prefix)}')">编辑</button>
+        <button class="settings-del-btn" onclick="SettingsModal.deletePrefix('${escHtml(row.prefix)}')">删除</button>
+      </td>
+    </tr>`).join('');
+    document.getElementById('prefix-form-panel').style.display = 'none';
+    prefixEdit = null;
+  }
+
+  function showPrefixForm(data) {
+    const panel = document.getElementById('prefix-form-panel');
+    panel.style.display = 'flex';
+    panel.style.flexDirection = 'column';
+    prefixEdit = data ? data.prefix : null;
+    document.getElementById('prefix-form-title').textContent = data ? '编辑前缀' : '新增前缀';
+    const prefixEl = document.getElementById('pf-prefix');
+    prefixEl.disabled = !!data;
+    prefixEl.value = data ? data.prefix : '';
+    document.getElementById('pf-classification').value = data ? data.classification : '国内';
+    document.getElementById('pf-area').value = data ? data.area : '';
+    document.getElementById('pf-remark').value = data ? (data.remark || '') : '';
+  }
+
+  async function savePrefix() {
+    const prefix = document.getElementById('pf-prefix').value.trim().toUpperCase();
+    const payload = {
+      prefix,
+      classification: document.getElementById('pf-classification').value,
+      area: document.getElementById('pf-area').value.trim(),
+      remark: document.getElementById('pf-remark').value.trim(),
+    };
+    if (!prefix || !/^[A-Z]{1,4}$/.test(prefix)) {
+      showMsg('prefix-msg', '前缀须为 1–4 位英文字母', 'error'); return;
+    }
+    if (!payload.area) { showMsg('prefix-msg', '请填写区域', 'error'); return; }
+    const url = prefixEdit ? apiUrl(`settings/prefix-area/${prefixEdit}/`) : apiUrl('settings/prefix-area/');
+    const res = await apiFetch(url, { method: prefixEdit ? 'PUT' : 'POST', body: JSON.stringify(payload) });
+    showMsg('prefix-msg', res.success ? res.message : res.error, res.success ? 'success' : 'error');
+    if (res.success) await loadPrefixAreas();
+  }
+
+  // ========== 预报入库告警 ==========
+  let tafEditCode = null;
+
+  async function loadTafImport() {
+    const res = await apiFetch(apiUrl('settings/taf-import/'));
+    if (!res.success) { showMsg('taf-msg', res.error, 'error'); return; }
+    const tbody = document.getElementById('taf-tbody');
+    tbody.innerHTML = (res.data || []).map(row => `<tr>
+      <td>${escHtml(row.airport_4code)}</td>
+      <td>${row.taf_init_time == null ? '' : row.taf_init_time}</td>
+      <td>${row.import_check_interval == null ? '' : row.import_check_interval + 'h'}</td>
+      <td>${row.taf_max_delay == null ? '' : row.taf_max_delay}</td>
+      <td>
+        <button class="settings-edit-btn" onclick="SettingsModal.editTaf('${escHtml(row.airport_4code)}')">编辑</button>
+        <button class="settings-del-btn" onclick="SettingsModal.deleteTaf('${escHtml(row.airport_4code)}')">删除</button>
+      </td>
+    </tr>`).join('');
+    document.getElementById('taf-form-panel').style.display = 'none';
+    tafEditCode = null;
+  }
+
+  function showTafForm(data, presetCode) {
+    const panel = document.getElementById('taf-form-panel');
+    panel.style.display = 'flex';
+    panel.style.flexDirection = 'column';
+    const code = data ? data.airport_4code : (presetCode || '');
+    tafEditCode = data ? data.airport_4code : null;
+    document.getElementById('taf-form-title').textContent = data ? '编辑预报入库告警' : '新增预报入库告警';
+    const codeEl = document.getElementById('tf-4code');
+    codeEl.disabled = !!data || !!presetCode;
+    codeEl.value = code;
+    document.getElementById('tf-init').value = data && data.taf_init_time != null ? data.taf_init_time : '';
+    document.getElementById('tf-interval').value = data && String(data.import_check_interval) === '3' ? '3' : '6';
+    document.getElementById('tf-delay').value = data && data.taf_max_delay != null ? data.taf_max_delay : '';
+  }
+
+  async function saveTafImport() {
+    const code = document.getElementById('tf-4code').value.trim().toUpperCase();
+    const hour = document.getElementById('tf-init').value;
+    const interval = document.getElementById('tf-interval').value;
+    const delay = document.getElementById('tf-delay').value;
+    if (!/^[A-Z]{4}$/.test(code)) { showMsg('taf-msg', '机场四字代码必须为恰好4位英文大写字母', 'error'); return; }
+    if (hour === '' || isNaN(hour) || hour < 0 || hour > 23) { showMsg('taf-msg', '首份发布时间须为 0–23 的整数', 'error'); return; }
+    if (delay === '' || isNaN(delay) || delay < 0 || delay > 60) { showMsg('taf-msg', '接收延迟须为 0–60 的整数', 'error'); return; }
+    const payload = {
+      airport_4code: code,
+      taf_init_time: parseInt(hour, 10),
+      import_check_interval: parseInt(interval, 10),
+      taf_max_delay: parseInt(delay, 10),
+    };
+    const url = tafEditCode ? apiUrl(`settings/taf-import/${tafEditCode}/`) : apiUrl('settings/taf-import/');
+    const res = await apiFetch(url, { method: tafEditCode ? 'PUT' : 'POST', body: JSON.stringify(payload) });
+    showMsg('taf-msg', res.success ? res.message : res.error, res.success ? 'success' : 'error');
+    if (res.success) await loadTafImport();
   }
 
   // ========== 公开接口 ==========
@@ -1439,39 +1500,60 @@
     // 机场
     editAirport(code) {
       airportEditCode = code;
-      apiFetch(apiUrl('settings/airport-info/')).then(res => {
-        const a = res.data && res.data.find(x => x.airport_4code === code);
-        if (a) showAirportForm(a);
+      apiFetch(apiUrl(`settings/airport-info/${code}/`)).then(res => {
+        if (res.success && res.data) showAirportForm(res.data);
       });
     },
-
-    // 新增机场（预填四字代码）—— 等待 loadAirportInfo 完成（其末尾会 hideAirportForm）再显示表单
-    newAirportWithCode(code) {
-      window.showModal('settings-modal');
-      switchTab('airport-info').then(() => {
-        airportEditCode = null;
-        showAirportForm(null);
-        const el = document.getElementById('af-4code');
-        if (el) el.value = (code || '').toUpperCase();
-      });
+    addAirportForCode(code) {
+      airportEditCode = null;
+      showAirportForm(null, code);
     },
 
-    // 打开设置页并直接进入指定机场的编辑表单
+    // 打开设置页，按该四字代码查询并进入配置页
     openAndEdit(code) {
       window.showModal('settings-modal');
-      switchTab('airport-info').then(() => {
-        airportEditCode = code;
-        apiFetch(apiUrl('settings/airport-info/')).then(res => {
-          const a = res.data && res.data.find(x => x.airport_4code === code);
-          if (a) showAirportForm(a);
+      switchTab('airport-info').then(() => searchAirport(code, true));
+    },
+    newAirportWithCode(code) {
+      this.openAndEdit(code);
+    },
+    openAndEditTaf(code) {
+      window.showModal('settings-modal');
+      switchTab('taf-import').then(() => {
+        apiFetch(apiUrl(`settings/taf-import/${code}/`)).then(res => {
+          if (res.success && res.data) showTafForm(res.data);
+          else showTafForm(null, code);
         });
       });
+    },
+    editPrefix(prefix) {
+      apiFetch(apiUrl('settings/prefix-area/')).then(res => {
+        const row = res.data && res.data.find(x => x.prefix === prefix);
+        if (row) showPrefixForm(row);
+      });
+    },
+    async deletePrefix(prefix) {
+      if (!confirm(`确定删除前缀 ${prefix}？已写入机场的区域不会被改掉。`)) return;
+      const res = await apiFetch(apiUrl(`settings/prefix-area/${prefix}/`), { method: 'DELETE' });
+      showMsg('prefix-msg', res.success ? res.message : res.error, res.success ? 'success' : 'error');
+      if (res.success) await loadPrefixAreas();
+    },
+    editTaf(code) {
+      apiFetch(apiUrl(`settings/taf-import/${code}/`)).then(res => {
+        if (res.success && res.data) showTafForm(res.data);
+      });
+    },
+    async deleteTaf(code) {
+      if (!confirm(`确定删除 ${code} 的预报入库告警？`)) return;
+      const res = await apiFetch(apiUrl(`settings/taf-import/${code}/`), { method: 'DELETE' });
+      showMsg('taf-msg', res.success ? res.message : res.error, res.success ? 'success' : 'error');
+      if (res.success) await loadTafImport();
     },
     async deleteAirport(code) {
       if (!confirm(`确定删除机场 ${code}？`)) return;
       const res = await apiFetch(apiUrl(`settings/airport-info/${code}/`), { method: 'DELETE' });
       showMsg('airport-msg', res.success ? res.message : res.error, res.success ? 'success' : 'error');
-      if (res.success) await loadAirportInfo();
+      if (res.success) await searchAirport(code, false);
     },
 
     // 区域
@@ -1543,29 +1625,6 @@
         const r = res.data && res.data.find(x => x.airport_4code === code);
         if (r) { thresholdEditCode = null; showThresholdForm(r, true); }
       });
-    },
-
-    // 机场坐标
-    editLocation(code) {
-      locEditCode = code;
-      apiFetch(apiUrl(`settings/airport-location/${code}/`)).then(res => {
-        if (res.success) showLocForm(res.data);
-      });
-    },
-    addLocationForCode(code) {
-      locEditCode = null;
-      showLocForm(null, code);
-    },
-    async deleteLocation(code) {
-      if (!confirm(`确定删除 ${code} 的坐标记录？`)) return;
-      const res = await apiFetch(apiUrl(`settings/airport-location/${code}/`), { method: 'DELETE' });
-      showMsg('loc-msg', res.success ? res.message : res.error, res.success ? 'success' : 'error');
-      if (res.success) {
-        document.getElementById('loc-result-area').innerHTML =
-          `<div class="loc-not-found">未找到 <strong>${escHtml(code)}</strong> 的坐标记录
-           <button class="settings-add-btn loc-add-inline-btn" onclick="SettingsModal.addLocationForCode('${escHtml(code)}')">+ 新增</button></div>`;
-        hideLocForm();
-      }
     },
 
   };

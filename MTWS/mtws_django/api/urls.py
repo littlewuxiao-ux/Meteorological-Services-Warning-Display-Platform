@@ -17,7 +17,8 @@ from .settings_views import (
     settings_alert_thresholds, settings_alert_thresholds_detail,
     settings_weather_type, settings_weather_type_detail,
     settings_weather_alert, settings_weather_alert_detail,
-    settings_airport_location, settings_airport_location_detail,
+    settings_prefix_area, settings_prefix_area_detail,
+    settings_taf_import, settings_taf_import_detail,
 )
 from .plain_views import plain_taf_batch, plain_metar_batch, plain_report_text
 from .access_views import (
@@ -106,8 +107,10 @@ urlpatterns = [
     path('settings/weather-type/<int:type_id>/', settings_weather_type_detail, name='settings_weather_type_detail'),
     path('settings/weather-alert/', settings_weather_alert, name='settings_weather_alert'),
     path('settings/weather-alert/<int:alert_id>/', settings_weather_alert_detail, name='settings_weather_alert_detail'),
-    path('settings/airport-location/', settings_airport_location, name='settings_airport_location'),
-    path('settings/airport-location/<str:airport_4code>/', settings_airport_location_detail, name='settings_airport_location_detail'),
+    path('settings/prefix-area/', settings_prefix_area, name='settings_prefix_area'),
+    path('settings/prefix-area/<str:prefix>/', settings_prefix_area_detail, name='settings_prefix_area_detail'),
+    path('settings/taf-import/', settings_taf_import, name='settings_taf_import'),
+    path('settings/taf-import/<str:airport_4code>/', settings_taf_import_detail, name='settings_taf_import_detail'),
 
     # 中文（明语）模式
     path('plain/taf-batch/', plain_taf_batch, name='plain_taf_batch'),

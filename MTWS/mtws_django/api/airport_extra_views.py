@@ -115,7 +115,7 @@ def airport_report_text(request, airport_code, time_mode='current'):
 @require_http_methods(["GET"])
 def airport_coords(request, time_mode=None):
     """
-    按机场代码列表返回经纬度。先读 airport_location，本次请求中缺失的机场再访问跑道接口并写回。
+    按机场代码列表返回经纬度。先读 airport_info，本次请求中缺失的机场再访问跑道接口并写回。
     参数：codes=ZBAA,ZSSS,ZGGG,...（逗号分隔，必填）
     响应：{ success: true, coords: { "ZBAA": { lat, lon }, ... } }
     """
@@ -183,7 +183,7 @@ def airport_extra_info(request, airport_code, time_mode='current'):
     获取机场额外信息API（日出日落时间、跑道信息）。
 
     坐标获取策略：
-      1. 优先查询 airport_location 数据表；
+      1. 优先查询 airport_info 中的坐标；
       2. 本次调用发现表中没有或读取失败时，用跑道接口的坐标补写后再使用。
     跑道信息始终来自 aviationweather.gov API。不做坐标巡检。
     """
