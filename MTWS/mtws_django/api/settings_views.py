@@ -425,6 +425,14 @@ _THRESHOLD_FIELDS = [
     'temperature_hot_red', 'temperature_hot_yellow', 'temperature_hot_green',
     'rvr_m_red', 'rvr_m_yellow', 'rvr_m_green',
 ]
+_CLOUD_AMTS = ('FEW', 'SCT', 'BKN', 'OVC')
+
+
+def _parse_min_cloud_amt(value):
+    amount = str(value or '').strip().upper()
+    if amount not in _CLOUD_AMTS:
+        raise ValueError('min_cloud_amt 只能是 FEW、SCT、BKN、OVC')
+    return amount
 
 
 @csrf_exempt
@@ -435,7 +443,7 @@ def settings_alert_thresholds(request, time_mode='current'):
     if request.method == 'GET':
         try:
             rows = list(AirportAlertThresholds.objects.values(
-                'airport_4code', *_THRESHOLD_FIELDS
+                'airport_4code', *_THRESHOLD_FIELDS, 'min_cloud_amt'
             ).order_by('airport_4code'))
             return JsonResponse({'success': True, 'data': rows})
         except Exception as e:
@@ -460,6 +468,9 @@ def settings_alert_thresholds(request, time_mode='current'):
             if f not in data or data[f] == '':
                 return JsonResponse({'success': False, 'error': f'{f} 为必填项'}, status=400)
             kwargs[f] = int(data[f])
+        if 'min_cloud_amt' not in data or data['min_cloud_amt'] == '':
+            return JsonResponse({'success': False, 'error': 'min_cloud_amt 为必填项'}, status=400)
+        kwargs['min_cloud_amt'] = _parse_min_cloud_amt(data['min_cloud_amt'])
 
         AirportAlertThresholds.objects.create(**kwargs)
         logger.info(f"[设置] 用户 {user_code} 新增机场告警阈值: {code}")
@@ -496,6 +507,10 @@ def settings_alert_thresholds_detail(request, airport_4code, time_mode='current'
                     if data[f] == '':
                         return JsonResponse({'success': False, 'error': f'{f} 为必填项'}, status=400)
                     setattr(obj, f, int(data[f]))
+            if 'min_cloud_amt' in data:
+                if data['min_cloud_amt'] == '':
+                    return JsonResponse({'success': False, 'error': 'min_cloud_amt 为必填项'}, status=400)
+                obj.min_cloud_amt = _parse_min_cloud_amt(data['min_cloud_amt'])
             obj.save()
             logger.info(f"[设置] 用户 {user_code} 修改机场告警阈值: {airport_4code}")
             _refresh_marks_alerts([airport_4code], time_mode)

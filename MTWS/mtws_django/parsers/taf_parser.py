@@ -17,6 +17,13 @@ from typing import List, Dict, Any, Optional, Tuple
 from django.conf import settings
 from parsers.models import Taf, ParseLog
 from core.models import AirportAlertThresholds, AirportInfo, WeatherAlertLevels
+from parsers.cloud_amount import (
+    cloud_amount_qualifies,
+    cloud_object_amount,
+    format_cloud_min,
+    lowest_height_in_text,
+    normalize_cloud_amt,
+)
 from data_adapters.adapter_factory import AdapterFactory
 
 logger = logging.getLogger('mtws.parsers')
@@ -494,6 +501,7 @@ class TafParser:
         
         cloud_parts = []
         min_height = None
+        min_cloud_amt = self._min_cloud_amt()
         
         for cloud in clouds:
             if hasattr(cloud, 'type') and hasattr(cloud, 'base'):
@@ -518,9 +526,10 @@ class TafParser:
                 
                 cloud_parts.append(cloud_str)
                 
-                # 找最低云层
-                if min_height is None or altitude < min_height:
-                    min_height = altitude
+                # 只在达到云量下限的云组中找最低云底高
+                if cloud_amount_qualifies(cloud_object_amount(cloud), min_cloud_amt):
+                    if min_height is None or altitude < min_height:
+                        min_height = altitude
         
         if cloud_parts:
             cloud_info['cloud'] = ' '.join(cloud_parts)
@@ -936,10 +945,10 @@ class TafParser:
                                     group[f'weather{j}'] = weather
                             
                             elif element == 'cloud' and inherited_value:
-                                # 提取最低云高，支持CB/TCU标识
-                                cloud_match = re.search(r'(\w{3})(\d{3})(?:CB|TCU)?', inherited_value)
-                                if cloud_match:
-                                    group['cloud_min'] = cloud_match.group(2)
+                                # 在达到云量下限的云组中提取最低云高
+                                group['cloud_min'] = format_cloud_min(
+                                    lowest_height_in_text(inherited_value, self._min_cloud_amt())
+                                )
                         else:
                             # 继承空值，不加括号，但也需要处理相关字段
                             group[element] = inherited_value  # 空字符串
@@ -1115,6 +1124,17 @@ class TafParser:
                     self.subject_min_temp1 = temp_match.group(1).replace('M', '-')
                     self.subject_min_temp1_time = temp_match.group(2)
     
+    def _min_cloud_amt(self) -> str:
+        """当前机场计入最低云底高的最低云量。"""
+        code = self.airport_4code or ''
+        cache = getattr(self, '_min_cloud_amt_cache', None)
+        if isinstance(cache, tuple) and cache[0] == code:
+            return cache[1]
+        info = self.get_airport_info()
+        amount = normalize_cloud_amt((info or {}).get('min_cloud_amt'))
+        self._min_cloud_amt_cache = (code, amount)
+        return amount
+
     def get_airport_info(self):
         """获取机场告警阈值信息"""
         try:
@@ -1142,6 +1162,7 @@ class TafParser:
                     'cloud_min_red': airport_info.cloud_min_red,
                     'cloud_min_yellow': airport_info.cloud_min_yellow,
                     'cloud_min_green': airport_info.cloud_min_green,
+                    'min_cloud_amt': normalize_cloud_amt(getattr(airport_info, 'min_cloud_amt', None)),
                     'average_wind_speed_mps_red': airport_info.average_wind_speed_mps_red,
                     'average_wind_speed_mps_yellow': airport_info.average_wind_speed_mps_yellow,
                     'average_wind_speed_mps_green': airport_info.average_wind_speed_mps_green,

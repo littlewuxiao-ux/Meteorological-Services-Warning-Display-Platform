@@ -14,6 +14,7 @@ from django.utils import timezone
 from django.conf import settings
 from django.db import connection
 from core.models import AirportAlertThresholds, WeatherAlertLevels
+from parsers.cloud_amount import lowest_height_in_cloud_strings, normalize_cloud_amt
 from parsers.models import Metar, ParseLog
 from data_adapters.adapter_factory import AdapterFactory
 from utils.time_manager import TimeManager
@@ -584,7 +585,7 @@ class MetarParser:
             parsed_data['metar_cloud'] = cloud
             
             # 提取最低云层高度中间变量值
-            min_cloud_height = self._get_min_cloud_height(cloud1, cloud2, cloud3)
+            min_cloud_height = self._get_min_cloud_height(cloud1, cloud2, cloud3, airport_4code)
             parsed_data['metar_min_cloud_height'] = min_cloud_height
             
             # 云组告警处理
@@ -699,6 +700,7 @@ class MetarParser:
                     'cloud_red': airport_info.cloud_min_red,
                     'cloud_yellow': airport_info.cloud_min_yellow,
                     'cloud_green': airport_info.cloud_min_green,
+                    'min_cloud_amt': normalize_cloud_amt(getattr(airport_info, 'min_cloud_amt', None)),
                     'wind_red': airport_info.average_wind_speed_mps_red,
                     'wind_yellow': airport_info.average_wind_speed_mps_yellow,
                     'wind_green': airport_info.average_wind_speed_mps_green,
@@ -909,8 +911,8 @@ class MetarParser:
         if not thresholds:
             return 'N'
         
-        # 获取最低云层高度
-        min_cloud_height = self._get_min_cloud_height(cloud1, cloud2, cloud3)
+        # 获取最低云层高度（已按云量下限筛选）
+        min_cloud_height = self._get_min_cloud_height(cloud1, cloud2, cloud3, airport_4code)
         
         if min_cloud_height is not None:
             return self._get_alert_level(
@@ -1114,31 +1116,21 @@ class MetarParser:
         
         return ' '.join(cloud_parts) if cloud_parts else None
     
-    def _parse_cloud_height(self, cloud_str):
-        """解析云层高度（基于原始程序逻辑）"""
-        if not cloud_str:
-            return None
-            
-        # 寻找数字部分
-        match = re.search(r'\d+', cloud_str)
-        if match:
-            try:
-                return int(match.group())
-            except ValueError:
-                return None
-        return None
-    
-    def _get_min_cloud_height(self, cloud1, cloud2, cloud3):
-        """获取最低云层高度（基于原始程序逻辑）"""
-        heights = []
-        
-        for cloud in [cloud1, cloud2, cloud3]:
-            if cloud:
-                height = self._parse_cloud_height(cloud)
-                if height is not None:
-                    heights.append(height)
-        
-        return min(heights) if heights else None
+    def _min_cloud_amt_for(self, airport_4code: str) -> str:
+        """该机场计入最低云底高的最低云量；无配置时按 SCT。"""
+        if not airport_4code:
+            return normalize_cloud_amt(None)
+        thresholds = self._get_airport_thresholds(airport_4code)
+        if not thresholds:
+            return normalize_cloud_amt(None)
+        return normalize_cloud_amt(thresholds.get('min_cloud_amt'))
+
+    def _get_min_cloud_height(self, cloud1, cloud2, cloud3, airport_4code=None):
+        """在达到云量下限的云组中取最低云底高。低于下限的云组不参与。"""
+        return lowest_height_in_cloud_strings(
+            [cloud1, cloud2, cloud3],
+            self._min_cloud_amt_for(airport_4code),
+        )
     
     def _calculate_metar_overall_warning(self, parsed_data: Dict) -> str:
         """

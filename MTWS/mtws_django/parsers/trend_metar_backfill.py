@@ -91,7 +91,14 @@ def _cloud_text(data) -> Optional[str]:
     return ' '.join(parts) if parts else None
 
 
-def _parse_row_for_store(content: str, airport_code: str, wtype: str, now_ms: int, parser) -> Optional[dict]:
+def _parse_row_for_store(
+    content: str,
+    airport_code: str,
+    wtype: str,
+    now_ms: int,
+    parser,
+    min_cloud_amt: Optional[str] = None,
+) -> Optional[dict]:
     from parsers.metar_elements import build_metar_elements
     from parsers.metar_history import _extract_obs_timestamp_ms, _visibility_to_m, _wind_to_mps
     from parsers.report_text_highlight import _parse_avwx_metar
@@ -124,11 +131,10 @@ def _parse_row_for_store(content: str, airport_code: str, wtype: str, now_ms: in
             vis_val = 10000
         else:
             vis_val = _visibility_to_m(data.visibility.value, units.visibility)
-    min_cloud_height = None
-    if data.clouds:
-        bases = [c.base for c in data.clouds if c.base is not None]
-        if bases:
-            min_cloud_height = min(bases)
+    from parsers.cloud_amount import lowest_base_from_cloud_objects, resolve_min_cloud_amt
+    if min_cloud_amt is None:
+        min_cloud_amt = resolve_min_cloud_amt(airport_code)
+    min_cloud_height = lowest_base_from_cloud_objects(data.clouds, min_cloud_amt)
     temp_val = None
     if data.temperature and data.temperature.value is not None:
         temp_val = float(data.temperature.value)
@@ -235,10 +241,14 @@ def _backfill_airport(
     seq_by_obs: dict[int, int] = {}
     inserted = 0
     created_at = int(time.time() * 1000)
+    from parsers.cloud_amount import resolve_min_cloud_amt
+    min_cloud_amt = resolve_min_cloud_amt(airport)
 
     for item in sorted(items, key=lambda row: (row.get('sort_time') or 0, row.get('content') or '')):
         content = item.get('content') or ''
-        parsed = _parse_row_for_store(content, airport, item.get('wtype') or '', now_ms, parser)
+        parsed = _parse_row_for_store(
+            content, airport, item.get('wtype') or '', now_ms, parser, min_cloud_amt,
+        )
         if not parsed:
             continue
         obs_ms = parsed['metar_observation_time']

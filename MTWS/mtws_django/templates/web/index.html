@@ -557,7 +557,7 @@
             </div>
             <div class="settings-list-scroll">
               <table class="settings-table settings-table-auto" id="threshold-table">
-                <thead><tr><th>四字代码</th><th>能见度 R/Y/G</th><th>云底高 R/Y/G</th><th>风速 R/Y/G</th><th>阵风 R/Y/G</th><th>低温 R/Y/G</th><th>高温 R/Y/G</th><th>跑道视程 R/Y/G</th><th>操作</th></tr></thead>
+                <thead><tr><th>四字代码</th><th>能见度 R/Y/G</th><th>云底高 R/Y/G</th><th>云量下限</th><th>风速 R/Y/G</th><th>阵风 R/Y/G</th><th>低温 R/Y/G</th><th>高温 R/Y/G</th><th>跑道视程 R/Y/G</th><th>操作</th></tr></thead>
                 <tbody id="threshold-tbody"></tbody>
               </table>
             </div>
@@ -583,6 +583,15 @@
                   <label>红色 <span class="settings-required">*</span></label><input type="number" id="tf-cld-r" min="0" step="1" class="settings-threshold-input">
                   <label>黄色 <span class="settings-required">*</span></label><input type="number" id="tf-cld-y" min="0" step="1" class="settings-threshold-input">
                   <label>绿色 <span class="settings-required">*</span></label><input type="number" id="tf-cld-g" min="0" step="1" class="settings-threshold-input">
+                </div>
+                <div class="settings-threshold-row" style="margin-top:8px;">
+                  <label>云量下限 <span class="settings-required">*</span></label>
+                  <select id="tf-min-cloud-amt" class="settings-threshold-input" style="width:88px;">
+                    <option value="FEW">FEW</option>
+                    <option value="SCT" selected>SCT</option>
+                    <option value="BKN">BKN</option>
+                    <option value="OVC">OVC</option>
+                  </select>
                 </div>
               </div>
               <div class="settings-threshold-group">

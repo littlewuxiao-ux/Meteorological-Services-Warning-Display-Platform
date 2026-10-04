@@ -55,6 +55,7 @@ class Command(BaseCommand):
                         'cloud_min_red': 2,
                         'cloud_min_yellow': 5,
                         'cloud_min_green': 10,
+                        'min_cloud_amt': 'SCT',
                         'average_wind_speed_mps_red': 12,
                         'average_wind_speed_mps_yellow': 8,
                         'average_wind_speed_mps_green': 5,

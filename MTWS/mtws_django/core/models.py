@@ -70,6 +70,13 @@ class AirportAlertThresholds(models.Model):
     cloud_min_red = models.PositiveIntegerField(default=2, verbose_name='云高红色告警值')
     cloud_min_yellow = models.PositiveIntegerField(default=5, verbose_name='云高黄色告警值')
     cloud_min_green = models.PositiveIntegerField(default=10, verbose_name='云高绿色告警值')
+    # 计入最低云底高的最低云量（含）。低于该云量的云组不参与取最低云底高。
+    min_cloud_amt = models.CharField(
+        max_length=3,
+        choices=[('FEW', 'FEW'), ('SCT', 'SCT'), ('BKN', 'BKN'), ('OVC', 'OVC')],
+        default='SCT',
+        verbose_name='计入云底高的最低云量',
+    )
     
     # 平均风速告警阈值（单位：米/秒）
     average_wind_speed_mps_red = models.PositiveIntegerField(default=12, verbose_name='平均风红色告警值')

@@ -113,7 +113,12 @@ def _rvr_to_m(value, is_na: bool) -> Optional[int]:
     return int(v)
 
 
-def _parse_single_metar(content: str, airport_code: str, now_ms: int) -> Optional[dict]:
+def _parse_single_metar(
+    content: str,
+    airport_code: str,
+    now_ms: int,
+    min_cloud_amt: Optional[str] = None,
+) -> Optional[dict]:
     """
     使用 avwx_custom 解析单条 METAR/SPECI 报文。
     成功返回包含图表所需 7 个字段的字典，失败返回 None。
@@ -176,12 +181,11 @@ def _parse_single_metar(content: str, airport_code: str, now_ms: int) -> Optiona
         if valid_rvr:
             rvr_min_val = min(valid_rvr)
 
-    # 最低云底高（单位：百英尺，与现有 metar_min_cloud_height 一致）
-    min_cloud_height = None
-    if data.clouds:
-        bases = [c.base for c in data.clouds if c.base is not None]
-        if bases:
-            min_cloud_height = min(bases)
+    # 最低云底高：只取达到云量下限的云组，单位百英尺
+    from parsers.cloud_amount import lowest_base_from_cloud_objects, resolve_min_cloud_amt
+    if min_cloud_amt is None:
+        min_cloud_amt = resolve_min_cloud_amt(airport_code)
+    min_cloud_height = lowest_base_from_cloud_objects(data.clouds, min_cloud_amt)
 
     # 气温 (℃)
     temp_val = None
@@ -380,12 +384,15 @@ def fetch_and_parse_metar_history(
     if not obj:
         return []
 
+    from parsers.cloud_amount import resolve_min_cloud_amt
+    min_cloud_amt = resolve_min_cloud_amt(airport_code)
+
     results = []
     for item in obj:
         content = (item.get('content') or '').strip()
         if not content:
             continue
-        parsed = _parse_single_metar(content, airport_code, now_ms)
+        parsed = _parse_single_metar(content, airport_code, now_ms, min_cloud_amt)
         if parsed:
             results.append(parsed)
 

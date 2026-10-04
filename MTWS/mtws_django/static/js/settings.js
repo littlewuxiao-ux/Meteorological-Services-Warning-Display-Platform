@@ -412,6 +412,7 @@
         <td>${escHtml(r.airport_4code)}</td>
         <td>${fmt(r.visibility_m_red,r.visibility_m_yellow,r.visibility_m_green)}</td>
         <td>${fmt(r.cloud_min_red,r.cloud_min_yellow,r.cloud_min_green)}</td>
+        <td>${escHtml(r.min_cloud_amt || 'SCT')}</td>
         <td>${fmt(r.average_wind_speed_mps_red,r.average_wind_speed_mps_yellow,r.average_wind_speed_mps_green)}</td>
         <td>${fmt(r.gust_mps_red,r.gust_mps_yellow,r.gust_mps_green)}</td>
         <td>${fmt(r.temperature_cold_red,r.temperature_cold_yellow,r.temperature_cold_green)}</td>
@@ -436,6 +437,11 @@
       const el = document.getElementById(id);
       if (el) { el.value = data ? (data[field] ?? '') : ''; el.disabled = thresholdReadonly; }
     });
+    const amtEl = document.getElementById('tf-min-cloud-amt');
+    if (amtEl) {
+      amtEl.value = (data && data.min_cloud_amt) ? data.min_cloud_amt : 'SCT';
+      amtEl.disabled = thresholdReadonly;
+    }
     document.getElementById('threshold-save-btn').style.display = thresholdReadonly ? 'none' : '';
     document.getElementById('threshold-cancel-btn').textContent = thresholdReadonly ? '关闭' : '取消';
   }
@@ -444,6 +450,8 @@
     thresholdEditCode = null;
     thresholdReadonly = false;
     TF_MAP.forEach(([, id]) => { const el = document.getElementById(id); if (el) el.disabled = false; });
+    const amtEl = document.getElementById('tf-min-cloud-amt');
+    if (amtEl) amtEl.disabled = false;
     document.getElementById('threshold-save-btn').style.display = '';
     document.getElementById('threshold-cancel-btn').textContent = '取消';
   }
@@ -459,6 +467,11 @@
       if (val === '' || isNaN(val)) { showMsg('threshold-msg', `${field} 为必填数字`, 'error'); return; }
       payload[field] = parseInt(val);
     }
+    const minCloudAmt = document.getElementById('tf-min-cloud-amt').value;
+    if (!['FEW', 'SCT', 'BKN', 'OVC'].includes(minCloudAmt)) {
+      showMsg('threshold-msg', '云量下限只能是 FEW、SCT、BKN、OVC', 'error'); return;
+    }
+    payload.min_cloud_amt = minCloudAmt;
     const isEdit = !!thresholdEditCode;
     const url = isEdit ? apiUrl(`settings/alert-thresholds/${thresholdEditCode}/`) : apiUrl('settings/alert-thresholds/');
     const res = await apiFetch(url, { method: isEdit ? 'PUT' : 'POST', body: JSON.stringify(payload) });
