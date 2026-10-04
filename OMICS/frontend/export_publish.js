@@ -137,7 +137,7 @@
 
         // 头：克隆标题栏（含已并入的时间轴表头 #pb-timeline-header）
         const headerSrc = document.getElementById('pb-export-header');
-        let clonedTimeline = null;
+        let exportTimelineRows = [];
         if (headerSrc) {
             const h = headerSrc.cloneNode(true);
             // 导出图片保持第五版外观，隔离第六版页面专用的 ID/class 强制样式。
@@ -148,15 +148,21 @@
             h.style.borderRadius = '0';
             // 🌟 底部 padding 置 0：消除时间轴与正文表之间露出的深色头部背景条（原本 28px padding-bottom + 时间轴 -20px margin 净剩 8px）
             h.style.padding = '14px 18px 0 18px';
-            clonedTimeline = h.querySelector('#pb-timeline-table');
+            const clonedTimeline = h.querySelector('#pb-timeline-table');
+            // 第五版导出结构把时间轴作为正文表格 thead。保留相同结构，
+            // 让浏览器用一套 table layout 同时计算时间轴和天气列，避免
+            // 两个独立 table 在边框/colspan/margin 上产生累积错位。
+            if (clonedTimeline) {
+                const timelineBody = clonedTimeline.querySelector('tbody');
+                exportTimelineRows = timelineBody
+                    ? Array.from(timelineBody.children).map(row => row.cloneNode(true))
+                    : [];
+            }
             // 🌟 时间轴容器：负 margin 与新 padding(18px) 严格匹配，使时间轴左右边界与正文表齐；
             // 底部 margin 置 0，让时间轴紧贴正文表（不再露背景条）。
             const clonedTlHeader = h.querySelector('#pb-timeline-header');
             if (clonedTlHeader) {
-                clonedTlHeader.style.margin = '16px -18px 0 -18px';
-                clonedTlHeader.style.overflow = 'hidden';
-                // 🌟 清掉 syncTimelineHeader 给 live 元素设的内联 width，避免与导出 tableWidth 不一致被裁剪
-                clonedTlHeader.style.width = '';
+                clonedTlHeader.remove();
             }
             const alertSummary = h.querySelector('.pb-alert-summary');
             if (alertSummary) {
@@ -186,7 +192,7 @@
             wrap.appendChild(h);
         }
 
-        // 表格：forecast-table 已无 thead，导出表只含数据行
+        // 表格：将第五版的同表 thead 结构用于导出，保证时间轴与天气列共用布局。
         const srcTable = document.getElementById('forecast-table');
         const tbl = document.createElement('table');
         // 🌟 table-layout:fixed + colgroup，与表头共用同一套列宽，保证渲染后逐列对齐（auto 会按内容重分导致错位）
@@ -194,6 +200,11 @@
         tbl.className = srcTable ? srcTable.className : '';
         tbl.id = '';
         if (srcTable) {
+            if (exportTimelineRows.length) {
+                const thead = document.createElement('thead');
+                exportTimelineRows.forEach(row => thead.appendChild(row));
+                tbl.appendChild(thead);
+            }
             const tbody = document.createElement('tbody');
             const icaoSet = new Set(pageRows.map(r => r.icao).filter(Boolean));
             srcTable.querySelectorAll('tbody tr').forEach(tr => {
@@ -208,7 +219,7 @@
         // text independently makes the cloned timeline drift from the weather
         // cells, especially after responsive/fixed-table layout has fractional
         // hourly widths.
-        const liveRow = srcTable?.querySelector('tbody tr:not([style*="display: none"])');
+        const liveRow = srcTable?.querySelector('tbody tr.tr-edit:not([style*="display: none"])');
         const liveCells = liveRow ? Array.from(liveRow.children) : [];
         const measured = [];
         liveCells.forEach(cell => {
@@ -247,21 +258,9 @@
         tbl.insertBefore(dataCg, tbl.firstChild);
 
         // 让克隆进导出图的时间轴表头列宽，与数据表 colgroup 逐列一致。
-        if (clonedTimeline) {
-            clonedTimeline.style.width = `${tableWidth}px`;
-            clonedTimeline.style.tableLayout = 'fixed';
-            clonedTimeline.style.borderCollapse = 'collapse';
-            const cg = clonedTimeline.querySelector('colgroup');
-            if (cg) {
-                const cols = cg.querySelectorAll('col');
-                if (cols[0]) cols[0].style.width = `${airportWidth}px`;
-                if (cols[1]) cols[1].style.width = `${typeWidth}px`;
-                if (cols[2]) cols[2].style.width = `${noteLeftW}px`;
-                if (cols[3]) cols[3].style.width = `${noteRightW}px`;
-                for (let i = 4; i < cols.length; i++) cols[i].style.width = `${measuredHourWidths[i - 4] || hourWidth}px`;
-            }
+        if (exportTimelineRows.length) {
             // 表头单元格边框/盒模型与数据表一致，保证边框连续、列宽不被 padding 撑偏。
-            clonedTimeline.querySelectorAll('th').forEach(c => {
+            tbl.querySelectorAll('thead th').forEach(c => {
                 c.style.boxSizing = 'border-box';
                 c.style.border = '1px solid rgba(148, 163, 184, 0.55)';
                 c.style.background = '#4B5563';

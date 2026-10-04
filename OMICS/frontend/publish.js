@@ -2049,7 +2049,20 @@ async function fetchLatestMetarForAirports(airports, setProgress) {
         const result = await res.json();
         const map = {};
         const rows = Array.isArray(result.data) ? result.data : (Array.isArray(result.obj) ? result.obj : []);
-        rows.forEach(row => { const icao = String(row.airport4Code || row.airport || row.icao || '').toUpperCase(); const text = row.metar || row.report || row.raw || row.data || ''; if (icao && text) { const ts = Number(row.observationTime || row.receiveTime || row.obsTime || 0); if (!map[icao] || ts > map[icao].ts) map[icao] = { text: String(text), ts }; } });
+        rows.forEach(row => {
+            const icao = String(row.airport4Code || row.airport || row.icao || '').toUpperCase();
+            const text = row.metar || row.report || row.raw || row.data || '';
+            if (!icao || !text) return;
+            const rawTs = row.observationTime || row.receiveTime || row.obsTime || row.reportTime || row.time || 0;
+            const numericTs = Number(rawTs);
+            const ts = Number.isFinite(numericTs) && numericTs > 0 ? numericTs : (Date.parse(rawTs) || 0);
+            // Keep one scalar report per airport: the newest timestamp wins. If
+            // the service omits timestamps, preserve its first (normally newest)
+            // row instead of exposing a historical list in the publish UI.
+            if (!map[icao] || (!map[icao].ts && ts) || ts > map[icao].ts) {
+                map[icao] = { text: String(text), ts };
+            }
+        });
         return Object.fromEntries(Object.entries(map).map(([k,v]) => [k, v.text]));
     } catch (e) { return {}; }
 }
