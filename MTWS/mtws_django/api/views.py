@@ -100,8 +100,10 @@ def airports_overview(request, time_mode='current'):
     try:
         # 移除缓存机制，直接从数据库加载最新数据
         
-        # 1. 获取有航班的机场
-        active_airports = Flight.objects.filter(has_flight=True).values_list('airport_4code', flat=True)
+        # 1. 获取有航班的机场。先取成列表，避免后面查配置库时把 flight 子查询带到配置库。
+        active_airports = list(
+            Flight.objects.filter(has_flight=True).values_list('airport_4code', flat=True)
+        )
         
         if not active_airports:
             return JsonResponse({
