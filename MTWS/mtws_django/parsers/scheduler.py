@@ -264,14 +264,21 @@ def start_scheduler() -> None:
             cfg = merge_config(row.config if row else None)
             if cfg.get('enabled', True):
                 interval = float(cfg.get('interval_minutes', 15) or 15)
+                # 进程刚起来时页面和报文解析会先写库，雷达晚 90 秒再跑，避免挤在一起。
+                first_radar = datetime.now() + timedelta(seconds=90)
                 scheduler.add_job(
                     func=lambda: trigger_radar_job(force=False),
-                    trigger=IntervalTrigger(minutes=interval),
+                    trigger=IntervalTrigger(minutes=interval, start_date=first_radar),
                     id='scheduled_radar_alert',
                     replace_existing=True,
+                    max_instances=1,
+                    coalesce=True,
                     misfire_grace_time=120,
                 )
-                logger.info(f'雷达告警调度已注册：间隔 {interval} 分钟')
+                logger.info(
+                    f'雷达告警调度已注册：间隔 {interval} 分钟，'
+                    f'首次执行 {first_radar.strftime("%H:%M:%S")}'
+                )
         except Exception as radar_err:
             logger.warning(f'雷达告警调度注册失败：{radar_err}')
 

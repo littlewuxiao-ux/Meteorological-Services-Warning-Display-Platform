@@ -5,7 +5,7 @@ import os
 import csv
 from datetime import datetime
 
-DB_NAME = 'mtws_database.db'
+DB_DIR = os.path.dirname(os.path.abspath(__file__))
 FIELDS_PER_PAGE = 15  # 每页显示的字段数
 ROWS_PER_PAGE = 100   # 数据表每页显示的行数
 
@@ -228,18 +228,30 @@ class PagedEditDialog:
 # ─────────────────────────────────────────────────────────────
 
 class DatabaseViewer(tk.Tk):
+    def _choose_database(self):
+        config = os.path.join(DB_DIR, "mtws_config.db")
+        runtime = os.path.join(DB_DIR, "mtws_runtime.db")
+        if os.path.isfile(config) and os.path.isfile(runtime):
+            use_config = messagebox.askyesno("选择数据库", "是：打开配置库\n否：打开生产库")
+            return config if use_config else runtime
+        for path in (config, runtime, os.path.join(DB_DIR, "mtws_database.db")):
+            if os.path.isfile(path):
+                return path
+        return None
+
     def __init__(self):
         super().__init__()
-        self.title("mtws_database浏览器")
+        self.title("数据库浏览器")
         self.geometry("1000x700")
-
-        if not os.path.isfile(DB_NAME):
-            messagebox.showerror("错误", f"未找到数据库文件 {DB_NAME}")
+        db_path = self._choose_database()
+        if not db_path:
+            messagebox.showerror("错误", "未找到 mtws_config.db 或 mtws_runtime.db")
             self.destroy()
             return
 
         try:
-            self.conn = sqlite3.connect(DB_NAME)
+            self.conn = sqlite3.connect(db_path)
+            self.title(f"数据库浏览器 - {os.path.basename(db_path)}")
         except Exception as e:
             messagebox.showerror("数据库连接失败", str(e))
             self.destroy()

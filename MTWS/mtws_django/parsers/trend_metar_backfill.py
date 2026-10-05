@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 import time
 from typing import Iterable, Optional
 
@@ -207,6 +208,8 @@ def _backfill_airport(
 
     if not missing:
         return 0
+    from django.db import connection
+    connection.close()
     start_ms = min(missing) - SLOT_WINDOW_MS
     end_ms = max(missing) + SLOT_WINDOW_MS
     try:
@@ -312,3 +315,58 @@ def ensure_hourly_sa_history(
             _backfill_airport(airport, missing, now_ms, time_mode, token, parser)
         except Exception:
             logger.exception('趋势历史实况补数失败: %s', airport)
+
+
+_backfill_lock = threading.Lock()
+_backfill_pending: dict[str, tuple[int, int]] = {}
+_backfill_event = threading.Event()
+_backfill_worker_started = False
+
+
+def queue_hourly_sa_history(airports: Iterable[str], lookback_ms: int, now_ms: int) -> None:
+    """补数放到单独线程，不跟本次实况/航班写入挤在同一段执行里。"""
+    global _backfill_worker_started
+    codes = sorted({str(code).upper() for code in airports or [] if code})
+    if not codes or lookback_ms <= 0:
+        return
+    with _backfill_lock:
+        for code in codes:
+            prev = _backfill_pending.get(code)
+            if prev is None or int(lookback_ms) > prev[0] or int(now_ms) > prev[1]:
+                _backfill_pending[code] = (int(lookback_ms), int(now_ms))
+        if not _backfill_worker_started:
+            _backfill_worker_started = True
+            threading.Thread(
+                target=_backfill_worker,
+                name='trend-sa-backfill',
+                daemon=True,
+            ).start()
+        _backfill_event.set()
+
+
+def _backfill_worker() -> None:
+    from django.db import close_old_connections
+
+    while True:
+        _backfill_event.wait()
+        with _backfill_lock:
+            batch = dict(_backfill_pending)
+            _backfill_pending.clear()
+            _backfill_event.clear()
+        if not batch:
+            continue
+        close_old_connections()
+        try:
+            codes = sorted(batch)
+            lookback = max(item[0] for item in batch.values())
+            now_ms = max(item[1] for item in batch.values())
+            ensure_hourly_sa_history(codes, lookback, now_ms)
+            from utils.trend_alert import refresh_airports
+            refresh_airports(codes, now_ms, backfill=False)
+        except Exception:
+            logger.exception('趋势历史实况补数线程失败: %s', sorted(batch))
+        finally:
+            close_old_connections()
+            with _backfill_lock:
+                if _backfill_pending:
+                    _backfill_event.set()

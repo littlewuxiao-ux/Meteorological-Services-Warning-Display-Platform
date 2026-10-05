@@ -949,7 +949,7 @@ def clear_airports(codes) -> None:
         AirportTrendAlert.objects.filter(airport_4code__in=wanted).delete()
 
 
-def refresh_airports(codes, now_ms: Optional[int] = None) -> None:
+def refresh_airports(codes, now_ms: Optional[int] = None, *, backfill: bool = True) -> None:
     """只重算给定机场。不在有航班或起降窗口全集里的机场直接清掉结果。"""
     import logging
     from core.models import AirportTrendAlert
@@ -971,11 +971,12 @@ def refresh_airports(codes, now_ms: Optional[int] = None) -> None:
             clear_airports(inside)
             return
         lookback = max_lookback_ms(active_groups)
-        try:
-            from parsers.trend_metar_backfill import ensure_hourly_sa_history
-            ensure_hourly_sa_history(inside, lookback, now_ms)
-        except Exception:
-            logger.exception('实况趋势告警历史补数失败: %s', inside)
+        if backfill:
+            try:
+                from parsers.trend_metar_backfill import queue_hourly_sa_history
+                queue_hourly_sa_history(inside, lookback, now_ms)
+            except Exception:
+                logger.exception('实况趋势告警历史补数排队失败: %s', inside)
         slots = build_slots(now_ms)
         since = now_ms - lookback
         rows = Metar.objects.filter(
@@ -999,25 +1000,28 @@ def refresh_airports(codes, now_ms: Optional[int] = None) -> None:
             for row in AirportTrendAlert.objects.filter(airport_4code__in=inside)
         }
         for code in inside:
-            groups = groups_for_airport(config, code, universe)
-            result = evaluate_airport(by_airport.get(code) or [], groups, now_ms, slots)
-            color = result['color']
-            old = previous.get(code)
-            handled = bool(
-                old and old.handled and old.handled_signature == color and color in ('R', 'Y', 'G')
-            )
-            AirportTrendAlert.objects.update_or_create(
-                airport_4code=code,
-                defaults={
-                    'color': color,
-                    'score': result['score'],
-                    'bar_color': result.get('bar_color') or color,
-                    'labels': result['labels'],
-                    'series': _pack_series(result['rows'], slots),
-                    'handled': handled,
-                    'handled_signature': color if handled else '',
-                },
-            )
+            try:
+                groups = groups_for_airport(config, code, universe)
+                result = evaluate_airport(by_airport.get(code) or [], groups, now_ms, slots)
+                color = result['color']
+                old = previous.get(code)
+                handled = bool(
+                    old and old.handled and old.handled_signature == color and color in ('R', 'Y', 'G')
+                )
+                AirportTrendAlert.objects.update_or_create(
+                    airport_4code=code,
+                    defaults={
+                        'color': color,
+                        'score': result['score'],
+                        'bar_color': result.get('bar_color') or color,
+                        'labels': result['labels'],
+                        'series': _pack_series(result['rows'], slots),
+                        'handled': handled,
+                        'handled_signature': color if handled else '',
+                    },
+                )
+            except Exception:
+                logger.exception('实况趋势告警写入失败: %s', code)
     except Exception:
         logger.exception('实况趋势告警重算失败: %s', wanted)
 

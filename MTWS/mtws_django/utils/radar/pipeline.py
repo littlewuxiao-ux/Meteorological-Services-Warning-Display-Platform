@@ -8,7 +8,6 @@ import time
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Set, Tuple
 
-from django.db import transaction
 from django.utils import timezone
 
 from .config_defaults import merge_config
@@ -439,39 +438,66 @@ class RadarAlertPipeline:
         from core.models import AirportRadarAlert, RadarJobRun
 
         now = timezone.now()
-        with transaction.atomic():
-            RadarJobRun.objects.create(
-                frame_time=frame_ts,
-                host=host,
-                path=path,
-                airport_count=len(results),
-                status='done',
-                finished_at=now,
-            )
-            codes = [r['airport_4code'] for r in results]
-            previous = {
-                row.airport_4code: row
-                for row in AirportRadarAlert.objects.filter(airport_4code__in=codes)
-            }
-            for r in results:
-                alert_33 = r.get('alert_33') or 'N'
-                alert_41 = r.get('alert_41') or 'N'
-                alert_highest = r.get('alert_highest') or 'N'
-                signature = f'{alert_33}|{alert_41}|{alert_highest}'
-                old = previous.get(r['airport_4code'])
-                handled = bool(old and old.handled and old.handled_signature == signature)
-                AirportRadarAlert.objects.update_or_create(
-                    airport_4code=r['airport_4code'],
-                    defaults={
-                        'frame_time': frame_ts,
-                        'alert_33': alert_33,
-                        'alert_41': alert_41,
-                        'alert_highest': alert_highest,
-                        'detail_33': r.get('detail_33'),
-                        'detail_41': r.get('detail_41'),
-                        'sector_stats': r.get('sector_stats'),
-                        'handled': handled,
-                        'handled_signature': signature if handled else '',
-                        'updated_at': now,
-                    },
+        RadarJobRun.objects.create(
+            frame_time=frame_ts,
+            host=host,
+            path=path,
+            airport_count=len(results),
+            status='done',
+            finished_at=now,
+        )
+        codes = [r['airport_4code'] for r in results]
+        previous = {
+            row.airport_4code: row
+            for row in AirportRadarAlert.objects.filter(airport_4code__in=codes)
+        }
+        for r in results:
+            try:
+                self._persist_one_airport(r, frame_ts, previous.get(r['airport_4code']), now)
+            except Exception:
+                logger.exception('雷达告警写入失败: %s', r.get('airport_4code'))
+
+    @staticmethod
+    def _radar_content_same(old, defaults: dict) -> bool:
+        return (
+            (old.alert_33 or 'N') == defaults['alert_33']
+            and (old.alert_41 or 'N') == defaults['alert_41']
+            and (old.alert_highest or 'N') == defaults['alert_highest']
+            and old.detail_33 == defaults['detail_33']
+            and old.detail_41 == defaults['detail_41']
+            and old.sector_stats == defaults['sector_stats']
+            and bool(old.handled) == bool(defaults['handled'])
+            and (old.handled_signature or '') == defaults['handled_signature']
+        )
+
+    def _persist_one_airport(self, r: dict, frame_ts: int, old, now) -> None:
+        from core.models import AirportRadarAlert
+
+        alert_33 = r.get('alert_33') or 'N'
+        alert_41 = r.get('alert_41') or 'N'
+        alert_highest = r.get('alert_highest') or 'N'
+        signature = f'{alert_33}|{alert_41}|{alert_highest}'
+        handled = bool(old and old.handled and old.handled_signature == signature)
+        defaults = {
+            'frame_time': frame_ts,
+            'alert_33': alert_33,
+            'alert_41': alert_41,
+            'alert_highest': alert_highest,
+            'detail_33': r.get('detail_33'),
+            'detail_41': r.get('detail_41'),
+            'sector_stats': r.get('sector_stats'),
+            'handled': handled,
+            'handled_signature': signature if handled else '',
+            'updated_at': now,
+        }
+        if old is not None and self._radar_content_same(old, defaults):
+            if int(old.frame_time or 0) != int(frame_ts):
+                AirportRadarAlert.objects.filter(pk=old.pk).update(
+                    frame_time=frame_ts,
+                    updated_at=now,
                 )
+            return
+        AirportRadarAlert.objects.update_or_create(
+            airport_4code=r['airport_4code'],
+            defaults=defaults,
+        )

@@ -141,11 +141,25 @@ TEMPLATES = [
 WSGI_APPLICATION = 'mtws_system.wsgi.application'
 
 # Database
+# default 是配置库。runtime 是实况、预报、航班、告警结果这些生产库。
+_SQLITE_DIR = BASE_DIR.parent / 'data' / 'sqlite_database'
+_SQLITE_OPTIONS = {'timeout': 30}
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR.parent / 'data' / 'sqlite_database' / 'mtws_database.db',
-    }
+        'NAME': _SQLITE_DIR / 'mtws_config.db',
+        'OPTIONS': _SQLITE_OPTIONS,
+    },
+    'runtime': {
+        'ENGINE': 'django.db.backends.sqlite3',
+        'NAME': _SQLITE_DIR / 'mtws_runtime.db',
+        'OPTIONS': _SQLITE_OPTIONS,
+    },
+}
+DATABASE_ROUTERS = ['mtws_system.db_router.MtwsRouter']
+MIGRATION_MODULES = {
+    'core': 'mtws_migrations.core',
+    'parsers': 'mtws_migrations.parsers',
 }
 
 # Password validation

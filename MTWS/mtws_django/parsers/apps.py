@@ -17,6 +17,8 @@ class ParsersConfig(AppConfig):
         #
         # 解决方案：仅在 runserver 模式且为 reloader 父进程时跳过。
         # 生产环境（gunicorn/uWSGI）不使用 runserver，RUN_MAIN 不存在，调度器照常启动。
+        if os.environ.get('MTWS_SKIP_SCHEDULER') == '1':
+            return
         is_runserver = len(sys.argv) > 1 and sys.argv[1] == 'runserver'
         is_reloader_process = os.environ.get('RUN_MAIN') != 'true'
         if is_runserver and is_reloader_process:
