@@ -10,7 +10,7 @@ from typing import List, Dict, Any, Optional, Type
 import logging
 
 from core.models import AirportInfo, AirportAlertThresholds, WeatherAlertLevels, Carrier, SystemConfig
-from parsers.models import Flight, Metar, Taf, ParseLog
+from parsers.models import Flight, Metar, Taf
 
 logger = logging.getLogger('mtws.database')
 

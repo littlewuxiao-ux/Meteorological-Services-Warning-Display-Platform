@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional, Tuple
 
 from django.conf import settings
-from parsers.models import Taf, ParseLog
+from parsers.models import Taf
 from core.models import AirportAlertThresholds, AirportTafImportConfig, WeatherAlertLevels
 from parsers.cloud_amount import (
     cloud_amount_qualifies,
@@ -2084,12 +2084,10 @@ class TafParser:
                 if len(result['errors']) > 5:
                     message_parts.append(f"等 {len(result['errors'])} 个错误")
             
-            ParseLog.objects.create(
-                parse_type='taf',
-                status=status,
-                message='; '.join(message_parts),
-                record_count=result['success_count'],
-                error_count=result['error_count']
+            logger.info(
+                'TAF解析 %s：%s',
+                status,
+                '; '.join(message_parts),
             )
             
         except Exception as e:

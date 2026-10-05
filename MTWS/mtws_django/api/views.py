@@ -17,7 +17,7 @@ from core.models import (
     AirportInfo, AirportAlertThresholds, AirportTafImportConfig,
     WeatherAlertLevels, AreaOptions, DataRefreshTimer,
 )
-from parsers.models import Flight, Metar, Taf, ParseLog
+from parsers.models import Flight, Metar, Taf
 from parsers.taf_parser import calc_taf_expected_issue_ms
 from parsers.parsing_manager import ParsingManager
 from utils.time_manager import TimeManager
@@ -650,23 +650,10 @@ def get_parsing_status(request, time_mode='current'):
     获取解析状态API
     """
     try:
-        # 获取最近的解析日志
-        latest_logs = ParseLog.objects.order_by('-created_at')[:10]
-        
-        logs_data = []
-        for log in latest_logs:
-            logs_data.append({
-                'id': log.id,
-                'parser_name': log.parser_name,
-                'status': log.status,
-                'message': log.message,
-                'created_at': log.created_at.isoformat()
-            })
-        
         return JsonResponse({
             'success': True,
             'data': {
-                'logs': logs_data,
+                'logs': [],
                 'timestamp': datetime.now().isoformat()
             }
         })

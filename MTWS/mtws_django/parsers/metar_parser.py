@@ -15,7 +15,7 @@ from django.conf import settings
 from django.db import connection
 from core.models import AirportAlertThresholds, WeatherAlertLevels
 from parsers.cloud_amount import lowest_height_in_cloud_strings, normalize_cloud_amt
-from parsers.models import Metar, ParseLog
+from parsers.models import Metar
 from data_adapters.adapter_factory import AdapterFactory
 from utils.time_manager import TimeManager
 

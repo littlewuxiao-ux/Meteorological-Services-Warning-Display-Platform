@@ -8,7 +8,6 @@ from datetime import datetime
 from typing import Dict, Any
 
 from django.conf import settings
-from parsers.models import ParseLog
 from parsers.flight_parser import FlightParser
 from parsers.metar_parser import MetarParser
 from parsers.taf_parser import TafParser  # 已实现
@@ -431,13 +430,7 @@ class ParsingManager:
             }
     
     def _log_parse_result(self, parser_type: str, result: Dict[str, Any]):
-        """
-        记录解析结果到数据库
-        
-        Args:
-            parser_type: 解析器类型
-            result: 解析结果
-        """
+        """把一次解析的结果写入日志文件。"""
         try:
             status = 'success' if result.get('success', False) else 'error'
             
@@ -446,67 +439,18 @@ class ParsingManager:
                 extra = f" [激活 IP={self.activator_ip} user_id={self.user_code}]"
             elif self.activator_ip:
                 extra = f" [激活 IP={self.activator_ip}]"
-            ParseLog.objects.create(
-                parse_type=parser_type,
-                status=status,
-                message=(result.get('message', '') or '') + extra,
-                record_count=result.get('record_count', 0),
-                error_count=result.get('error_count', 0),
-                execution_time=result.get('execution_time', 0)
+            logger.info(
+                '解析 %s %s：%s 记录=%s 错误=%s 耗时=%s秒',
+                parser_type,
+                status,
+                (result.get('message', '') or '') + extra,
+                result.get('record_count', 0),
+                result.get('error_count', 0),
+                result.get('execution_time', 0),
             )
         except Exception as e:
             logger.error(f"记录解析日志失败: {str(e)}")
-    
-    def get_parsing_status(self) -> Dict[str, Any]:
-        """
-        获取解析状态
-        
-        Returns:
-            Dict: 解析状态信息
-        """
-        try:
-            # 获取最近的解析日志
-            recent_logs = ParseLog.objects.order_by('-created_at')[:10]
-            
-            status_info = {
-                'recent_logs': [],
-                'stats': {
-                    'total_runs': ParseLog.objects.count(),
-                    'success_rate': 0,
-                    'last_run_time': None
-                }
-            }
-            
-            for log in recent_logs:
-                status_info['recent_logs'].append({
-                    'parse_type': log.parse_type,
-                    'status': log.status,
-                    'record_count': log.record_count,
-                    'execution_time': log.execution_time,
-                    'created_at': log.created_at.isoformat()
-                })
-            
-            # 计算成功率
-            total_logs = ParseLog.objects.count()
-            if total_logs > 0:
-                success_logs = ParseLog.objects.filter(status='success').count()
-                status_info['stats']['success_rate'] = round(success_logs / total_logs * 100, 2)
-            
-            # 获取最后运行时间
-            last_log = ParseLog.objects.order_by('-created_at').first()
-            if last_log:
-                status_info['stats']['last_run_time'] = last_log.created_at.isoformat()
-            
-            return status_info
-            
-        except Exception as e:
-            logger.error(f"获取解析状态失败: {str(e)}")
-            return {
-                'error': f'获取解析状态失败: {str(e)}',
-                'recent_logs': [],
-                'stats': {}
-            }
-    
+
     def run_selective_parsing(self, update_types: list, time_mode=None) -> Dict[str, Any]:
         with self._cas_log_context():
             return self._run_selective_parsing_impl(update_types, time_mode)

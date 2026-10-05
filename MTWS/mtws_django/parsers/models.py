@@ -528,36 +528,3 @@ class Taf(models.Model):
         return f"TAF {self.airport_4code} - {self.taf_observation_time}"
 
 
-class ParseLog(models.Model):
-    """解析日志表"""
-    
-    PARSE_TYPE_CHOICES = [
-        ('flight', '航班解析'),
-        ('metar', 'METAR解析'),
-        ('taf', 'TAF解析'),
-    ]
-    
-    STATUS_CHOICES = [
-        ('success', '成功'),
-        ('error', '错误'),
-        ('warning', '警告'),
-    ]
-    
-    parse_type = models.CharField(max_length=10, choices=PARSE_TYPE_CHOICES, verbose_name='解析类型')
-    status = models.CharField(max_length=10, choices=STATUS_CHOICES, verbose_name='状态')
-    message = models.TextField(blank=True, null=True, verbose_name='消息')
-    record_count = models.IntegerField(default=0, verbose_name='处理记录数')
-    error_count = models.IntegerField(default=0, verbose_name='错误记录数')
-    execution_time = models.FloatField(blank=True, null=True, verbose_name='执行时间（秒）')
-    
-    # 时间戳
-    created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')
-    
-    class Meta:
-        db_table = 'parse_log'
-        verbose_name = '解析日志'
-        verbose_name_plural = '解析日志'
-        ordering = ['-created_at']
-        
-    def __str__(self):
-        return f"{self.get_parse_type_display()} - {self.get_status_display()} - {self.created_at}"

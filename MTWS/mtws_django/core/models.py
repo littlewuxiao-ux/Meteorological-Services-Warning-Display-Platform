@@ -394,24 +394,6 @@ class AccessGroupPermission(models.Model):
         return f'{self.group_id}:{self.module_code}'
 
 
-class NonLocalQrAuthLoginRecord(models.Model):
-    """非本机扫码认证成功记录"""
-
-    user_id = models.CharField(max_length=32, verbose_name='用户ID')
-    role_name = models.CharField(max_length=100, verbose_name='登录角色')
-    group_id = models.IntegerField(blank=True, null=True, verbose_name='用户组ID')
-    auth_success_time = models.DateTimeField(auto_now_add=True, verbose_name='认证成功时间')
-
-    class Meta:
-        db_table = 'non_local_qr_auth_login_record'
-        verbose_name = '非本机扫码登录记录'
-        verbose_name_plural = '非本机扫码登录记录'
-        ordering = ['-auth_success_time']
-
-    def __str__(self):
-        return f'{self.user_id} - {self.role_name}'
-
-
 class NonLocalQrBlacklist(models.Model):
     """非本机扫码黑名单（仅校验 user_id）"""
 

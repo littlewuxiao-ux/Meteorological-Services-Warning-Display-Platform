@@ -16,7 +16,6 @@ from django.views.decorators.http import require_http_methods
 from core.models import (
     AccessGroup,
     AccessGroupPermission,
-    NonLocalQrAuthLoginRecord,
     NonLocalQrBlacklist,
 )
 from utils.access_control import (
@@ -194,10 +193,9 @@ def access_complete_qr_login(request, time_mode='current'):
     request.session.pop('seat_scanned_user_id', None)
     request.session.pop('seat_pending_group_id', None)
 
-    NonLocalQrAuthLoginRecord.objects.create(
-        user_id=user_id,
-        role_name=group.name,
-        group_id=group.id,
+    logger.info(
+        '非本机扫码登录成功 user_id=%s 角色=%s group_id=%s',
+        user_id, group.name, group.id,
     )
     perms = permissions_dict_from_group(group)
     sid = create_seat_session(

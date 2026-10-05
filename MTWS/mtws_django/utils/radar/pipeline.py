@@ -446,6 +446,7 @@ class RadarAlertPipeline:
             status='done',
             finished_at=now,
         )
+        self._trim_radar_job_runs()
         codes = [r['airport_4code'] for r in results]
         previous = {
             row.airport_4code: row
@@ -456,6 +457,27 @@ class RadarAlertPipeline:
                 self._persist_one_airport(r, frame_ts, previous.get(r['airport_4code']), now)
             except Exception:
                 logger.exception('雷达告警写入失败: %s', r.get('airport_4code'))
+
+    @staticmethod
+    def _trim_radar_job_runs() -> None:
+        """超过 1000 行时删最旧的，留到 900 行。规则与实况水位线相同。"""
+        from core.models import RadarJobRun
+
+        max_records = 1000
+        current_count = RadarJobRun.objects.count()
+        if current_count <= max_records:
+            return
+        target_count = int(max_records * 0.9)
+        delete_count = current_count - target_count
+        old_ids = list(
+            RadarJobRun.objects.order_by('created_at', 'id').values_list('id', flat=True)[:delete_count]
+        )
+        if old_ids:
+            RadarJobRun.objects.filter(id__in=old_ids).delete()
+            logger.info(
+                '雷达任务记录水位线清理：%s 条 → 删除 %s 条，目标保留 %s 条',
+                current_count, delete_count, target_count,
+            )
 
     @staticmethod
     def _radar_content_same(old, defaults: dict) -> bool:

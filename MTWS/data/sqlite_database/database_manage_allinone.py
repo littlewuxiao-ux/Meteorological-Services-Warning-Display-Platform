@@ -228,37 +228,27 @@ class PagedEditDialog:
 # ─────────────────────────────────────────────────────────────
 
 class DatabaseViewer(tk.Tk):
-    def _choose_database(self):
-        config = os.path.join(DB_DIR, "mtws_config.db")
-        runtime = os.path.join(DB_DIR, "mtws_runtime.db")
-        if os.path.isfile(config) and os.path.isfile(runtime):
-            use_config = messagebox.askyesno("选择数据库", "是：打开配置库\n否：打开生产库")
-            return config if use_config else runtime
-        for path in (config, runtime, os.path.join(DB_DIR, "mtws_database.db")):
+    def _open_databases(self):
+        found = []
+        for label, filename in (("配置库", "mtws_config.db"), ("生产库", "mtws_runtime.db")):
+            path = os.path.join(DB_DIR, filename)
             if os.path.isfile(path):
-                return path
-        return None
+                found.append((label, sqlite3.connect(path)))
+        return found
 
     def __init__(self):
         super().__init__()
         self.title("数据库浏览器")
         self.geometry("1000x700")
-        db_path = self._choose_database()
-        if not db_path:
+        self.current_conns = self._open_databases()
+        if not self.current_conns:
             messagebox.showerror("错误", "未找到 mtws_config.db 或 mtws_runtime.db")
             self.destroy()
             return
-
-        try:
-            self.conn = sqlite3.connect(db_path)
-            self.title(f"数据库浏览器 - {os.path.basename(db_path)}")
-        except Exception as e:
-            messagebox.showerror("数据库连接失败", str(e))
-            self.destroy()
-            return
+        self.title("数据库浏览器 - " + "、".join(label for label, _conn in self.current_conns))
 
         # 左侧表列表
-        self.table_listbox = tk.Listbox(self, width=30)
+        self.table_listbox = tk.Listbox(self, width=42)
         self.table_listbox.pack(side='left', fill='y')
         self.table_listbox.bind('<<ListboxSelect>>', self.on_table_select)
 
@@ -285,6 +275,8 @@ class DatabaseViewer(tk.Tk):
 
         self.tree = None
         self.current_table = None
+        self.current_conn = None
+        self._table_entries = []
         self.current_columns = []
         self.rows_map = {}
         self._all_rows = []
@@ -294,19 +286,24 @@ class DatabaseViewer(tk.Tk):
         self.load_table_names()
 
     def load_table_names(self):
-        tables = get_tables(self.conn)
         self.table_listbox.delete(0, tk.END)
-        for tbl in tables:
-            self.table_listbox.insert(tk.END, tbl)
+        self._table_entries = []
+        for label, conn in self.current_conns:
+            for tbl in sorted(get_tables(conn)):
+                if tbl.startswith("sqlite_"):
+                    continue
+                self._table_entries.append((conn, tbl))
+                self.table_listbox.insert(tk.END, f"{label} / {tbl}")
 
     def on_table_select(self, event):
         sel = self.table_listbox.curselection()
         if not sel:
             return
-        table_name = self.table_listbox.get(sel[0])
-        if table_name != self.current_table:
+        conn, table_name = self._table_entries[sel[0]]
+        if table_name != self.current_table or conn is not self.current_conn:
             self._table_page = 0
-        columns, rows = get_table_data(self.conn, table_name)
+        columns, rows = get_table_data(conn, table_name)
+        self.current_conn = conn
         self.current_table = table_name
         self.current_columns = columns
         self.show_table_data(columns, rows)
@@ -463,8 +460,8 @@ class DatabaseViewer(tk.Tk):
             try:
                 placeholders = ','.join(['?' for _ in values])
                 sql = f"INSERT INTO {table} ({','.join(columns)}) VALUES ({placeholders})"
-                self.conn.execute(sql, values)
-                self.conn.commit()
+                self.current_conn.execute(sql, values)
+                self.current_conn.commit()
                 self.on_table_select(None)
                 win.destroy()
             except Exception as e:
@@ -522,8 +519,8 @@ class DatabaseViewer(tk.Tk):
             try:
                 set_clause = ','.join([f"{col}=?" for col in columns])
                 sql = f"UPDATE {table} SET {set_clause} WHERE rowid=?"
-                self.conn.execute(sql, new_vals + [rowid])
-                self.conn.commit()
+                self.current_conn.execute(sql, new_vals + [rowid])
+                self.current_conn.commit()
                 self.on_table_select(None)
                 win.destroy()
             except Exception as e:
@@ -553,8 +550,8 @@ class DatabaseViewer(tk.Tk):
         if not answer:
             return
         try:
-            self.conn.execute(f"DELETE FROM {table} WHERE rowid=?", (rowid,))
-            self.conn.commit()
+            self.current_conn.execute(f"DELETE FROM {table} WHERE rowid=?", (rowid,))
+            self.current_conn.commit()
             self.on_table_select(None)
         except Exception as e:
             messagebox.showerror("删除失败", str(e))
@@ -580,8 +577,8 @@ class DatabaseViewer(tk.Tk):
             try:
                 placeholders = ','.join(['?' for _ in values])
                 sql = f"INSERT INTO {table} ({','.join(columns)}) VALUES ({placeholders})"
-                self.conn.execute(sql, values)
-                self.conn.commit()
+                self.current_conn.execute(sql, values)
+                self.current_conn.commit()
                 self.on_table_select(None)
                 win.destroy()
                 messagebox.showinfo("成功", "行已复制")
@@ -605,7 +602,7 @@ class DatabaseViewer(tk.Tk):
             return
 
         table = self.current_table
-        cursor = self.conn.cursor()
+        cursor = self.current_conn.cursor()
         cursor.execute(f"SELECT COUNT(*) FROM {table}")
         row_count = cursor.fetchone()[0]
         cursor.close()
@@ -626,10 +623,10 @@ class DatabaseViewer(tk.Tk):
             return
 
         try:
-            self.conn.execute(f"DELETE FROM {table}")
-            self.conn.commit()
-            self.conn.execute(f"DELETE FROM sqlite_sequence WHERE name='{table}'")
-            self.conn.commit()
+            self.current_conn.execute(f"DELETE FROM {table}")
+            self.current_conn.commit()
+            self.current_conn.execute(f"DELETE FROM sqlite_sequence WHERE name='{table}'")
+            self.current_conn.commit()
             self.on_table_select(None)
             messagebox.showinfo("成功", f"表 '{table}' 的所有数据已清空\n共删除 {row_count} 行数据")
         except Exception as e:
@@ -654,7 +651,7 @@ class DatabaseViewer(tk.Tk):
             return
 
         try:
-            cursor = self.conn.cursor()
+            cursor = self.current_conn.cursor()
             cursor.execute(f"SELECT * FROM {self.current_table}")
             rows = cursor.fetchall()
             columns = self.current_columns
