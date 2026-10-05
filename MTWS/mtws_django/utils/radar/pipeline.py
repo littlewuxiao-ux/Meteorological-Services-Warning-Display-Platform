@@ -124,9 +124,10 @@ def _run_job_safe(codes: Optional[List[str]] = None) -> None:
 class RadarAlertPipeline:
     def __init__(self, config: Optional[dict] = None):
         from core.models import RadarAlertConfig
+        from utils.user_settings import active_job_user, json_config_row
 
         if config is None:
-            row = RadarAlertConfig.objects.order_by('id').first()
+            row = json_config_row(RadarAlertConfig, active_job_user())
             config = merge_config(row.config if row else None)
         else:
             config = merge_config(config)

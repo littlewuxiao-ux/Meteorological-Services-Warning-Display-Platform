@@ -92,8 +92,6 @@ ACCESS_MODULES: List[Dict[str, Any]] = [
      'hint_display': '设置中显示机场区域', 'hint_write': '可改机场区域（全站仅一组）'},
     {'code': 'settings_taf_import', 'name': '预报入库告警', 'category': 'settings', 'has_activate': False, 'has_write': True, 'settings_write_exclusive': True,
      'hint_display': '设置中显示预报入库告警', 'hint_write': '可改预报入库告警（全站仅一组）'},
-    {'code': 'settings_area_options', 'name': '区域信息设置', 'category': 'settings', 'has_activate': False, 'has_write': True, 'settings_write_exclusive': True,
-     'hint_display': '设置中显示区域信息', 'hint_write': '可改区域选项（全站仅一组）'},
     {'code': 'settings_data_refresh', 'name': '数据更新设置', 'category': 'settings', 'has_activate': False, 'has_write': True, 'settings_write_exclusive': True,
      'hint_display': '设置中显示数据更新', 'hint_write': '可改刷新定时（全站仅一组）'},
     {'code': 'settings_popup', 'name': '弹窗设置', 'category': 'settings', 'has_activate': False, 'has_write': True, 'settings_write_exclusive': True,
@@ -134,14 +132,13 @@ DEFAULT_SUPERUSER_PASSWORD = 'admin2026'
 SEAT_COOKIE = 'mtws_seat_sid'
 ADMIN_COOKIE = 'mtws_admin_sid'
 SEAT_TTL_SECONDS = 12 * 3600
-ADMIN_TTL_SECONDS = 30 * 60
+ADMIN_TTL_SECONDS = 5 * 60
 
 # 设置子页写入权限 → settings API 模块码
 SETTINGS_MODULE_MAP = {
     'airport_info': 'settings_airport_info',
     'prefix_area': 'settings_prefix_area',
     'taf_import': 'settings_taf_import',
-    'area_options': 'settings_area_options',
     'data_refresh': 'settings_data_refresh',
     'popup': 'settings_popup',
     'alert_thresholds': 'settings_alert_thresholds',
@@ -309,17 +306,23 @@ def create_admin_session(request) -> str:
     with _lock:
         _admin_sessions[sid] = {
             'ip': get_client_ip(request),
+            'user_code': str(request.headers.get('X-User-Code') or '').strip(),
             'expires': _now() + ADMIN_TTL_SECONDS,
         }
     return sid
 
 
-def touch_admin_session(sid: str) -> bool:
+def touch_admin_session(sid: str, user_code: str | None = None) -> bool:
     with _lock:
         sess = _admin_sessions.get(sid)
         if not sess:
             return False
         if sess['expires'] < _now():
+            _admin_sessions.pop(sid, None)
+            return False
+        bound = str(sess.get('user_code') or '')
+        incoming = str(user_code or '').strip()
+        if bound and incoming and incoming != bound:
             _admin_sessions.pop(sid, None)
             return False
         sess['expires'] = _now() + ADMIN_TTL_SECONDS
@@ -333,13 +336,25 @@ def clear_admin_session(sid: Optional[str]) -> None:
         _admin_sessions.pop(sid, None)
 
 
-def is_admin_unlocked(request) -> bool:
+def is_admin_unlocked(request, *, touch: bool = False) -> bool:
     if not is_local_request(request):
         return False
     sid = request.COOKIES.get(ADMIN_COOKIE) or request.headers.get('X-Admin-Session')
     if not sid:
         return False
-    return touch_admin_session(sid)
+    user_code = str(request.headers.get('X-User-Code') or '').strip()
+    if touch:
+        return touch_admin_session(sid, user_code)
+    with _lock:
+        sess = _admin_sessions.get(sid)
+        if not sess or sess['expires'] < _now():
+            if sess:
+                _admin_sessions.pop(sid, None)
+            return False
+        bound = str(sess.get('user_code') or '')
+        if bound and user_code and user_code != bound:
+            return False
+        return True
 
 
 def create_seat_session(

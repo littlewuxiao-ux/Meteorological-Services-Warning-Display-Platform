@@ -835,35 +835,35 @@ def max_lookback_ms(groups: list) -> int:
     return int(max(hours) * HOUR_MS) + 3 * HOUR_MS
 
 
-def load_config_row():
+def load_config_row(user_code=None):
     from core.models import TrendAlertConfig
-    return TrendAlertConfig.objects.order_by('id').first()
+    from utils.user_settings import active_job_user, json_config_row
+    return json_config_row(TrendAlertConfig, user_code or active_job_user())
 
 
-def known_weather_codes() -> set:
-    from core.models import WeatherAlertLevels
-    return {str(code).strip().upper() for code in WeatherAlertLevels.objects.values_list('weather', flat=True) if code}
+def known_weather_codes(user_code=None) -> set:
+    from utils.user_settings import known_weather_codes as codes_for
+    return codes_for(user_code)
 
 
-def read_config() -> dict:
-    row = load_config_row()
+def read_config(user_code=None) -> dict:
+    from utils.user_settings import active_job_user
+    user = user_code or active_job_user()
+    row = load_config_row(user)
     payload = row.config if row and isinstance(row.config, dict) else default_config()
-    config, _errors = normalize_config(payload, known_weather_codes())
+    config, _errors = normalize_config(payload, known_weather_codes(user))
     return config
 
 
-def save_config(payload: dict) -> tuple:
+def save_config(payload: dict, user_code=None) -> tuple:
     from core.models import TrendAlertConfig
-    before = read_config()
-    config, errors = normalize_config(payload, known_weather_codes())
+    from utils.user_settings import active_job_user, save_json_config
+    user = user_code or active_job_user()
+    before = read_config(user)
+    config, errors = normalize_config(payload, known_weather_codes(user))
     if errors:
         return None, errors
-    row = TrendAlertConfig.objects.order_by('id').first()
-    if row:
-        row.config = config
-        row.save(update_fields=['config', 'updated_at'])
-    else:
-        TrendAlertConfig.objects.create(config=config)
+    save_json_config(TrendAlertConfig, user, config)
     now_ms = int(time.time() * 1000)
     universe = _active_universe(now_ms)
     changed = _changed_airports(before.get('groups') or [], config.get('groups') or [], universe)

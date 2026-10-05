@@ -34,14 +34,16 @@ def _json_body(request):
 def radar_alert_config(request, time_mode='current'):
     from core.models import RadarAlertConfig
     from api.settings_views import _deny_settings_write
+    from utils.user_settings import json_config_row, save_json_config, scope_meta, settings_subject
 
-    row = RadarAlertConfig.objects.order_by('id').first()
+    user, _editing = settings_subject(request, time_mode)
+    row = json_config_row(RadarAlertConfig, user)
     if request.method == 'GET':
         denied = _deny(request, 'settings_radar_alert', 'display', '无雷达告警设置权限')
         if denied:
             return denied
         cfg = merge_config(row.config if row else None)
-        return JsonResponse({'success': True, 'config': cfg})
+        return JsonResponse({'success': True, 'config': cfg, **scope_meta(request, time_mode)})
 
     denied = _deny_settings_write(request, 'settings_radar_alert')
     if denied:
@@ -51,11 +53,12 @@ def radar_alert_config(request, time_mode='current'):
     if not isinstance(cfg_in, dict):
         return JsonResponse({'success': False, 'error': 'config must be object'}, status=400)
     cfg = merge_config(cfg_in)
-    if row:
-        row.config = cfg
-        row.save(update_fields=['config', 'updated_at'])
-    else:
-        RadarAlertConfig.objects.create(config=cfg)
+    save_json_config(RadarAlertConfig, user, cfg)
+    try:
+        from parsers.scheduler import reload_scheduler_jobs
+        reload_scheduler_jobs()
+    except Exception:
+        logger.exception('雷达配置保存后重载调度失败')
     # 配置变更后清瓦片索引指纹，下次任务重建
     from core.models import RadarTileIndex
     RadarTileIndex.objects.all().delete()
@@ -99,7 +102,8 @@ def radar_rebuild_tile_index(request, time_mode='current'):
     denied = _deny_settings_write(request, 'settings_radar_alert')
     if denied:
         return denied
-    row = RadarAlertConfig.objects.order_by('id').first()
+    from utils.user_settings import active_job_user, json_config_row
+    row = json_config_row(RadarAlertConfig, active_job_user())
     cfg = merge_config(row.config if row else None)
 
     from utils.airport_coords import resolve_airport_coords
@@ -133,7 +137,8 @@ def _radar_overlay_meta():
     from core.models import RadarJobRun, RadarAlertConfig
 
     row = RadarJobRun.objects.order_by('-id').first()
-    cfg_row = RadarAlertConfig.objects.order_by('id').first()
+    from utils.user_settings import active_job_user, json_config_row
+    cfg_row = json_config_row(RadarAlertConfig, active_job_user())
     cfg = merge_config(cfg_row.config if cfg_row else None)
     if not row or not row.host or not row.path:
         return None
@@ -193,7 +198,8 @@ def radar_alerts(request, time_mode='current'):
     future_hours = clamp_future_hours(request.GET.get('future_hours'))
     universe = set(airport_codes_for_scope(scope, future_hours))
     hide_stale, stale_codes, stale_started = job_stale_filter()
-    cfg_row = RadarAlertConfig.objects.order_by('id').first()
+    from utils.user_settings import active_job_user, json_config_row
+    cfg_row = json_config_row(RadarAlertConfig, active_job_user())
     alarm_colors = set(merge_config(cfg_row.config if cfg_row else None).get('alarm_colors') or ['R', 'Y'])
     qs = AirportRadarAlert.objects.all()
     rows = []
@@ -287,7 +293,8 @@ def radar_echo(request, time_mode='current'):
         return JsonResponse({'success': False, 'error': detail}, status=404)
     lat, lon = found[code]
 
-    cfg_row = RadarAlertConfig.objects.order_by('id').first()
+    from utils.user_settings import active_job_user, json_config_row
+    cfg_row = json_config_row(RadarAlertConfig, active_job_user())
     cfg = merge_config(cfg_row.config if cfg_row else None)
     meta = _radar_overlay_meta() or {}
     z = int(cfg.get('final_z') or 7)

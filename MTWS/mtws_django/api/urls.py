@@ -11,9 +11,8 @@ from .airport_extra_views import (
 )
 from .settings_views import (
     settings_airport_info, settings_airport_info_detail,
-    settings_area_options, settings_area_options_detail,
     settings_data_refresh_timer, settings_data_refresh_timer_detail,
-    settings_popup,
+    settings_popup, settings_restore,
     settings_alert_thresholds, settings_alert_thresholds_detail,
     settings_weather_type, settings_weather_type_detail,
     settings_weather_alert, settings_weather_alert_detail,
@@ -24,7 +23,7 @@ from .plain_views import plain_taf_batch, plain_metar_batch, plain_report_text
 from .access_views import (
     access_bootstrap, access_session_status, access_select_role,
     access_complete_qr_login, access_seat_logout,
-    access_admin_unlock, access_admin_lock, access_admin_change_password,
+    access_admin_unlock, access_admin_lock, access_admin_touch, access_admin_change_password,
     access_admin_groups, access_admin_group_detail,
     access_admin_blacklist, access_admin_blacklist_detail,
 )
@@ -96,10 +95,9 @@ urlpatterns = [
     # ===== 设置管理API =====
     path('settings/airport-info/', settings_airport_info, name='settings_airport_info'),
     path('settings/airport-info/<str:airport_4code>/', settings_airport_info_detail, name='settings_airport_info_detail'),
-    path('settings/area-options/', settings_area_options, name='settings_area_options'),
-    path('settings/area-options/<int:option_id>/', settings_area_options_detail, name='settings_area_options_detail'),
     path('settings/data-refresh-timer/', settings_data_refresh_timer, name='settings_data_refresh_timer'),
-    path('settings/data-refresh-timer/<int:timer_id>/', settings_data_refresh_timer_detail, name='settings_data_refresh_timer_detail'),
+    path('settings/data-refresh-timer/<str:timer_id>/', settings_data_refresh_timer_detail, name='settings_data_refresh_timer_detail'),
+    path('settings/restore/', settings_restore, name='settings_restore'),
     path('settings/popup/', settings_popup, name='settings_popup'),
     path('settings/alert-thresholds/', settings_alert_thresholds, name='settings_alert_thresholds'),
     path('settings/alert-thresholds/<str:airport_4code>/', settings_alert_thresholds_detail, name='settings_alert_thresholds_detail'),
@@ -124,6 +122,7 @@ urlpatterns = [
     path('access/complete-qr-login/', access_complete_qr_login, name='access_complete_qr_login'),
     path('access/seat-logout/', access_seat_logout, name='access_seat_logout'),
     path('access/admin/unlock/', access_admin_unlock, name='access_admin_unlock'),
+    path('access/admin/touch/', access_admin_touch, name='access_admin_touch'),
     path('access/admin/lock/', access_admin_lock, name='access_admin_lock'),
     path('access/admin/change-password/', access_admin_change_password, name='access_admin_change_password'),
     path('access/admin/groups/', access_admin_groups, name='access_admin_groups'),

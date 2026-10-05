@@ -111,6 +111,7 @@
           </button>
           <div class="carrier-menu" id="carrier-menu" hidden>
             <div class="carrier-matrix" id="carrier-matrix"></div>
+            <button type="button" id="carrier-confirm" class="carrier-confirm" disabled>确认</button>
           </div>
         </div>
       </div>
@@ -329,6 +330,12 @@
     <div class="settings-modal-header">
       <h3>系统设置</h3>
       <div style="display:flex;gap:8px;align-items:center;">
+        <span id="settings-admin-unlock" style="display:none;align-items:center;gap:4px;">
+          <input type="password" id="settings-admin-password" placeholder="超级用户密码" autocomplete="current-password" style="width:140px;">
+          <button type="button" class="settings-btn-save" id="settings-admin-unlock-btn">确认</button>
+        </span>
+        <button type="button" class="settings-btn-save" id="superuser-group-btn" style="display:none;">用户组设置</button>
+        <button type="button" class="settings-btn-cancel" id="settings-default-toggle" style="display:none;">编辑默认模板</button>
         <button type="button" class="settings-btn-save" id="superuser-btn" style="display:none;">超级用户</button>
         <button class="settings-modal-close-btn" id="settings-modal-close">关闭</button>
       </div>
@@ -337,7 +344,6 @@
       <button class="settings-tab active" data-tab="airport-info">机场信息</button>
       <button class="settings-tab" data-tab="prefix-area">机场区域</button>
       <button class="settings-tab" data-tab="taf-import">预报入库告警</button>
-      <button class="settings-tab" data-tab="area-options">区域信息</button>
       <button class="settings-tab" data-tab="data-refresh-timer">数据更新</button>
       <button class="settings-tab" data-tab="popup">弹窗设置</button>
       <button class="settings-tab" data-tab="alert-thresholds">告警阈值</button>
@@ -427,54 +433,6 @@
         <div class="settings-msg" id="airport-msg"></div>
       </div>
 
-      <!-- Tab2: 区域信息 -->
-      <div class="settings-tab-pane" id="settings-pane-area-options">
-        <div class="settings-split">
-          <div class="settings-list-panel">
-            <div class="settings-list-toolbar">
-              <button class="settings-add-btn" id="area-add-btn">+ 新增区域</button>
-            </div>
-            <div class="settings-list-scroll">
-              <table class="settings-table" id="area-table">
-                <thead><tr><th>类别</th><th>区域名称</th><th>排序</th><th>操作</th></tr></thead>
-                <tbody id="area-tbody"></tbody>
-              </table>
-            </div>
-          </div>
-          <div class="settings-form-panel" id="area-form-panel" style="display:none;">
-            <h4 id="area-form-title">新增区域</h4>
-            <div class="settings-form-row">
-              <label>类别 <span class="settings-required">*</span></label>
-              <div class="settings-toggle-wrap">
-                <label class="settings-toggle-label">
-                  <input type="checkbox" id="aof-classification-chk" class="settings-toggle-chk">
-                  <div class="settings-toggle-track">
-                    <span class="settings-toggle-side">国内</span>
-                    <span class="settings-toggle-side">国际</span>
-                    <div class="settings-toggle-thumb"></div>
-                  </div>
-                </label>
-              </div>
-            </div>
-            <div class="settings-form-row">
-              <label>区域名称 <span class="settings-required">*</span></label>
-              <input type="text" id="aof-area" maxlength="20" placeholder="2–10位中/英文字符" class="settings-input">
-            </div>
-            <div class="settings-form-row">
-              <label>区域内排序 <span class="settings-required">*</span>
-                <span class="settings-hint">同一类别内不可重复</span>
-              </label>
-              <input type="number" id="aof-sequence" min="1" step="1" class="settings-input settings-input-sm">
-            </div>
-            <div class="settings-form-actions">
-              <button class="settings-btn-save" id="area-save-btn">保存</button>
-              <button class="settings-btn-cancel" id="area-cancel-btn">取消</button>
-            </div>
-          </div>
-        </div>
-        <div class="settings-msg" id="area-msg"></div>
-      </div>
-
       <!-- Tab3: 数据自动更新 -->
       <div class="settings-tab-pane" id="settings-pane-data-refresh-timer">
         <div class="settings-timer-table-wrap">
@@ -484,6 +442,9 @@
             </thead>
             <tbody id="timer-tbody"></tbody>
           </table>
+        </div>
+        <div class="settings-form-actions">
+          <button type="button" class="settings-btn-cancel settings-restore-btn" data-group="data_refresh_timer" data-msg="timer-msg">恢复默认</button>
         </div>
         <div class="settings-msg" id="timer-msg"></div>
       </div>
@@ -524,6 +485,7 @@
           </div>
           <div class="settings-form-actions">
             <button class="settings-btn-save" id="popup-save-btn">保存规则</button>
+            <button type="button" class="settings-btn-cancel settings-restore-btn" data-group="popup" data-msg="popup-msg">恢复默认</button>
           </div>
         </div>
         <div class="settings-msg" id="popup-msg"></div>
@@ -535,6 +497,7 @@
           <div class="settings-list-panel">
             <div class="settings-list-toolbar">
               <button class="settings-add-btn" id="threshold-add-btn">+ 新增</button>
+              <button type="button" class="settings-btn-cancel settings-restore-btn" data-group="airport_alert_thresholds" data-msg="threshold-msg">恢复默认</button>
             </div>
             <div class="settings-list-scroll">
               <table class="settings-table settings-table-auto" id="threshold-table">
@@ -668,6 +631,7 @@
           <div class="settings-list-panel">
             <div class="settings-list-toolbar">
               <button class="settings-add-btn" id="walert-add-btn">+ 新增告警等级</button>
+              <button type="button" class="settings-btn-cancel settings-restore-btn" data-group="weather_alert_levels" data-msg="walert-msg">恢复默认</button>
             </div>
             <div class="settings-list-scroll">
               <table class="settings-table settings-table-auto" id="walert-table">
@@ -722,6 +686,7 @@
       <div class="settings-tab-pane" id="settings-pane-radar-alert">
         <div class="radar-settings-toolbar">
           <button type="button" class="settings-btn-save" id="radar-save-btn">保存配置</button>
+          <button type="button" class="settings-btn-cancel settings-restore-btn" data-group="radar_alert_config" data-msg="radar-msg">恢复默认</button>
           <button type="button" class="settings-btn-cancel" id="radar-rebuild-btn">重建瓦片索引</button>
           <div class="radar-alarm-colors" id="radar-alarm-colors">
             <span class="radar-alarm-colors-label">计入告警</span>
@@ -832,6 +797,7 @@
       <div class="settings-tab-pane" id="settings-pane-trend-alert">
         <div class="radar-settings-toolbar">
           <button type="button" class="settings-btn-cancel" id="trend-alert-add-group">新增规则组</button>
+          <button type="button" class="settings-btn-cancel settings-restore-btn" data-group="trend_alert_config" data-msg="trend-alert-msg">恢复默认</button>
           <span class="settings-hint">规则组计分规则：单个基础条件分值范围为 1.0–5.0 分，多个基础条件分值取平均值或最高值，附加条件分值范围为 0.1–3.0 分，对于多个附加条件，分值在最终基础分值上累加。</span>
         </div>
         <div id="trend-alert-editor"></div>
@@ -880,45 +846,22 @@
       </div>
 
       <div class="settings-tab-pane" id="settings-pane-prefix-area">
-        <div class="settings-split">
-          <div class="settings-list-panel">
-            <div class="settings-list-toolbar">
-              <button class="settings-add-btn" id="prefix-add-btn" type="button">+ 新增前缀</button>
-            </div>
-            <div class="settings-list-scroll">
-              <table class="settings-table settings-table-auto">
-                <thead><tr><th>前缀</th><th>性质</th><th>区域</th><th>备注</th><th>操作</th></tr></thead>
-                <tbody id="prefix-tbody"></tbody>
-              </table>
-            </div>
-            <div id="prefix-msg"></div>
+        <div class="settings-list-panel" style="border-right:0;">
+          <div class="settings-list-toolbar">
+            <button class="settings-btn-save" id="prefix-edit-btn" type="button">编辑</button>
+            <button class="settings-btn-save" id="prefix-save-btn" type="button" hidden>保存</button>
+            <button class="settings-btn-cancel" id="prefix-cancel-btn" type="button" hidden>取消</button>
           </div>
-          <div class="settings-form-panel" id="prefix-form-panel" style="display:none;">
-            <h4 id="prefix-form-title">新增前缀</h4>
-            <div class="settings-form-scroll">
-              <div class="settings-form-row">
-                <label>前缀</label>
-                <input type="text" id="pf-prefix" maxlength="4" class="settings-input" style="text-transform:uppercase;">
-              </div>
-              <div class="settings-form-row">
-                <label>性质</label>
-                <select id="pf-classification" class="settings-input settings-select">
-                  <option value="国内">国内</option>
-                  <option value="国际">国际</option>
-                </select>
-              </div>
-              <div class="settings-form-row">
-                <label>区域</label>
-                <input type="text" id="pf-area" maxlength="20" class="settings-input">
-              </div>
-              <div class="settings-form-row">
-                <label>备注</label>
-                <textarea id="pf-remark" class="settings-input" rows="3"></textarea>
-              </div>
-              <div class="settings-hint">保存后只补尚未填写区域的机场，不覆盖已经设置的区域。</div>
-              <button class="settings-btn-save" id="prefix-save-btn" type="button">保存</button>
-            </div>
+          <div class="settings-list-scroll">
+            <table class="settings-table settings-table-auto" id="prefix-table">
+              <thead><tr>
+                <th>性质</th><th>区域名称</th><th>序号</th><th>前缀</th><th>备注</th>
+                <th id="prefix-op-head" hidden></th>
+              </tr></thead>
+              <tbody id="prefix-tbody"></tbody>
+            </table>
           </div>
+          <div id="prefix-msg"></div>
         </div>
       </div>
 

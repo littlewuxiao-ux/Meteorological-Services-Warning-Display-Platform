@@ -21,6 +21,7 @@ from core.models import (
 from utils.access_control import (
     ACCESS_MODULES,
     ADMIN_COOKIE,
+    ADMIN_TTL_SECONDS,
     LOCAL_GROUP_CODE,
     MODULE_CATEGORIES,
     SEAT_COOKIE,
@@ -100,7 +101,10 @@ def access_bootstrap(request, time_mode='current'):
 @require_http_methods(['GET'])
 def access_session_status(request, time_mode='current'):
     identity = resolve_access_identity(request)
-    return JsonResponse({'success': True, 'data': {'identity': identity}})
+    return JsonResponse({
+        'success': True,
+        'data': {'identity': identity, 'admin_unlocked': is_admin_unlocked(request, touch=False)},
+    })
 
 
 @csrf_exempt
@@ -244,7 +248,15 @@ def access_admin_unlock(request, time_mode='current'):
         return JsonResponse({'success': False, 'error': '口令错误'}, status=403)
     sid = create_admin_session(request)
     resp = JsonResponse({'success': True})
-    return _set_cookie(resp, ADMIN_COOKIE, sid, 30 * 60)
+    return _set_cookie(resp, ADMIN_COOKIE, sid, ADMIN_TTL_SECONDS)
+
+
+@csrf_exempt
+@require_http_methods(['POST'])
+def access_admin_touch(request, time_mode='current'):
+    """设置页切换选项时顺延超级用户会话，不改变当前查看的配置。"""
+    unlocked = is_admin_unlocked(request, touch=True)
+    return JsonResponse({'success': True, 'admin_unlocked': unlocked})
 
 
 @csrf_exempt
@@ -259,7 +271,7 @@ def access_admin_lock(request, time_mode='current'):
 @csrf_exempt
 @require_http_methods(['POST'])
 def access_admin_change_password(request, time_mode='current'):
-    if not is_admin_unlocked(request):
+    if not is_admin_unlocked(request, touch=True):
         return JsonResponse({'success': False, 'error': '请先解锁超级用户'}, status=403)
     data = _json_body(request)
     old_pw = data.get('old_password') or ''
@@ -273,7 +285,7 @@ def access_admin_change_password(request, time_mode='current'):
 
 
 def _require_admin(request):
-    if not is_admin_unlocked(request):
+    if not is_admin_unlocked(request, touch=True):
         return JsonResponse({'success': False, 'error': '请先解锁超级用户'}, status=403)
     return None
 

@@ -52,6 +52,7 @@
     const userCode = (typeof currentUserCode !== 'undefined' ? currentUserCode : null) || window.currentUserCode;
     if (token) h.Authorization = `Bearer ${token}`;
     if (userCode) h['X-User-Code'] = userCode;
+    if (window.__settingsScope === 'default') h['X-Settings-Scope'] = 'default';
     return h;
   }
 
@@ -512,6 +513,7 @@
         msg(data.error || '读取失败', false);
         return;
       }
+      if (typeof window.applySettingsScope === 'function') window.applySettingsScope(data);
       hydrate(data.config || { groups: [] });
       rememberSaved();
       const list = document.getElementById('trend-weather-list');

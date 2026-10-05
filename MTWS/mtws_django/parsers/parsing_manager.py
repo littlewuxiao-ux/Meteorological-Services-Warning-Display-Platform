@@ -54,8 +54,12 @@ class ParsingManager:
             omit_user_fallback=omit,
         )
 
+    def _settings_context(self):
+        from utils.user_settings import bound_or, use_settings_user
+        return use_settings_user(bound_or(self.user_code, self.time_mode))
+
     def run_all_parsers(self, time_mode=None) -> Dict[str, Any]:
-        with self._cas_log_context():
+        with self._cas_log_context(), self._settings_context():
             return self._run_all_parsers_impl(time_mode)
 
     def _run_all_parsers_impl(self, time_mode=None) -> Dict[str, Any]:
@@ -155,7 +159,7 @@ class ParsingManager:
         return results
     
     def run_sequential_parsing(self, time_mode=None) -> Dict[str, Any]:
-        with self._cas_log_context():
+        with self._cas_log_context(), self._settings_context():
             return self._run_sequential_parsing_impl(time_mode)
 
     def _run_sequential_parsing_impl(self, time_mode=None) -> Dict[str, Any]:
@@ -395,7 +399,7 @@ class ParsingManager:
         return results
     
     def run_single_parser(self, parser_type: str) -> Dict[str, Any]:
-        with self._cas_log_context():
+        with self._cas_log_context(), self._settings_context():
             return self._run_single_parser_impl(parser_type)
 
     def _run_single_parser_impl(self, parser_type: str) -> Dict[str, Any]:
@@ -452,7 +456,7 @@ class ParsingManager:
             logger.error(f"记录解析日志失败: {str(e)}")
 
     def run_selective_parsing(self, update_types: list, time_mode=None) -> Dict[str, Any]:
-        with self._cas_log_context():
+        with self._cas_log_context(), self._settings_context():
             return self._run_selective_parsing_impl(update_types, time_mode)
 
     def _run_selective_parsing_impl(self, update_types: list, time_mode=None) -> Dict[str, Any]:

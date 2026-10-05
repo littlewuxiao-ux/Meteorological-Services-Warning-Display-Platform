@@ -10,7 +10,8 @@
   let areaOptions = {};          // { '国内': [...], '国际': [...] }
   let airportEditCode = null;    // 正在编辑的机场四字代码，null=新增
   let airportCurrentCode = null; // 当前查询的四字代码
-  let areaEditId = null;
+  let settingsScope = '';
+  let currentSettingsTab = 'airport-info';
 
   // ========== 工具 ==========
   function apiUrl(path) {
@@ -24,12 +25,60 @@
     const userCode = (typeof currentUserCode !== 'undefined' ? currentUserCode : null) || window.currentUserCode;
     if (token) h['Authorization'] = `Bearer ${token}`;
     if (userCode) h['X-User-Code'] = userCode;
+    window.__settingsScope = settingsScope;
+    if (settingsScope === 'default') h['X-Settings-Scope'] = 'default';
     return h;
   }
 
+  function exitSettingsTemplate() {
+    if (settingsScope !== 'default') return;
+    settingsScope = '';
+    window.__settingsScope = '';
+    const toggle = document.getElementById('settings-default-toggle');
+    if (toggle) toggle.textContent = '编辑默认模板';
+    const modal = document.getElementById('settings-modal');
+    if (modal && window.getComputedStyle(modal).display !== 'none') loadTab(currentSettingsTab);
+  }
+  window.exitSettingsTemplate = exitSettingsTemplate;
+
+  function applyScope(res) {
+    if (res && Object.prototype.hasOwnProperty.call(res, 'can_edit_default')) {
+      window.__adminUnlocked = !!res.can_edit_default;
+    }
+    const unlocked = !!window.__adminUnlocked;
+    const groupBtn = document.getElementById('superuser-group-btn');
+    const toggle = document.getElementById('settings-default-toggle');
+    if (groupBtn) groupBtn.style.display = unlocked ? '' : 'none';
+    if (toggle) {
+      toggle.style.display = unlocked ? '' : 'none';
+      toggle.textContent = settingsScope === 'default' ? '返回我的设置' : '编辑默认模板';
+    }
+    if (res && Object.prototype.hasOwnProperty.call(res, 'allow_restore')) {
+      const allow = !!res.allow_restore;
+      document.querySelectorAll('.settings-restore-btn').forEach((btn) => {
+        btn.style.display = allow ? '' : 'none';
+      });
+    }
+  }
+  window.applySettingsScope = applyScope;
+
   async function apiFetch(url, options) {
-    const res = await fetch(url, { headers: getHeaders(), ...options });
+    const opts = Object.assign({}, options);
+    opts.headers = Object.assign(getHeaders(), (options && options.headers) || {});
+    const res = await fetch(url, opts);
     return res.json();
+  }
+
+  async function touchAdminSession() {
+    if (!window.__adminUnlocked) return;
+    try {
+      const res = await apiFetch(apiUrl('access/admin/touch/'), { method: 'POST', body: '{}' });
+      if (res && res.admin_unlocked === false) {
+        window.__adminUnlocked = false;
+        applyScope({ can_edit_default: false });
+        exitSettingsTemplate();
+      }
+    } catch (err) { /* 顺延失败时保留当前会话，等下一次操作再试 */ }
   }
 
   function showMsg(elId, text, type) {
@@ -74,12 +123,16 @@
 
   // ========== Tab switching ==========
   function switchTab(tabName) {
+    if (tabName !== currentSettingsTab && !confirmLeavePrefixEdit()) return Promise.resolve();
+    if (tabName === currentSettingsTab && prefixEditing) return Promise.resolve();
     document.querySelectorAll('.settings-tab').forEach(t => t.classList.remove('active'));
     document.querySelectorAll('.settings-tab-pane').forEach(p => p.classList.remove('active'));
     const btn = document.querySelector(`.settings-tab[data-tab="${tabName}"]`);
     const pane = document.getElementById(`settings-pane-${tabName}`);
     if (btn) btn.classList.add('active');
     if (pane) pane.classList.add('active');
+    currentSettingsTab = tabName;
+    touchAdminSession();
     return loadTab(tabName);
   }
 
@@ -88,7 +141,6 @@
       case 'airport-info': await loadAirportInfo(); break;
       case 'prefix-area': await loadPrefixAreas(); break;
       case 'taf-import': await loadTafImport(); break;
-      case 'area-options': await loadAreaOptions(); break;
       case 'data-refresh-timer': await loadTimers(); break;
       case 'popup': await loadPopupSettings(); break;
       case 'alert-thresholds': await loadAlertThresholds(); break;
@@ -177,10 +229,14 @@
   }
 
   async function refreshAreaOptionsCache() {
-    const res = await apiFetch(apiUrl('settings/area-options/'));
+    const res = await apiFetch(apiUrl('settings/prefix-area/'));
     if (!res.success) return;
     areaOptions = {};
-    res.data.forEach(o => {
+    const seen = new Set();
+    (res.data || []).forEach(o => {
+      const key = `${o.classification}|${o.area}`;
+      if (seen.has(key)) return;
+      seen.add(key);
       if (!areaOptions[o.classification]) areaOptions[o.classification] = [];
       areaOptions[o.classification].push(o.area);
     });
@@ -275,82 +331,10 @@
     }
   }
 
-  // ========== Tab2: 区域信息 ==========
-  async function loadAreaOptions() {
-    const res = await apiFetch(apiUrl('settings/area-options/'));
-    if (!res.success) { showMsg('area-msg', res.error, 'error'); return; }
-    const tbody = document.getElementById('area-tbody');
-    let lastClass = null;
-    const rows = [];
-    res.data.forEach(o => {
-      if (lastClass !== null && o.classification !== lastClass) {
-        rows.push(`<tr class="settings-area-divider-row"><td colspan="4"><div class="settings-area-divider"></div></td></tr>`);
-      }
-      rows.push(`<tr>
-        <td>${escHtml(o.classification)}</td>
-        <td>${escHtml(o.area)}</td>
-        <td>${escHtml(o.sequence)}</td>
-        <td>
-          <button class="settings-edit-btn" onclick="SettingsModal.editArea(${o.id})">编辑</button>
-          <button class="settings-del-btn" onclick="SettingsModal.deleteArea(${o.id})">删除</button>
-        </td>
-      </tr>`);
-      lastClass = o.classification;
-    });
-    tbody.innerHTML = rows.join('');
-    hideAreaForm();
-  }
-
-  function showAreaForm(data) {
-    const panel = document.getElementById('area-form-panel');
-    panel.style.display = 'flex';
-    panel.style.flexDirection = 'column';
-    document.getElementById('area-form-title').textContent = data ? '编辑区域' : '新增区域';
-    const chk = document.getElementById('aof-classification-chk');
-    const classification = data ? (data.classification || '国内') : '国内';
-    chk.checked = classification === '国际';
-    document.getElementById('aof-area').value = data ? (data.area || '') : '';
-    document.getElementById('aof-sequence').value = data ? (data.sequence ?? '') : '';
-  }
-
-  function hideAreaForm() {
-    document.getElementById('area-form-panel').style.display = 'none';
-    areaEditId = null;
-  }
-
-  async function saveArea() {
-    const chk = document.getElementById('aof-classification-chk').checked;
-    const classification = chk ? '国际' : '国内';
-    const area = document.getElementById('aof-area').value.trim();
-    const sequence = document.getElementById('aof-sequence').value;
-
-    if (!area || area.length < 2 || area.length > 10) {
-      showMsg('area-msg', '区域名称为2–10位字符', 'error'); return;
-    }
-    if (!sequence || isNaN(sequence) || parseInt(sequence) < 1) {
-      showMsg('area-msg', '排序需为正整数', 'error'); return;
-    }
-
-    const payload = { classification, area, sequence: parseInt(sequence) };
-    const isEdit = areaEditId !== null;
-    const url = isEdit
-      ? apiUrl(`settings/area-options/${areaEditId}/`)
-      : apiUrl('settings/area-options/');
-    const method = isEdit ? 'PUT' : 'POST';
-
-    const res = await apiFetch(url, { method, body: JSON.stringify(payload) });
-    if (res.success) {
-      showMsg('area-msg', res.message, 'success');
-      await loadAreaOptions();
-      await refreshAreaOptionsCache();
-    } else {
-      showMsg('area-msg', res.error, 'error');
-    }
-  }
-
   // ========== Tab3: 数据自动更新 ==========
   async function loadTimers() {
     const res = await apiFetch(apiUrl('settings/data-refresh-timer/'));
+    applyScope(res);
     if (!res.success) { showMsg('timer-msg', res.error, 'error'); return; }
     const tbody = document.getElementById('timer-tbody');
     tbody.innerHTML = res.data.map(t => `
@@ -388,6 +372,7 @@
     parkLevelTrack = parkLevelTrack || initTrack(document.getElementById('pf-park-level-track'));
 
     const res = await apiFetch(apiUrl('settings/popup/'));
+    applyScope(res);
     if (!res.success) { showMsg('popup-msg', res.error, 'error'); return; }
     const d = res.data;
     document.getElementById('pf-leeway').value = d.operation_metar_popup_leeway ?? 0;
@@ -441,17 +426,18 @@
 
   async function loadAlertThresholds() {
     const res = await apiFetch(apiUrl('settings/alert-thresholds/'));
+    applyScope(res);
     if (!res.success) { showMsg('threshold-msg', res.error, 'error'); return; }
     const tbody = document.getElementById('threshold-tbody');
     tbody.innerHTML = res.data.map(r => {
-      const isDefault = r.airport_4code === 'default';
-      const ops = isDefault
-        ? `<button class="settings-edit-btn" onclick="SettingsModal.viewThreshold('${r.airport_4code}')">查看</button>`
+      const isGeneric = r.airport_4code === 'default';
+      const ops = isGeneric
+        ? `<button class="settings-edit-btn" onclick="SettingsModal.editThreshold('default')">编辑</button>`
         : `<button class="settings-edit-btn" onclick="SettingsModal.editThreshold('${r.airport_4code}')">编辑</button>
            <button class="settings-del-btn" onclick="SettingsModal.deleteThreshold('${r.airport_4code}')">删除</button>`;
       const fmt = (a,b,c) => `${a??'–'}/${b??'–'}/${c??'–'}`;
-      return `<tr class="${isDefault?'settings-row-readonly':''}">
-        <td>${escHtml(r.airport_4code)}</td>
+      return `<tr>
+        <td>${escHtml(r.label || r.airport_4code)}</td>
         <td>${fmt(r.visibility_m_red,r.visibility_m_yellow,r.visibility_m_green)}</td>
         <td>${fmt(r.cloud_min_red,r.cloud_min_yellow,r.cloud_min_green)}</td>
         <td>${escHtml(r.min_cloud_amt || 'SCT')}</td>
@@ -470,11 +456,12 @@
     thresholdReadonly = !!readonly;
     const panel = document.getElementById('threshold-form-panel');
     panel.style.display = 'flex'; panel.style.flexDirection = 'column';
+    const generic = !!(data && data.airport_4code === 'default');
     document.getElementById('threshold-form-title').textContent =
-      thresholdReadonly ? '查看告警阈值（只读）' : (data ? '编辑告警阈值' : '新增告警阈值');
+      thresholdReadonly ? '查看告警阈值（只读）' : (generic ? '编辑通用告警阈值' : (data ? '编辑告警阈值' : '新增告警阈值'));
     const codeEl = document.getElementById('tf-4code');
     codeEl.disabled = thresholdReadonly || !!data;
-    codeEl.value = data ? data.airport_4code : '';
+    codeEl.value = generic ? '通用' : (data ? data.airport_4code : '');
     TF_MAP.forEach(([field, id]) => {
       const el = document.getElementById(id);
       if (el) { el.value = data ? (data[field] ?? '') : ''; el.disabled = thresholdReadonly; }
@@ -584,6 +571,7 @@
   async function loadWeatherAlert() {
     walertLevelTrack = walertLevelTrack || initTrack(document.getElementById('waf-level-track'));
     const res = await apiFetch(apiUrl('settings/weather-alert/'));
+    applyScope(res);
     if (!res.success) { showMsg('walert-msg', res.error, 'error'); return; }
     weatherTypeCodes = res.type_codes || [];
     const tbody = document.getElementById('walert-tbody');
@@ -597,7 +585,7 @@
         <td>${escHtml(r.description)}</td>
         <td>
           <button class="settings-edit-btn" onclick="SettingsModal.editWeatherAlert(${r.id})">编辑</button>
-          <button class="settings-del-btn" onclick="SettingsModal.deleteWeatherAlert(${r.id})">删除</button>
+          ${r.from_template ? '' : `<button class="settings-del-btn" onclick="SettingsModal.deleteWeatherAlert(${r.id})">删除</button>`}
         </td>
       </tr>`).join('');
     hideWAlertForm();
@@ -643,6 +631,7 @@
 
   async function loadRadarAlertSettings() {
     const res = await apiFetch(apiUrl('radar/config/'));
+    applyScope(res);
     if (!res.success) { showMsg('radar-msg', res.error || '加载失败', 'error'); return; }
     _radarCfg = res.config;
     fillRadarForm(_radarCfg);
@@ -1265,19 +1254,78 @@
 
     // 关闭按钮
     document.getElementById('settings-modal-close').addEventListener('click', () => {
+      if (!confirmLeavePrefixEdit()) return;
       window.hideModal('settings-modal');
     });
 
     const suBtn = document.getElementById('superuser-btn');
-    if (suBtn) {
+    const unlockBox = document.getElementById('settings-admin-unlock');
+    const unlockInput = document.getElementById('settings-admin-password');
+    const unlockBtn = document.getElementById('settings-admin-unlock-btn');
+    async function unlockSettingsAdmin() {
+      const password = unlockInput ? unlockInput.value : '';
+      const res = await apiFetch(apiUrl('access/admin/unlock/'), {
+        method: 'POST',
+        body: JSON.stringify({ password }),
+      });
+      if (!res.success) {
+        alert(res.error || '解锁失败');
+        return;
+      }
+      if (unlockInput) unlockInput.value = '';
+      if (unlockBox) unlockBox.style.display = 'none';
+      window.__adminUnlocked = true;
+      applyScope({ can_edit_default: true });
+      await loadTab(currentSettingsTab);
+    }
+    if (suBtn && unlockBox) {
       suBtn.addEventListener('click', () => {
-        if (typeof openSuperuserAdmin === 'function') openSuperuserAdmin();
-        else {
-          const tm = window.timeMode || window.currentTimeMode || 'current';
-          window.location.href = `/${tm}/access-admin/`;
+        const open = unlockBox.style.display === 'none';
+        unlockBox.style.display = open ? 'inline-flex' : 'none';
+        if (open && unlockInput) unlockInput.focus();
+      });
+    }
+    if (unlockBtn) unlockBtn.addEventListener('click', unlockSettingsAdmin);
+    if (unlockInput) {
+      unlockInput.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          unlockSettingsAdmin();
         }
       });
     }
+    const groupBtn = document.getElementById('superuser-group-btn');
+    if (groupBtn) {
+      groupBtn.addEventListener('click', () => {
+        if (typeof openSuperuserAdmin === 'function') openSuperuserAdmin();
+      });
+    }
+    const scopeToggle = document.getElementById('settings-default-toggle');
+    if (scopeToggle) {
+      scopeToggle.addEventListener('click', async () => {
+        settingsScope = settingsScope === 'default' ? '' : 'default';
+        window.__settingsScope = settingsScope;
+        scopeToggle.textContent = settingsScope === 'default' ? '返回我的设置' : '编辑默认模板';
+        await loadTab(currentSettingsTab);
+      });
+    }
+    document.querySelectorAll('.settings-restore-btn').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const group = btn.dataset.group;
+        const hint = group === 'airport_alert_thresholds'
+          ? '只清除你的通用阈值，已单独设置的机场会保留。确定恢复？'
+          : '清除你在这一组保存的内容，改回默认。确定恢复？';
+        if (!confirm(hint)) return;
+        const res = await apiFetch(apiUrl('settings/restore/'), {
+          method: 'POST',
+          body: JSON.stringify({ group }),
+        });
+        showMsg(btn.dataset.msg, res.success ? (res.message || '已恢复默认') : (res.error || '恢复失败'), res.success ? 'success' : 'error');
+        if (!res.success) return;
+        if (group === 'trend_alert_config' && window.TrendAlertSettings) await window.TrendAlertSettings.load();
+        else await loadTab(currentSettingsTab);
+      });
+    });
 
     // classification联动 area select (机场信息Tab)
     const afClassChk = document.getElementById('af-classification-chk');
@@ -1295,23 +1343,34 @@
     const airportSearchBtn = document.getElementById('airport-search-btn');
     if (airportSearchBtn) airportSearchBtn.addEventListener('click', () => searchAirport());
     document.getElementById('airport-save-btn').addEventListener('click', saveAirport);
-    const prefixAdd = document.getElementById('prefix-add-btn');
-    if (prefixAdd) prefixAdd.addEventListener('click', () => showPrefixForm(null));
+    const prefixEditBtn = document.getElementById('prefix-edit-btn');
+    if (prefixEditBtn) prefixEditBtn.addEventListener('click', beginPrefixEdit);
     const prefixSave = document.getElementById('prefix-save-btn');
-    if (prefixSave) prefixSave.addEventListener('click', savePrefix);
+    if (prefixSave) prefixSave.addEventListener('click', savePrefixSheet);
+    const prefixCancel = document.getElementById('prefix-cancel-btn');
+    if (prefixCancel) prefixCancel.addEventListener('click', cancelPrefixEdit);
+    const prefixBody = document.getElementById('prefix-tbody');
+    if (prefixBody) {
+      prefixBody.addEventListener('click', (event) => {
+        const del = event.target.closest('[data-prefix-delete]');
+        if (del) {
+          deletePrefixLine(del.dataset.region, del.dataset.prefixDelete);
+          return;
+        }
+        const addLine = event.target.closest('[data-prefix-add-line]');
+        if (addLine) {
+          addPrefixLine(addLine.dataset.prefixAddLine);
+          return;
+        }
+        const addRegion = event.target.closest('[data-prefix-add-region]');
+        if (addRegion) addPrefixRegion(addRegion.dataset.prefixAddRegion);
+      });
+    }
     const tafAdd = document.getElementById('taf-add-btn');
     if (tafAdd) tafAdd.addEventListener('click', () => showTafForm(null));
     const tafSave = document.getElementById('taf-save-btn');
     if (tafSave) tafSave.addEventListener('click', saveTafImport);
     document.getElementById('airport-cancel-btn').addEventListener('click', hideAirportForm);
-
-    // 区域表单按钮
-    document.getElementById('area-add-btn').addEventListener('click', () => {
-      areaEditId = null;
-      showAreaForm(null);
-    });
-    document.getElementById('area-save-btn').addEventListener('click', saveArea);
-    document.getElementById('area-cancel-btn').addEventListener('click', hideAreaForm);
 
     // 弹窗设置保存
     document.getElementById('popup-save-btn').addEventListener('click', savePopupSettings);
@@ -1361,7 +1420,6 @@
       'airport-info': 'settings_airport_info',
       'prefix-area': 'settings_prefix_area',
       'taf-import': 'settings_taf_import',
-      'area-options': 'settings_area_options',
       'data-refresh-timer': 'settings_data_refresh',
       'popup': 'settings_popup',
       'alert-thresholds': 'settings_alert_thresholds',
@@ -1379,57 +1437,283 @@
     });
   }
 
-  // ========== 机场区域 ==========
-  let prefixEdit = null;
+  // ========== 机场区域：查看只读，编辑时整表修改，保存时一次写入 ==========
+  let prefixRows = [];
+  let prefixEditing = false;
+  let prefixDraft = { '国内': [], '国际': [] };
+  let prefixUid = 1;
+  let prefixFocus = '';
+
+  function prefixAttr(value) {
+    return escHtml(value).replace(/"/g, '&quot;');
+  }
+
+  function nextPrefixId() {
+    prefixUid += 1;
+    return 'pf' + prefixUid;
+  }
+
+  function confirmLeavePrefixEdit() {
+    if (!prefixEditing) return true;
+    if (!confirm('当前修改尚未保存，确定离开吗？')) return false;
+    prefixEditing = false;
+    prefixDraft = { '国内': [], '国际': [] };
+    return true;
+  }
+
+  function draftFromPrefixRows(rows) {
+    const draft = { '国内': [], '国际': [] };
+    const index = new Map();
+    (rows || []).forEach((row) => {
+      const kind = row.classification === '国际' ? '国际' : '国内';
+      const key = `${kind}|${row.sequence}|${row.area}`;
+      if (!index.has(key)) {
+        const region = {
+          id: nextPrefixId(),
+          area: row.area || '',
+          sequence: row.sequence,
+          prefixes: [],
+        };
+        index.set(key, region);
+        draft[kind].push(region);
+      }
+      index.get(key).prefixes.push({
+        id: nextPrefixId(),
+        prefix: row.prefix || '',
+        remark: row.remark || '',
+      });
+    });
+    ['国内', '国际'].forEach((kind) => {
+      draft[kind].sort((a, b) => Number(a.sequence) - Number(b.sequence));
+    });
+    return draft;
+  }
+
+  function findPrefixRegion(regionId) {
+    for (const kind of ['国内', '国际']) {
+      const region = prefixDraft[kind].find((item) => item.id === regionId);
+      if (region) return { kind, region };
+    }
+    return null;
+  }
+
+  function syncPrefixDraft() {
+    if (!prefixEditing) return;
+    document.querySelectorAll('[data-prefix-region][data-field]').forEach((el) => {
+      const found = findPrefixRegion(el.dataset.prefixRegion);
+      if (!found) return;
+      if (el.dataset.field === 'area') found.region.area = el.value;
+      if (el.dataset.field === 'sequence') found.region.sequence = el.value;
+    });
+    document.querySelectorAll('[data-prefix-row][data-field]').forEach((el) => {
+      for (const kind of ['国内', '国际']) {
+        for (const region of prefixDraft[kind]) {
+          const row = region.prefixes.find((item) => item.id === el.dataset.prefixRow);
+          if (!row) continue;
+          if (el.dataset.field === 'prefix') row.prefix = el.value;
+          if (el.dataset.field === 'remark') row.remark = el.value;
+        }
+      }
+    });
+  }
+
+  function paintPrefixChrome() {
+    const editBtn = document.getElementById('prefix-edit-btn');
+    const saveBtn = document.getElementById('prefix-save-btn');
+    const cancelBtn = document.getElementById('prefix-cancel-btn');
+    const opHead = document.getElementById('prefix-op-head');
+    if (editBtn) editBtn.hidden = prefixEditing;
+    if (saveBtn) saveBtn.hidden = !prefixEditing;
+    if (cancelBtn) cancelBtn.hidden = !prefixEditing;
+    if (opHead) opHead.hidden = !prefixEditing;
+  }
+
+  function renderPrefixTable() {
+    const tbody = document.getElementById('prefix-tbody');
+    if (!tbody) return;
+    paintPrefixChrome();
+    const source = prefixEditing ? prefixDraft : draftFromPrefixRows(prefixRows);
+    const html = [];
+    ['国内', '国际'].forEach((kind) => {
+      const block = source[kind] || [];
+      if (!block.length && !prefixEditing) return;
+      const span = Math.max(1, block.reduce((sum, region) => sum + region.prefixes.length, 0));
+      let placedKind = false;
+      const kindCell = (rowspan) => {
+        if (placedKind) return '';
+        placedKind = true;
+        const add = prefixEditing
+          ? `<div class="prefix-cell-action"><button class="settings-edit-btn" type="button" data-prefix-add-region="${kind}">新增区域</button></div>`
+          : '';
+        return `<td class="settings-merge-cell${prefixEditing ? ' is-edit-block' : ''}" rowspan="${rowspan}">${kind}${add}</td>`;
+      };
+      if (!block.length) {
+        html.push(`<tr>${kindCell(1)}<td></td><td></td><td></td><td></td>${prefixEditing ? '<td></td>' : ''}</tr>`);
+        return;
+      }
+      block.forEach((region) => {
+        region.prefixes.forEach((row, index) => {
+          const regionCells = index === 0 ? `
+            <td class="settings-merge-cell${prefixEditing ? ' is-edit-region' : ''}" rowspan="${region.prefixes.length}">
+              ${prefixEditing
+                ? `<input class="settings-input prefix-inline-input" data-prefix-region="${region.id}" data-field="area" maxlength="20" value="${prefixAttr(region.area)}"${prefixFocus === region.id ? ' data-prefix-focus="1"' : ''}>
+                   <div class="prefix-cell-action"><button class="settings-edit-btn" type="button" data-prefix-add-line="${region.id}">新增前缀</button></div>`
+                : escHtml(region.area)}
+            </td>
+            <td class="settings-merge-cell" rowspan="${region.prefixes.length}">
+              ${prefixEditing
+                ? `<input class="settings-input prefix-inline-input" type="number" min="1" step="1" data-prefix-region="${region.id}" data-field="sequence" value="${prefixAttr(region.sequence)}">`
+                : escHtml(region.sequence)}
+            </td>` : '';
+          const prefixCell = prefixEditing
+            ? `<input class="settings-input prefix-inline-input" maxlength="4" data-prefix-row="${row.id}" data-field="prefix" value="${prefixAttr(row.prefix)}" style="text-transform:uppercase;"${prefixFocus === row.id ? ' data-prefix-focus="1"' : ''}>`
+            : escHtml(row.prefix);
+          const remarkCell = prefixEditing
+            ? `<input class="settings-input prefix-inline-input prefix-remark-input" data-prefix-row="${row.id}" data-field="remark" value="${prefixAttr(row.remark)}">`
+            : escHtml(row.remark || '');
+          const deleteCell = prefixEditing
+            ? `<td><button class="settings-del-btn" type="button" data-prefix-delete="${row.id}" data-region="${region.id}">删除</button></td>`
+            : '';
+          html.push(`<tr>${kindCell(span)}${regionCells}<td>${prefixCell}</td><td>${remarkCell}</td>${deleteCell}</tr>`);
+        });
+      });
+    });
+    tbody.innerHTML = html.join('');
+    prefixFocus = '';
+    const focusEl = tbody.querySelector('[data-prefix-focus]');
+    if (focusEl) focusEl.focus();
+  }
 
   async function loadPrefixAreas() {
+    if (prefixEditing) return;
     const res = await apiFetch(apiUrl('settings/prefix-area/'));
     if (!res.success) { showMsg('prefix-msg', res.error, 'error'); return; }
-    const tbody = document.getElementById('prefix-tbody');
-    tbody.innerHTML = (res.data || []).map(row => `<tr>
-      <td>${escHtml(row.prefix)}</td>
-      <td>${escHtml(row.classification)}</td>
-      <td>${escHtml(row.area)}</td>
-      <td>${escHtml(row.remark || '')}</td>
-      <td>
-        <button class="settings-edit-btn" onclick="SettingsModal.editPrefix('${escHtml(row.prefix)}')">编辑</button>
-        <button class="settings-del-btn" onclick="SettingsModal.deletePrefix('${escHtml(row.prefix)}')">删除</button>
-      </td>
-    </tr>`).join('');
-    document.getElementById('prefix-form-panel').style.display = 'none';
-    prefixEdit = null;
+    prefixRows = res.data || [];
+    renderPrefixTable();
   }
 
-  function showPrefixForm(data) {
-    const panel = document.getElementById('prefix-form-panel');
-    panel.style.display = 'flex';
-    panel.style.flexDirection = 'column';
-    prefixEdit = data ? data.prefix : null;
-    document.getElementById('prefix-form-title').textContent = data ? '编辑前缀' : '新增前缀';
-    const prefixEl = document.getElementById('pf-prefix');
-    prefixEl.disabled = !!data;
-    prefixEl.value = data ? data.prefix : '';
-    document.getElementById('pf-classification').value = data ? data.classification : '国内';
-    document.getElementById('pf-area').value = data ? data.area : '';
-    document.getElementById('pf-remark').value = data ? (data.remark || '') : '';
+  function beginPrefixEdit() {
+    prefixDraft = draftFromPrefixRows(prefixRows);
+    prefixEditing = true;
+    showMsg('prefix-msg', '', '');
+    renderPrefixTable();
   }
 
-  async function savePrefix() {
-    const prefix = document.getElementById('pf-prefix').value.trim().toUpperCase();
-    const payload = {
-      prefix,
-      classification: document.getElementById('pf-classification').value,
-      area: document.getElementById('pf-area').value.trim(),
-      remark: document.getElementById('pf-remark').value.trim(),
+  function cancelPrefixEdit() {
+    prefixEditing = false;
+    prefixDraft = { '国内': [], '国际': [] };
+    showMsg('prefix-msg', '', '');
+    renderPrefixTable();
+  }
+
+  function addPrefixRegion(kind) {
+    syncPrefixDraft();
+    const max = prefixDraft[kind].reduce((highest, region) => Math.max(highest, Number(region.sequence) || 0), 0);
+    const region = {
+      id: nextPrefixId(),
+      area: '',
+      sequence: max + 1,
+      prefixes: [{ id: nextPrefixId(), prefix: '', remark: '' }],
     };
-    if (!prefix || !/^[A-Z]{1,4}$/.test(prefix)) {
-      showMsg('prefix-msg', '前缀须为 1–4 位英文字母', 'error'); return;
+    prefixDraft[kind].push(region);
+    prefixFocus = region.id;
+    renderPrefixTable();
+  }
+
+  function addPrefixLine(regionId) {
+    syncPrefixDraft();
+    const found = findPrefixRegion(regionId);
+    if (!found) return;
+    const row = { id: nextPrefixId(), prefix: '', remark: '' };
+    found.region.prefixes.push(row);
+    prefixFocus = row.id;
+    renderPrefixTable();
+  }
+
+  function deletePrefixLine(regionId, rowId) {
+    syncPrefixDraft();
+    const found = findPrefixRegion(regionId);
+    if (!found) return;
+    const { kind, region } = found;
+    const row = region.prefixes.find((item) => item.id === rowId);
+    if (!row) return;
+    if (region.prefixes.length === 1 && prefixDraft[kind].length === 1) {
+      alert(`${kind}至少要保留一个区域`);
+      return;
     }
-    if (!payload.area) { showMsg('prefix-msg', '请填写区域', 'error'); return; }
-    const url = prefixEdit ? apiUrl(`settings/prefix-area/${prefixEdit}/`) : apiUrl('settings/prefix-area/');
-    const res = await apiFetch(url, { method: prefixEdit ? 'PUT' : 'POST', body: JSON.stringify(payload) });
+    const label = (row.prefix || '').trim() || '这条前缀';
+    const message = region.prefixes.length === 1
+      ? `这是区域「${(region.area || '').trim() || '未命名'}」的最后一条前缀，删除后该区域会一并去掉。确定删除吗？`
+      : `确定删除前缀 ${label}？`;
+    if (!confirm(message)) return;
+    region.prefixes = region.prefixes.filter((item) => item.id !== rowId);
+    if (!region.prefixes.length) {
+      prefixDraft[kind] = prefixDraft[kind].filter((item) => item.id !== region.id);
+    }
+    renderPrefixTable();
+  }
+
+  function validatePrefixDraft() {
+    const prefixes = new Set();
+    const sequences = new Set();
+    const names = new Set();
+    for (const kind of ['国内', '国际']) {
+      const regions = prefixDraft[kind];
+      if (!regions.length) return `${kind}至少要有一个区域`;
+      for (const region of regions) {
+        const area = (region.area || '').trim();
+        if (!area) return '请填写区域名称';
+        if (area.length > 20) return '区域名称不能超过 20 个字';
+        const nameKey = `${kind}|${area}`;
+        if (names.has(nameKey)) return `${kind}下区域「${area}」重复`;
+        names.add(nameKey);
+        const sequence = Number(region.sequence);
+        if (!Number.isInteger(sequence) || sequence < 1) return '序号须为正整数';
+        const seqKey = `${kind}|${sequence}`;
+        if (sequences.has(seqKey)) return `${kind}下序号 ${sequence} 重复`;
+        sequences.add(seqKey);
+        if (!region.prefixes.length) return `区域「${area}」至少要有一个前缀`;
+        for (const row of region.prefixes) {
+          const prefix = (row.prefix || '').trim().toUpperCase();
+          if (!/^[A-Z]{1,4}$/.test(prefix)) return '前缀须为 1–4 位英文字母';
+          if (prefixes.has(prefix)) return `前缀 ${prefix} 重复`;
+          prefixes.add(prefix);
+        }
+      }
+    }
+    return '';
+  }
+
+  async function savePrefixSheet() {
+    syncPrefixDraft();
+    const error = validatePrefixDraft();
+    if (error) { showMsg('prefix-msg', error, 'error'); return; }
+    const rows = [];
+    ['国内', '国际'].forEach((kind) => {
+      prefixDraft[kind].forEach((region) => {
+        region.prefixes.forEach((row) => {
+          rows.push({
+            classification: kind,
+            area: region.area.trim(),
+            sequence: Number(region.sequence),
+            prefix: row.prefix.trim().toUpperCase(),
+            remark: row.remark || '',
+          });
+        });
+      });
+    });
+    const saveBtn = document.getElementById('prefix-save-btn');
+    if (saveBtn) saveBtn.disabled = true;
+    const res = await apiFetch(apiUrl('settings/prefix-area/'), {
+      method: 'PUT',
+      body: JSON.stringify({ rows }),
+    });
+    if (saveBtn) saveBtn.disabled = false;
     showMsg('prefix-msg', res.success ? res.message : res.error, res.success ? 'success' : 'error');
-    if (res.success) await loadPrefixAreas();
+    if (!res.success) return;
+    prefixEditing = false;
+    await loadPrefixAreas();
+    await refreshAreaOptionsCache();
   }
 
   // ========== 预报入库告警 ==========
@@ -1526,18 +1810,6 @@
         });
       });
     },
-    editPrefix(prefix) {
-      apiFetch(apiUrl('settings/prefix-area/')).then(res => {
-        const row = res.data && res.data.find(x => x.prefix === prefix);
-        if (row) showPrefixForm(row);
-      });
-    },
-    async deletePrefix(prefix) {
-      if (!confirm(`确定删除前缀 ${prefix}？已写入机场的区域不会被改掉。`)) return;
-      const res = await apiFetch(apiUrl(`settings/prefix-area/${prefix}/`), { method: 'DELETE' });
-      showMsg('prefix-msg', res.success ? res.message : res.error, res.success ? 'success' : 'error');
-      if (res.success) await loadPrefixAreas();
-    },
     editTaf(code) {
       apiFetch(apiUrl(`settings/taf-import/${code}/`)).then(res => {
         if (res.success && res.data) showTafForm(res.data);
@@ -1554,21 +1826,6 @@
       const res = await apiFetch(apiUrl(`settings/airport-info/${code}/`), { method: 'DELETE' });
       showMsg('airport-msg', res.success ? res.message : res.error, res.success ? 'success' : 'error');
       if (res.success) await searchAirport(code, false);
-    },
-
-    // 区域
-    editArea(id) {
-      areaEditId = id;
-      apiFetch(apiUrl('settings/area-options/')).then(res => {
-        const o = res.data && res.data.find(x => x.id === id);
-        if (o) showAreaForm(o);
-      });
-    },
-    async deleteArea(id) {
-      if (!confirm('确定删除该区域选项？')) return;
-      const res = await apiFetch(apiUrl(`settings/area-options/${id}/`), { method: 'DELETE' });
-      showMsg('area-msg', res.success ? res.message : res.error, res.success ? 'success' : 'error');
-      if (res.success) { await loadAreaOptions(); await refreshAreaOptionsCache(); }
     },
 
     // 定时器

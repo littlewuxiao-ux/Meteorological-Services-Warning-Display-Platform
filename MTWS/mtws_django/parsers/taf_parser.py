@@ -76,9 +76,8 @@ def get_weather_alert_level(weather_phenomenon: str) -> str:
     weather = weather_phenomenon.upper().strip()
     
     try:
-        alert_level = WeatherAlertLevels.objects.filter(
-            weather=weather
-        ).first()
+        from utils.user_settings import current_settings_user, weather_row
+        alert_level = weather_row(current_settings_user(), weather)
         return alert_level.alert_level if alert_level else ALERT_NONE
     except Exception as e:
         logger.error(f"获取天气现象告警级别失败: {e}")
@@ -1138,21 +1137,8 @@ class TafParser:
     def get_airport_info(self):
         """获取机场告警阈值信息"""
         try:
-            airport_info = AirportAlertThresholds.objects.filter(
-                airport_4code=self.airport_4code
-            ).first()
-            
-            if not airport_info:
-                # 使用默认配置
-                default_airport_info = AirportAlertThresholds.objects.filter(
-                    airport_4code='default'
-                ).first()
-                
-                if default_airport_info:
-                    from copy import deepcopy
-                    airport_info = deepcopy(default_airport_info)
-                    airport_info.airport_4code = self.airport_4code  # 使用实际机场代码
-                    airport_info.airport_name = f'未配置机场 ({self.airport_4code})'  # 合理的名称
+            from utils.user_settings import current_settings_user, get_threshold_row
+            airport_info = get_threshold_row(current_settings_user(), self.airport_4code)
             
             if airport_info:
                 return {

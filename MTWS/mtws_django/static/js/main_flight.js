@@ -797,6 +797,13 @@ function bindCarrierPicker() {
     });
     const matrix = document.getElementById('carrier-matrix');
     if (matrix) matrix.addEventListener('click', onCarrierMatrixClick);
+    const confirmBtn = document.getElementById('carrier-confirm');
+    if (confirmBtn) {
+      confirmBtn.addEventListener('click', (event) => {
+        event.stopPropagation();
+        confirmCarrierSelection();
+      });
+    }
 }
 
 function closeCarrierMenu() {
@@ -809,7 +816,27 @@ function closeCarrierMenu() {
 
 let carrierFlightCodes = [];
 let carrierSelectedCodes = [];
+let carrierSavedCodes = [];
 let carrierLoadSeq = 0;
+
+function sameCarrierList(left, right) {
+    const a = sortCarrierCodes(left);
+    const b = sortCarrierCodes(right);
+    return a.length === b.length && a.every((code, index) => code === b[index]);
+}
+
+function carrierCanEdit() {
+    const id = window.__accessIdentity;
+    return !id || !!id.is_local;
+}
+
+function refreshCarrierConfirm() {
+    const btn = document.getElementById('carrier-confirm');
+    if (!btn) return;
+    const dirty = !sameCarrierList(carrierSelectedCodes, carrierSavedCodes);
+    btn.disabled = !dirty || btn.dataset.busy === '1' || !carrierCanEdit();
+    btn.textContent = btn.dataset.busy === '1' ? '正在确认…' : '确认';
+}
 
 function openCarrierMenu() {
     const menu = document.getElementById('carrier-menu');
@@ -827,7 +854,8 @@ function openCarrierMenu() {
         .then((data) => {
             if (seq !== carrierLoadSeq || !window.__carrierMenuOpen) return;
             if (!data.success) throw new Error(data.error || '读取承运人失败');
-            renderCarrierMatrix(data.flights || [], data.selected || []);
+            carrierSavedCodes = sortCarrierCodes(data.selected || []);
+            renderCarrierMatrix(data.flights || [], carrierSavedCodes);
         })
         .catch((err) => {
             if (seq !== carrierLoadSeq) return;
@@ -854,20 +882,25 @@ function renderCarrierMatrix(flights, selected) {
     const cells = codes.map((code) => carrierCellHtml(code, picked.has(code), !flightSet.has(code)));
     cells.push('<button type="button" class="carrier-cell carrier-add" data-add="1" aria-label="添加承运人">+</button>');
     matrix.innerHTML = cells.join('');
+    refreshCarrierConfirm();
+}
+
+function carrierEditBusy() {
+    const btn = document.getElementById('carrier-confirm');
+    return !!(btn && btn.dataset.busy === '1');
 }
 
 function toggleCarrierCell(code) {
+    if (carrierEditBusy()) return;
+    if (!carrierCanEdit()) {
+        alert('非本机使用默认承运人');
+        return;
+    }
     const selected = new Set(carrierSelectedCodes);
-    const action = selected.has(code) ? 'remove' : 'add';
-    if (action === 'remove') selected.delete(code);
+    if (selected.has(code)) selected.delete(code);
     else selected.add(code);
     carrierSelectedCodes = sortCarrierCodes(Array.from(selected));
-    currentCarriers = carrierSelectedCodes.slice();
-    window.carriers = currentCarriers;
-    updateCarrierDisplay();
-    if (typeof updateAllAirportGrids === 'function') updateAllAirportGrids();
     renderCarrierMatrix(carrierFlightCodes, carrierSelectedCodes);
-    queueCarrierOp(action, code);
 }
 
 function beginCarrierAdd() {
@@ -895,6 +928,7 @@ function beginCarrierAdd() {
 }
 
 function commitCarrierAdd(raw) {
+    if (carrierEditBusy()) return;
     const code = String(raw || '').trim().toUpperCase();
     if (!/^[A-Z0-9]{2}$/.test(code)) {
         alert('请输入2位字母或数字');
@@ -909,14 +943,12 @@ function commitCarrierAdd(raw) {
         if (input) input.focus();
         return;
     }
-    const selected = carrierSelectedCodes.concat([code]);
-    carrierSelectedCodes = sortCarrierCodes(selected);
-    currentCarriers = carrierSelectedCodes.slice();
-    window.carriers = currentCarriers;
-    updateCarrierDisplay();
-    if (typeof updateAllAirportGrids === 'function') updateAllAirportGrids();
+    if (!carrierCanEdit()) {
+        alert('非本机使用默认承运人');
+        return;
+    }
+    carrierSelectedCodes = sortCarrierCodes(carrierSelectedCodes.concat([code]));
     renderCarrierMatrix(carrierFlightCodes, carrierSelectedCodes);
-    queueCarrierOp('add', code);
 }
 
 function onCarrierMatrixClick(event) {
@@ -932,39 +964,43 @@ function onCarrierMatrixClick(event) {
     toggleCarrierCell(cell.dataset.carrier);
 }
 
-let _carrierSaveChain = Promise.resolve();
-
-function queueCarrierOp(action, code) {
-    _carrierSaveChain = _carrierSaveChain
-        .catch(() => {})
-        .then(() => postCarrierChange(action, code));
-}
-
-function postCarrierChange(action, code) {
+function confirmCarrierSelection() {
+    const btn = document.getElementById('carrier-confirm');
+    if (!btn || btn.disabled) return;
+    if (!carrierCanEdit()) {
+        alert('非本机使用默认承运人');
+        return;
+    }
+    btn.dataset.busy = '1';
+    refreshCarrierConfirm();
     const headers = Object.assign(
         { 'Content-Type': 'application/json' },
         typeof getRequestHeaders === 'function' ? getRequestHeaders() : {}
     );
-    return fetch(`/${currentTimeMode}/api/flight-carriers/`, {
+    fetch(`/${currentTimeMode}/api/flight-carriers/`, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ action, code }),
+        body: JSON.stringify({ action: 'confirm', codes: carrierSelectedCodes }),
     })
         .then((res) => res.json())
         .then((data) => {
-            if (!data.success) throw new Error(data.error || '保存承运人失败');
-            if (!window.__carrierMenuOpen) {
-                currentCarriers = sortCarrierCodes(data.selected || []);
-                window.carriers = currentCarriers;
-                carrierSelectedCodes = currentCarriers.slice();
-                updateCarrierDisplay();
-            }
+            if (!data.success) throw new Error(data.error || '确认承运人失败');
+            const selected = sortCarrierCodes(data.selected || []);
+            carrierSavedCodes = selected.slice();
+            carrierSelectedCodes = selected.slice();
+            currentCarriers = selected.slice();
+            window.carriers = currentCarriers;
+            updateCarrierDisplay();
+            closeCarrierMenu();
             return reloadAirportsAfterCarrierChange();
         })
         .catch((err) => {
-            console.error('保存承运人失败', err);
-            alert(err.message || '保存承运人失败');
-            if (window.__carrierMenuOpen) openCarrierMenu();
+            console.error('确认承运人失败', err);
+            alert(err.message || '确认承运人失败');
+        })
+        .finally(() => {
+            if (btn) delete btn.dataset.busy;
+            refreshCarrierConfirm();
         });
 }
 

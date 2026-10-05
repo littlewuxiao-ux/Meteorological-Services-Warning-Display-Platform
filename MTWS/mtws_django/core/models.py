@@ -52,9 +52,11 @@ class AirportInfo(models.Model):
 
 
 class AirportAlertThresholds(models.Model):
-    """机场告警阈值表"""
-    
-    airport_4code = models.CharField(max_length=4, primary_key=True, verbose_name='机场四字代码')
+    """机场告警阈值。每个用户只存改过的机场；机场代码 default 是通用行。"""
+
+    id = models.AutoField(primary_key=True)
+    user_code = models.CharField(max_length=12, verbose_name='用户代码')
+    airport_4code = models.CharField(max_length=4, verbose_name='机场四字代码')
     
     # 能见度告警阈值（单位：米）
     visibility_m_red = models.PositiveIntegerField(default=800, verbose_name='能见度红色告警值')
@@ -112,27 +114,10 @@ class AirportAlertThresholds(models.Model):
         db_table = 'airport_alert_thresholds'
         verbose_name = '机场告警阈值'
         verbose_name_plural = '机场告警阈值'
-        
-    def __str__(self):
-        return f"{self.airport_4code} - 告警阈值"
+        unique_together = [['user_code', 'airport_4code']]
 
-
-class AreaOptions(models.Model):
-    """区域选项表"""
-    
-    id = models.AutoField(primary_key=True, verbose_name='ID')
-    classification = models.CharField(max_length=10, verbose_name='分类')
-    sequence = models.PositiveIntegerField(verbose_name='排序')
-    area = models.CharField(max_length=20, verbose_name='区域名称')
-    
-    class Meta:
-        db_table = 'area_options'
-        verbose_name = '区域选项'
-        verbose_name_plural = '区域选项'
-        ordering = ['classification', 'sequence']
-        
     def __str__(self):
-        return f"{self.classification} - {self.area}"
+        return f"{self.user_code}:{self.airport_4code} - 告警阈值"
 
 
 class WeatherAlertLevels(models.Model):
@@ -144,6 +129,7 @@ class WeatherAlertLevels(models.Model):
         ('G', '绿色告警'),
     ]
     
+    user_code = models.CharField(max_length=12, verbose_name='用户代码')
     weather = models.CharField(max_length=20, verbose_name='天气现象代码')
     alert_level = models.CharField(max_length=1, choices=ALERT_LEVEL_CHOICES, verbose_name='告警等级')
     type1 = models.CharField(max_length=1, blank=True, null=True, verbose_name='天气类型1')
@@ -159,29 +145,27 @@ class WeatherAlertLevels(models.Model):
         db_table = 'weather_alert_levels'
         verbose_name = '天气现象告警等级'
         verbose_name_plural = '天气现象告警等级'
-        unique_together = [['weather', 'alert_level']]  # 同一天气现象不能有重复的告警等级
+        unique_together = [['user_code', 'weather', 'alert_level']]
         
     def __str__(self):
         return f"{self.weather} - {self.get_alert_level_display()}"
 
 
 class Carrier(models.Model):
-    """航空公司信息表"""
-    
-    carrier_code = models.CharField(max_length=2, unique=True, verbose_name='航空公司二字代码')
-    carrier_name = models.CharField(max_length=100, blank=True, null=True, verbose_name='航空公司名称')
-    
-    # 时间戳
+    """每个用户一行已选承运人。没改过则不建行，读取用 default。"""
+
+    user_code = models.CharField(max_length=12, unique=True, verbose_name='用户代码')
+    codes = models.JSONField(default=list, verbose_name='二字代码列表')
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')
     updated_at = models.DateTimeField(auto_now=True, verbose_name='更新时间')
-    
+
     class Meta:
         db_table = 'carrier'
         verbose_name = '航空公司'
         verbose_name_plural = '航空公司'
-        
+
     def __str__(self):
-        return f"{self.carrier_code} - {self.carrier_name or '未知航空公司'}"
+        return f"{self.user_code} - 承运人"
 
 
 class SystemConfig(models.Model):
@@ -213,30 +197,20 @@ class SystemConfig(models.Model):
 
 
 class DataRefreshTimer(models.Model):
-    """数据刷新定时器配置表"""
-    
-    DATA_TYPE_CHOICES = [
-        ('metar', '实况数据'),
-        ('taf', '预报数据'),
-        ('flight', '航班数据'),
-        ('aircraft_parking', '停场数据'),
-    ]
-    
-    data = models.CharField(max_length=20, choices=DATA_TYPE_CHOICES, unique=True, verbose_name='数据类型')
-    init_time = models.FloatField(verbose_name='起始时间(分钟)', help_text='支持小数，如2.5表示2分30秒')
-    interval = models.FloatField(verbose_name='更新间隔(分钟)', help_text='支持小数，如2.5表示每2分30秒更新一次')
-    
-    # 时间戳
+    """每个用户一份刷新间隔。config 的键是 metar / taf / flight / aircraft_parking。"""
+
+    user_code = models.CharField(max_length=12, unique=True, verbose_name='用户代码')
+    config = models.JSONField(default=dict, verbose_name='刷新配置')
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')
     updated_at = models.DateTimeField(auto_now=True, verbose_name='更新时间')
-    
+
     class Meta:
         db_table = 'data_refresh_timer'
         verbose_name = '数据刷新定时器配置'
         verbose_name_plural = '数据刷新定时器配置'
-        
+
     def __str__(self):
-        return f"{self.get_data_display()} - 起始:{self.init_time}分 间隔:{self.interval}分"
+        return f"{self.user_code} - 刷新间隔"
 
 
 
@@ -313,9 +287,10 @@ class AirportTafImportConfig(models.Model):
 
 
 class AirportPrefixArea(models.Model):
-    """四字码前缀对应的国内/国际与区域。只在机场区域为空时写入，之后只读已保存的区域。"""
+    """一行一个前缀。同一序号、区域名称、性质在设置页合并显示。"""
 
     prefix = models.CharField(max_length=4, primary_key=True, verbose_name='前缀')
+    sequence = models.PositiveIntegerField(default=1, verbose_name='序号')
     classification = models.CharField(max_length=10, verbose_name='性质')
     area = models.CharField(max_length=20, verbose_name='区域')
     remark = models.TextField(blank=True, default='', verbose_name='备注')
@@ -324,7 +299,7 @@ class AirportPrefixArea(models.Model):
         db_table = 'airport_prefix_area'
         verbose_name = '前缀区域'
         verbose_name_plural = '前缀区域'
-        ordering = ['prefix']
+        ordering = ['sequence', 'area', 'prefix']
 
     def __str__(self):
         return f'{self.prefix} {self.classification}/{self.area}'
@@ -412,8 +387,9 @@ class NonLocalQrBlacklist(models.Model):
 
 
 class RadarAlertConfig(models.Model):
-    """雷达告警可配置参数（单行有效，JSON 存整表）。"""
+    """雷达告警可配置参数。每个用户一行 JSON，没改过则读 default。"""
 
+    user_code = models.CharField(max_length=12, unique=True, verbose_name='用户代码')
     config = models.JSONField(default=dict, verbose_name='配置JSON')
     updated_at = models.DateTimeField(auto_now=True, verbose_name='更新时间')
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')
@@ -518,8 +494,9 @@ class MapStyleConfig(models.Model):
 
 
 class TrendAlertConfig(models.Model):
-    """实况趋势告警规则（单行，JSON 存全部规则组）。"""
+    """实况趋势告警规则。每个用户一行 JSON，没改过则读 default。"""
 
+    user_code = models.CharField(max_length=12, unique=True, verbose_name='用户代码')
     config = models.JSONField(default=dict, verbose_name='配置JSON')
     updated_at = models.DateTimeField(auto_now=True, verbose_name='更新时间')
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')

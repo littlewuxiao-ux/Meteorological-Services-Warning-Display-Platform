@@ -28,6 +28,7 @@ class Command(BaseCommand):
             with transaction.atomic():
                 # 创建默认告警阈值
                 default_thresholds, created = AirportAlertThresholds.objects.update_or_create(
+                    user_code='default',
                     airport_4code='default',
                     defaults={
                         'visibility_m_red': 800,

@@ -75,21 +75,8 @@ def format_cloud_min(height) -> str:
 
 
 def resolve_min_cloud_amt(airport_4code: str) -> str:
-    """机场自身有配置时用该行，否则用 default 行，再否则用 SCT。"""
-    from core.models import AirportAlertThresholds
+    """先取当前用户的机场行或通用行，没有再取模板。"""
+    from utils.user_settings import current_settings_user, get_threshold_row
 
-    code = (airport_4code or '').strip()
-    row = None
-    if code:
-        row = (
-            AirportAlertThresholds.objects.filter(airport_4code=code)
-            .only('min_cloud_amt')
-            .first()
-        )
-    if row is None:
-        row = (
-            AirportAlertThresholds.objects.filter(airport_4code='default')
-            .only('min_cloud_amt')
-            .first()
-        )
+    row = get_threshold_row(current_settings_user(), airport_4code)
     return normalize_cloud_amt(getattr(row, 'min_cloud_amt', None))

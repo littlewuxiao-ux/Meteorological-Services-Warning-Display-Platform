@@ -229,24 +229,11 @@ class DatabaseManager:
             AirportAlertThresholds: 机场告警阈值对象
         """
         try:
-            # 优先查找具体机场的阈值
-            try:
-                return AirportAlertThresholds.objects.get(airport_4code=airport_4code)
-            except ObjectDoesNotExist:
-                # 如果没有找到，使用默认阈值
-                try:
-                    from copy import deepcopy
-                    default_thresholds = AirportAlertThresholds.objects.get(airport_4code='default')
-                    
-                    # 创建一个新对象，复制所有阈值数据但使用实际机场代码
-                    modified_thresholds = deepcopy(default_thresholds)
-                    modified_thresholds.airport_4code = airport_4code  # 使用实际机场代码
-                    
-                    return modified_thresholds
-                    
-                except ObjectDoesNotExist:
-                    logger.warning(f"未找到机场 {airport_4code} 和默认阈值配置")
-                    return None
+            from utils.user_settings import current_settings_user, get_threshold_row
+            row = get_threshold_row(current_settings_user(), airport_4code)
+            if row is None:
+                logger.warning(f"未找到机场 {airport_4code} 和默认阈值配置")
+            return row
                     
         except Exception as e:
             logger.error(f"获取机场阈值失败: {e}")
@@ -282,7 +269,8 @@ class DatabaseManager:
             str: 告警等级 ('R', 'Y', 'G')
         """
         try:
-            alert_record = WeatherAlertLevels.objects.filter(weather=weather_code).first()
+            from utils.user_settings import current_settings_user, weather_row
+            alert_record = weather_row(current_settings_user(), weather_code)
             return alert_record.alert_level if alert_record else None
         except Exception as e:
             logger.error(f"获取天气告警等级失败: {e}")
@@ -299,7 +287,9 @@ class DatabaseManager:
             bool: 是否有效
         """
         try:
-            return Carrier.objects.filter(carrier_code=carrier_code).exists()
+            from utils.user_settings import current_settings_user
+            from utils.flight_selection import selected_carrier_codes
+            return carrier_code in selected_carrier_codes(current_settings_user())
         except Exception as e:
             logger.error(f"检查航空公司代码失败: {e}")
             return False 

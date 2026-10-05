@@ -2825,6 +2825,9 @@ function getRequestHeaders() {
     if (currentTimeMode === 'test') {
         headers['X-User-Code'] = 'test';
     }
+    if (window.__settingsScope === 'default') {
+        headers['X-Settings-Scope'] = 'default';
+    }
 
     return headers;
 }

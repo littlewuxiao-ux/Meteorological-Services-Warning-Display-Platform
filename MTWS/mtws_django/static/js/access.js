@@ -28,6 +28,8 @@
   async function accessFetch(path, options = {}) {
     const opts = Object.assign({ credentials: 'same-origin' }, options);
     opts.headers = Object.assign({ 'Content-Type': 'application/json' }, opts.headers || {});
+    const userCode = (typeof currentUserCode !== 'undefined' ? currentUserCode : null) || window.currentUserCode;
+    if (userCode) opts.headers['X-User-Code'] = userCode;
     const res = await fetch(`${apiBase()}${path}`, opts);
     let data = {};
     try { data = await res.json(); } catch (e) { /* ignore */ }
@@ -76,6 +78,21 @@
     }
   }
   window.applyAccessUi = applyAccessUi;
+
+  function paintAdminUnlock(unlocked) {
+    const on = !!unlocked;
+    const was = !!window.__adminUnlocked;
+    window.__adminUnlocked = on;
+    const groupBtn = document.getElementById('superuser-group-btn');
+    const toggle = document.getElementById('settings-default-toggle');
+    if (groupBtn) groupBtn.style.display = on ? '' : 'none';
+    if (toggle) toggle.style.display = on ? '' : 'none';
+    if (!on) {
+      const box = document.getElementById('settings-admin-unlock');
+      if (box) box.style.display = 'none';
+      if (was && typeof window.exitSettingsTemplate === 'function') window.exitSettingsTemplate();
+    }
+  }
 
   function paintAccessUserInfo() {
     const id = window.__accessIdentity;
@@ -337,6 +354,7 @@
       try {
         const { data } = await accessFetch('/access/session/');
         if (!data.success) return;
+        paintAdminUnlock(data.data && data.data.admin_unlocked);
         const id = data.data.identity;
         window.__accessIdentity = id;
         if (id.needs_role_select) {
@@ -358,6 +376,7 @@
       return null;
     }
     window.__accessIdentity = data.data.identity;
+    paintAdminUnlock(data.data.admin_unlocked);
     window.__accessModules = data.data.modules || [];
     window.__nonLocalGroups = data.data.non_local_groups || [];
     applyAccessUi();
@@ -370,6 +389,12 @@
     return data.data;
   }
   window.bootstrapAccess = bootstrapAccess;
+
+  window.addEventListener('message', (event) => {
+    if (event.origin !== window.location.origin) return;
+    if (!event.data || event.data.type !== 'mtws-admin-lock') return;
+    paintAdminUnlock(false);
+  });
 
   // —— 超级用户管理（独立页） ——
   let _adminGroupsCache = [];
@@ -402,6 +427,8 @@
     document.getElementById('access-admin-del-group').onclick = delAdminGroup;
     document.getElementById('access-admin-save').onclick = saveAdminGroup;
     document.getElementById('access-admin-chg-pw').onclick = changeAdminPassword;
+    const exitBtn = document.getElementById('access-admin-exit');
+    if (exitBtn) exitBtn.onclick = exitAdminSession;
     document.getElementById('bl-add').onclick = addBlacklist;
     document.getElementById('access-admin-bl-title').onclick = openBlacklistModal;
     document.getElementById('access-bl-close').onclick = closeBlacklistModal;
@@ -716,6 +743,19 @@
     document.getElementById('bl-user-id').value = '';
     document.getElementById('bl-remark').value = '';
     loadBlacklist();
+  }
+
+  async function exitAdminSession() {
+    await accessFetch('/access/admin/lock/', { method: 'POST', body: '{}' });
+    const main = document.getElementById('access-admin-main');
+    const pane = document.getElementById('access-admin-unlock-pane');
+    if (main) main.style.display = 'none';
+    if (pane) pane.style.display = '';
+    const msg = document.getElementById('access-admin-unlock-msg');
+    if (msg) msg.textContent = '';
+    if (window.opener && !window.opener.closed) {
+      window.opener.postMessage({ type: 'mtws-admin-lock' }, window.location.origin);
+    }
   }
 
   function lockAdminSession() {

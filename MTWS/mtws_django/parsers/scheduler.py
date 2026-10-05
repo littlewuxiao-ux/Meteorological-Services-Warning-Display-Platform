@@ -23,6 +23,7 @@ logger = logging.getLogger('mtws.scheduler')
 _scheduler_token: Optional[str] = None
 _scheduler_user_code: Optional[str] = None
 _scheduler_started: bool = False
+_scheduler = None
 _nwp_enabled: bool = False
 
 # 内存中记录最近一次解析结果（调度器 和 手动刷新 均会更新）
@@ -91,7 +92,10 @@ def get_scheduler_token() -> Optional[str]:
 def set_scheduler_user_code(user_code: str) -> None:
     """缓存值班用户标识，供后台调度任务写入 metar.user_code（由 trigger_parsing 视图调用）"""
     global _scheduler_user_code
-    if user_code:
+    if user_code and user_code != _scheduler_user_code:
+        _scheduler_user_code = user_code
+        reload_scheduler_jobs()
+    elif user_code:
         _scheduler_user_code = user_code
 
 
@@ -190,9 +194,76 @@ def _run_parsing_job(update_types: list, time_mode: str) -> None:
             update_parsing_status(data_type, success=False, message=str(e))
 
 
+def _timer_rows():
+    from utils.user_settings import TIMER_KEYS, active_timer_config
+    config = active_timer_config()
+    rows = []
+    for key in TIMER_KEYS:
+        item = config.get(key) if isinstance(config, dict) else None
+        if not isinstance(item, dict):
+            continue
+        if item.get('interval') is None or item.get('init_time') is None:
+            continue
+        rows.append((key, float(item['init_time']), float(item['interval'])))
+    return rows
+
+
+def _register_jobs(scheduler, time_mode='current'):
+    from apscheduler.triggers.interval import IntervalTrigger
+    from core.models import RadarAlertConfig
+    from utils.radar.config_defaults import merge_config
+    from utils.user_settings import active_job_user, json_config_row
+
+    now = datetime.now()
+    for data_name, init_minutes, interval_minutes in _timer_rows():
+        start_of_hour = now.replace(minute=0, second=0, microsecond=0)
+        first_run = start_of_hour + timedelta(minutes=init_minutes)
+        while first_run <= now:
+            first_run += timedelta(minutes=interval_minutes)
+        scheduler.add_job(
+            func=_run_parsing_job,
+            trigger=IntervalTrigger(minutes=interval_minutes, start_date=first_run),
+            args=[[data_name], time_mode],
+            id=f'scheduled_{data_name}',
+            replace_existing=True,
+            misfire_grace_time=60,
+        )
+        logger.info(
+            f"调度任务注册：{data_name}，间隔 {interval_minutes} 分钟，"
+            f"首次执行 {first_run.strftime('%H:%M:%S')}"
+        )
+
+    row = json_config_row(RadarAlertConfig, active_job_user())
+    cfg = merge_config(row.config if row else None)
+    if cfg.get('enabled', True):
+        interval = float(cfg.get('interval_minutes', 15) or 15)
+        first_radar = datetime.now() + timedelta(seconds=90)
+        from utils.radar import trigger_radar_job
+        scheduler.add_job(
+            func=lambda: trigger_radar_job(force=False),
+            trigger=IntervalTrigger(minutes=interval, start_date=first_radar),
+            id='scheduled_radar_alert',
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True,
+            misfire_grace_time=120,
+        )
+        logger.info(f'雷达告警调度已注册：间隔 {interval} 分钟')
+
+
+def reload_scheduler_jobs() -> None:
+    """本机登录用户变化或保存了刷新设置后，改用当前生效的那一份间隔。"""
+    if not _scheduler_started or _scheduler is None:
+        return
+    try:
+        _register_jobs(_scheduler)
+    except Exception as exc:
+        logger.error(f'重载调度间隔失败：{exc}', exc_info=True)
+
+
 def start_scheduler() -> None:
-    """读取 DataRefreshTimer 配置并启动 APScheduler 后台调度器"""
-    global _scheduler_started
+    """读取当前生效的刷新配置并启动 APScheduler 后台调度器"""
+    global _scheduler_started, _scheduler
 
     if _scheduler_started:
         return
@@ -212,75 +283,16 @@ def start_scheduler() -> None:
         # 调度器固定使用 current 时间模式（生产模式）
         time_mode = 'current'
 
-        from core.models import DataRefreshTimer
-        timers = list(DataRefreshTimer.objects.all())
-        if not timers:
-            logger.warning("DataRefreshTimer 表为空，后端调度器不启动")
+        if not _timer_rows():
+            logger.warning("刷新配置为空，后端调度器不启动")
             return
 
         scheduler = BackgroundScheduler()
-        now = datetime.now()
-
-        for timer in timers:
-            update_types = [timer.data]          # 'metar' / 'taf' / 'flight'
-            interval_minutes = float(timer.interval)
-            init_minutes = float(timer.init_time)
-
-            # 计算首次触发时间：从当前整点 + init_time 开始按 interval 推算，
-            # 确保第一次执行落在未来
-            start_of_hour = now.replace(minute=0, second=0, microsecond=0)
-            first_run = start_of_hour + timedelta(minutes=init_minutes)
-            while first_run <= now:
-                first_run += timedelta(minutes=interval_minutes)
-
-            scheduler.add_job(
-                func=_run_parsing_job,
-                trigger=IntervalTrigger(
-                    minutes=interval_minutes,
-                    start_date=first_run,
-                ),
-                args=[update_types, time_mode],
-                id=f'scheduled_{timer.data}',
-                replace_existing=True,
-                misfire_grace_time=60,  # 允许最多 60 秒执行延迟
-            )
-            logger.info(
-                f"调度任务注册：{timer.data}，"
-                f"间隔 {interval_minutes} 分钟，"
-                f"首次执行 {first_run.strftime('%H:%M:%S')}"
-            )
-
+        _register_jobs(scheduler, time_mode)
         scheduler.start()
+        _scheduler = scheduler
         _scheduler_started = True
         logger.info("APScheduler 后端调度器已启动")
-
-        # 雷达告警：按配置 interval_minutes（默认 15）独立调度
-        try:
-            from core.models import RadarAlertConfig
-            from utils.radar.config_defaults import merge_config
-            from utils.radar import trigger_radar_job
-
-            row = RadarAlertConfig.objects.order_by('id').first()
-            cfg = merge_config(row.config if row else None)
-            if cfg.get('enabled', True):
-                interval = float(cfg.get('interval_minutes', 15) or 15)
-                # 进程刚起来时页面和报文解析会先写库，雷达晚 90 秒再跑，避免挤在一起。
-                first_radar = datetime.now() + timedelta(seconds=90)
-                scheduler.add_job(
-                    func=lambda: trigger_radar_job(force=False),
-                    trigger=IntervalTrigger(minutes=interval, start_date=first_radar),
-                    id='scheduled_radar_alert',
-                    replace_existing=True,
-                    max_instances=1,
-                    coalesce=True,
-                    misfire_grace_time=120,
-                )
-                logger.info(
-                    f'雷达告警调度已注册：间隔 {interval} 分钟，'
-                    f'首次执行 {first_radar.strftime("%H:%M:%S")}'
-                )
-        except Exception as radar_err:
-            logger.warning(f'雷达告警调度注册失败：{radar_err}')
 
     except Exception as e:
         logger.error(f"APScheduler 启动失败：{e}", exc_info=True)

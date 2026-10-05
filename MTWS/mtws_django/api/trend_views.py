@@ -26,18 +26,23 @@ def trend_alert_config(request, time_mode='current'):
     if request.method == 'GET':
         if not has_perm(identity, 'settings_trend_alert', 'display'):
             return JsonResponse({'success': False, 'error': '无实况趋势告警设置权限'}, status=403)
+        from utils.user_settings import scope_meta, settings_subject
+        user, _editing = settings_subject(request, time_mode)
         return JsonResponse({
             'success': True,
-            'config': read_config(),
-            'weather_codes': sorted(known_weather_codes()),
+            'config': read_config(user),
+            'weather_codes': sorted(known_weather_codes(user)),
+            **scope_meta(request, time_mode),
         })
     if not has_perm(identity, 'settings_trend_alert', 'write'):
         return JsonResponse({'success': False, 'error': '无该设置项写入权限'}, status=403)
     if not is_local_request(request):
         return JsonResponse({'success': False, 'error': '设置项仅允许本机用户修改'}, status=403)
     data = _body(request)
+    from utils.user_settings import settings_subject
+    user, _editing = settings_subject(request, time_mode)
     payload = data.get('config') if isinstance(data.get('config'), dict) else data
-    config, errors = save_config(payload)
+    config, errors = save_config(payload, user)
     if errors:
         return JsonResponse({'success': False, 'error': '；'.join(errors), 'errors': errors}, status=400)
     return JsonResponse({'success': True, 'config': config})

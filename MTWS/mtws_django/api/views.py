@@ -15,7 +15,7 @@ import logging
 
 from core.models import (
     AirportInfo, AirportAlertThresholds, AirportTafImportConfig,
-    WeatherAlertLevels, AreaOptions, DataRefreshTimer,
+    WeatherAlertLevels, DataRefreshTimer,
 )
 from parsers.models import Flight, Metar, Taf
 from parsers.taf_parser import calc_taf_expected_issue_ms
@@ -24,9 +24,11 @@ from utils.time_manager import TimeManager
 from utils.flight_selection import (
     distinct_flight_carriers,
     apply_carrier_change,
+    replace_carrier_codes,
     selected_carrier_codes,
     selected_events,
     sort_carrier_codes,
+    visible_airport_codes,
 )
 from utils.marks_alert_calculator import computed_alerts_from_flight
 from utils.popup_utils import PopupManager, get_seat_identity, get_popup_trace_hours
@@ -70,12 +72,26 @@ def get_overview_auth_status(time_mode):
 
 
 def get_cached_area_options():
-    """获取区域选项数据"""
+    """主页筛选用的区域。来自前缀行上的序号、性质和区域名称。"""
     try:
-        return {
-            'domestic': list(AreaOptions.objects.filter(classification='国内').order_by('sequence').values('area', 'sequence')),
-            'international': list(AreaOptions.objects.filter(classification='国际').order_by('sequence').values('area', 'sequence'))
-        }
+        from core.models import AirportPrefixArea
+        seen = set()
+        domestic = []
+        international = []
+        rows = AirportPrefixArea.objects.order_by('classification', 'sequence', 'area').values(
+            'classification', 'area', 'sequence'
+        )
+        for row in rows:
+            key = (row['classification'], row['area'])
+            if key in seen:
+                continue
+            seen.add(key)
+            item = {'area': row['area'], 'sequence': row['sequence']}
+            if row['classification'] == '国内':
+                domestic.append(item)
+            elif row['classification'] == '国际':
+                international.append(item)
+        return {'domestic': domestic, 'international': international}
         
     except Exception as e:
         logger.error(f"获取区域选项数据失败: {str(e)}")
@@ -100,17 +116,25 @@ def airports_overview(request, time_mode='current'):
     try:
         # 移除缓存机制，直接从数据库加载最新数据
         
-        # 1. 获取有航班的机场。先取成列表，避免后面查配置库时把 flight 子查询带到配置库。
-        active_airports = list(
-            Flight.objects.filter(has_flight=True).values_list('airport_4code', flat=True)
-        )
+        # 1. 按当前查看者的承运人确定有航班的机场。非本机用 default，不读别人的勾选结果。
+        from utils.flight_selection import airport_flags_from_events, selected_events
+        from utils.user_settings import request_settings_user
+        viewer = request_settings_user(request, time_mode)
+        chosen_carriers = set(selected_carrier_codes(viewer))
+        visible_flights = {}
+        for flight_row in Flight.objects.all():
+            events = selected_events(flight_row.as_events(), chosen_carriers)
+            flags = airport_flags_from_events(events)
+            if flags['has_flight']:
+                visible_flights[flight_row.airport_4code] = (flight_row, events, flags)
+        active_airports = list(visible_flights)
         
         if not active_airports:
             return JsonResponse({
                 'success': True,
                 'data': {
                     'airports': [],
-                    'carriers': sort_carrier_codes(selected_carrier_codes()),
+                    'carriers': sort_carrier_codes(chosen_carriers),
                     'timestamp': datetime.now().isoformat(),
                     'auth_status': get_overview_auth_status(time_mode),
                     'seat_identity': get_seat_identity(request),
@@ -140,21 +164,16 @@ def airports_overview(request, time_mode='current'):
         
         # 3. 构建机场数据
         airports_data = []
-        chosen_carriers = selected_carrier_codes()
         for airport_code in active_airports:
             airport = configured_airports.get(airport_code)
             in_directory = airport is not None
             if airport is None:
                 airport = AirportInfo(airport_4code=airport_code)
             gaps = airport_config_gaps(airport, taf_configs.get(airport_code))
-            # 获取最新的航班数据
-            flight_data = Flight.objects.filter(
-                airport_4code=airport.airport_4code,
-                has_flight=True
-            ).order_by('-created_at').first()
-            
-            if not flight_data:
+            packed = visible_flights.get(airport.airport_4code)
+            if not packed:
                 continue
+            flight_data, viewer_events, _flags = packed
                 
             # 获取最新1条METAR数据（data_status=N 为当前报文，data_status=C 为系统创建的占位行）
             metar_data = Metar.objects.filter(
@@ -188,7 +207,7 @@ def airports_overview(request, time_mode='current'):
                 'flight_data': {
                     'has_flight': flight_data.has_flight,
                     'time_slots': flight_data.as_time_slots(),
-                    'events': selected_events(flight_data.as_events(), chosen_carriers),
+                    'events': viewer_events,
                     'last_updated': flight_data.created_at.isoformat()
                 },
                 'metar_data': [
@@ -319,6 +338,18 @@ def airports_overview(request, time_mode='current'):
             
             airports_data.append(airport_data)
         
+        from utils.user_alert import apply_metar_warnings, apply_taf_warnings
+        for airport_data in airports_data:
+            code = airport_data['airport_4code']
+            for item in airport_data.get('metar_data') or []:
+                metar = Metar.objects.filter(sqc=item.get('sqc')).first()
+                apply_metar_warnings(item, metar, viewer)
+            for item in airport_data.get('taf_data') or []:
+                taf = Taf.objects.filter(
+                    sqc=item.get('sqc'), airport_4code=code
+                ).order_by('-created_at').first()
+                apply_taf_warnings(item, taf, viewer)
+
         # 4. 获取航空公司数据
         carriers = sort_carrier_codes(chosen_carriers)
         
@@ -892,11 +923,16 @@ def validate_token_status(request, time_mode='current'):
 def get_timer_configs(request, time_mode='current'):
     """获取定时器配置的API接口"""
     try:
+        from utils.user_settings import TIMER_KEYS, active_timer_config
         configs = {}
-        for timer in DataRefreshTimer.objects.all():
-            configs[timer.data] = {
-                'init_time': timer.init_time,
-                'interval': timer.interval
+        timer_map = active_timer_config()
+        for key in TIMER_KEYS:
+            item = timer_map.get(key) if isinstance(timer_map, dict) else None
+            if not isinstance(item, dict):
+                continue
+            configs[key] = {
+                'init_time': item.get('init_time'),
+                'interval': item.get('interval'),
             }
         
         # 添加弹窗稍后处理配置
@@ -1830,25 +1866,55 @@ def airport_search(request, time_mode='current'):
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
 
 
+def _ingest_carrier_airports(request, time_mode, user_code, airports):
+    """承运人勾选后新出现的机场，立刻补拉实况和预报。两条报文各自走自己的接口。"""
+    from parsers.metar_parser import MetarParser
+    from parsers.taf_parser import TafParser
+    from utils.user_settings import use_settings_user
+
+    token = _request_token(request, time_mode)
+    try:
+        with use_settings_user(user_code):
+            MetarParser(
+                time_mode=time_mode, token=token, user_code=user_code,
+            ).parse_metar_data_for_airports(list(airports))
+            TafParser(time_mode=time_mode, token=token).parse_taf_data_for_airports(list(airports))
+    except Exception:
+        logger.exception('承运人新增机场后补拉实况预报失败: %s', airports)
+
+
 @csrf_exempt
 @require_http_methods(["GET", "POST"])
 def flight_carriers(request, time_mode='current'):
-    """主页承运人矩阵：航班里出现的代码加上 carrier 表。勾选写入，取消勾选删除。"""
+    """主页承运人矩阵。本机用户改自己的清单；非本机只看 default。"""
+    from utils.access_control import is_local_request
+    from utils.user_settings import scope_meta, settings_subject
+    viewer, _editing = settings_subject(request, time_mode)
     try:
         if request.method == 'GET':
             return JsonResponse({
                 'success': True,
                 'flights': distinct_flight_carriers(),
-                'selected': sort_carrier_codes(selected_carrier_codes()),
+                'selected': sort_carrier_codes(selected_carrier_codes(viewer)),
+                **scope_meta(request, time_mode),
             })
+        if not is_local_request(request):
+            return JsonResponse({'success': False, 'error': '非本机用户使用默认承运人'}, status=403)
         data = json.loads(request.body or '{}')
         action = data.get('action')
-        if action not in ('add', 'remove'):
-            return JsonResponse({'success': False, 'error': 'action 必须是 add 或 remove'}, status=400)
+        if action not in ('add', 'remove', 'confirm'):
+            return JsonResponse({'success': False, 'error': 'action 必须是 add、remove 或 confirm'}, status=400)
         try:
-            selected = apply_carrier_change(action, data.get('code'), time_mode)
+            before = visible_airport_codes(viewer)
+            if action == 'confirm':
+                selected = replace_carrier_codes(data.get('codes') or [], time_mode, viewer)
+            else:
+                selected = apply_carrier_change(action, data.get('code'), time_mode, viewer)
         except ValueError as exc:
             return JsonResponse({'success': False, 'error': str(exc)}, status=400)
+        added = sorted(visible_airport_codes(viewer) - before)
+        if added:
+            _ingest_carrier_airports(request, time_mode, viewer, added)
         return JsonResponse({
             'success': True,
             'flights': distinct_flight_carriers(),

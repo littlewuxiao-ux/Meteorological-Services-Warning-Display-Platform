@@ -6,16 +6,22 @@
 
 import json
 import logging
+from django.db import transaction
 from django.http import JsonResponse
 from django.views.decorators.http import require_http_methods
 from django.views.decorators.csrf import csrf_exempt
 
 from core.models import (
-    AirportInfo, AirportPrefixArea, AirportTafImportConfig, AreaOptions, DataRefreshTimer, PopupSettings,
+    AirportInfo, AirportPrefixArea, AirportTafImportConfig, DataRefreshTimer, PopupSettings,
     AirportAlertThresholds, WeatherTypeInfo, WeatherAlertLevels,
 )
 
 logger = logging.getLogger('mtws.settings')
+
+from utils.user_settings import (
+    TEMPLATE, TIMER_KEYS, TIMER_NAMES, allow_restore, get_threshold_row,
+    restore_group, scope_meta, settings_subject, timer_config,
+)
 
 DATA_NAMES = {
     'metar': '实况',
@@ -196,120 +202,40 @@ def settings_airport_info_detail(request, airport_4code, time_mode='current'):
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
 
 
-# ===================== 区域选项 =====================
-
-@csrf_exempt
-@require_http_methods(["GET", "POST"])
-def settings_area_options(request, time_mode='current'):
-    user_code = _get_user_code(request, time_mode)
-
-    if request.method == 'GET':
-        try:
-            options = list(
-                AreaOptions.objects.values('id', 'classification', 'area', 'sequence')
-                .order_by('classification', 'sequence')
-            )
-            return JsonResponse({'success': True, 'data': options})
-        except Exception as e:
-            logger.error(f"获取区域选项失败: {e}")
-            return JsonResponse({'success': False, 'error': str(e)}, status=500)
-
-    # POST: 新增
-    denied = _deny_settings_write(request, 'settings_area_options')
-    if denied:
-        return denied
-    try:
-        data = json.loads(request.body)
-        classification = (data.get('classification') or '').strip()
-        area = (data.get('area') or '').strip()
-        sequence = data.get('sequence')
-
-        if not classification or not area or sequence is None:
-            return JsonResponse({'success': False, 'error': '分类、区域名称、排序均为必填项'}, status=400)
-
-        sequence = int(sequence)
-        if AreaOptions.objects.filter(classification=classification, sequence=sequence).exists():
-            return JsonResponse({
-                'success': False,
-                'error': '区域内排序数字为唯一值，请确保同一类别下的顺序数值唯一，不得有重复'
-            }, status=400)
-
-        option = AreaOptions.objects.create(classification=classification, area=area, sequence=sequence)
-        logger.info(f"[设置] 用户 {user_code} 新增区域选项: {classification}-{area}(seq={sequence})")
-        return JsonResponse({'success': True, 'message': '新增成功', 'id': option.id})
-    except (json.JSONDecodeError, ValueError) as e:
-        return JsonResponse({'success': False, 'error': f'数据格式错误: {e}'}, status=400)
-    except Exception as e:
-        logger.error(f"新增区域选项失败: {e}")
-        return JsonResponse({'success': False, 'error': str(e)}, status=500)
-
-
-@csrf_exempt
-@require_http_methods(["PUT", "DELETE"])
-def settings_area_options_detail(request, option_id, time_mode='current'):
-    user_code = _get_user_code(request, time_mode)
-    denied = _deny_settings_write(request, 'settings_area_options')
-    if denied:
-        return denied
-
-    try:
-        option = AreaOptions.objects.get(id=option_id)
-    except AreaOptions.DoesNotExist:
-        return JsonResponse({'success': False, 'error': '区域选项不存在'}, status=404)
-
-    if request.method == 'PUT':
-        try:
-            data = json.loads(request.body)
-            classification = (data.get('classification') or option.classification).strip()
-            area = (data.get('area') or option.area).strip()
-            sequence = int(data.get('sequence', option.sequence))
-
-            if AreaOptions.objects.filter(
-                classification=classification, sequence=sequence
-            ).exclude(id=option_id).exists():
-                return JsonResponse({
-                    'success': False,
-                    'error': '区域内排序数字为唯一值，请确保同一类别下的顺序数值唯一，不得有重复'
-                }, status=400)
-
-            option.classification = classification
-            option.area = area
-            option.sequence = sequence
-            option.save()
-            logger.info(f"[设置] 用户 {user_code} 修改区域选项: id={option_id}")
-            return JsonResponse({'success': True, 'message': '修改成功'})
-        except (json.JSONDecodeError, ValueError) as e:
-            return JsonResponse({'success': False, 'error': f'数据格式错误: {e}'}, status=400)
-        except Exception as e:
-            logger.error(f"修改区域选项失败: {e}")
-            return JsonResponse({'success': False, 'error': str(e)}, status=500)
-
-    # DELETE
-    try:
-        label = f"{option.classification}-{option.area}"
-        option.delete()
-        logger.info(f"[设置] 用户 {user_code} 删除区域选项: id={option_id} ({label})")
-        return JsonResponse({'success': True, 'message': '删除成功'})
-    except Exception as e:
-        logger.error(f"删除区域选项失败: {e}")
-        return JsonResponse({'success': False, 'error': str(e)}, status=500)
-
-
 # ===================== 数据刷新定时器 =====================
+
+def _timer_rows_for(user_code):
+    config = timer_config(user_code)
+    rows = []
+    for key in TIMER_KEYS:
+        item = config.get(key) if isinstance(config, dict) else None
+        item = item if isinstance(item, dict) else {}
+        rows.append({
+            'id': key,
+            'data': key,
+            'data_name': TIMER_NAMES.get(key, DATA_NAMES.get(key, key)),
+            'init_time': item.get('init_time'),
+            'interval': item.get('interval'),
+        })
+    return rows
+
+
+def _validate_timer_value(name, value, low, high):
+    val = float(value)
+    if val < low or val > high or round(val * 2) != val * 2:
+        raise ValueError(f'{name} 超出范围或不是 0.5 的倍数')
+    return val
+
 
 @require_http_methods(["GET"])
 def settings_data_refresh_timer(request, time_mode='current'):
     try:
-        timers = []
-        for t in DataRefreshTimer.objects.all().order_by('id'):
-            timers.append({
-                'id': t.id,
-                'data': t.data,
-                'data_name': DATA_NAMES.get(t.data, t.data),
-                'init_time': t.init_time,
-                'interval': t.interval,
-            })
-        return JsonResponse({'success': True, 'data': timers})
+        user, _editing = settings_subject(request, time_mode)
+        return JsonResponse({
+            'success': True,
+            'data': _timer_rows_for(user),
+            **scope_meta(request, time_mode),
+        })
     except Exception as e:
         logger.error(f"获取定时器配置失败: {e}")
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
@@ -318,40 +244,27 @@ def settings_data_refresh_timer(request, time_mode='current'):
 @csrf_exempt
 @require_http_methods(["PUT"])
 def settings_data_refresh_timer_detail(request, timer_id, time_mode='current'):
-    user_code = _get_user_code(request, time_mode)
+    user_code, _editing = settings_subject(request, time_mode)
     denied = _deny_settings_write(request, 'settings_data_refresh')
     if denied:
         return denied
-
-    try:
-        timer = DataRefreshTimer.objects.get(id=timer_id)
-    except DataRefreshTimer.DoesNotExist:
+    if timer_id not in TIMER_KEYS:
         return JsonResponse({'success': False, 'error': '定时器不存在'}, status=404)
 
     try:
         data = json.loads(request.body)
-
+        config = dict(timer_config(user_code) or {})
+        current = dict(config.get(timer_id) or {})
         if 'init_time' in data:
-            val = float(data['init_time'])
-            if val < 0 or val > 50:
-                return JsonResponse({'success': False, 'error': 'init_time 范围为 0–50'}, status=400)
-            if round(val * 2) != val * 2:
-                return JsonResponse({'success': False, 'error': 'init_time 必须为 0.5 的倍数'}, status=400)
-            timer.init_time = val
-
+            current['init_time'] = _validate_timer_value('init_time', data['init_time'], 0, 50)
         if 'interval' in data:
-            val = float(data['interval'])
-            if val < 0.5 or val > 30:
-                return JsonResponse({'success': False, 'error': 'interval 范围为 0.5–30'}, status=400)
-            if round(val * 2) != val * 2:
-                return JsonResponse({'success': False, 'error': 'interval 必须为 0.5 的倍数'}, status=400)
-            timer.interval = val
-
-        timer.save()
-        logger.info(
-            f"[设置] 用户 {user_code} 修改定时器: id={timer_id} data={timer.data} "
-            f"init_time={timer.init_time} interval={timer.interval}"
-        )
+            current['interval'] = _validate_timer_value('interval', data['interval'], 0.5, 30)
+        config[timer_id] = current
+        from utils.user_settings import save_json_config
+        save_json_config(DataRefreshTimer, user_code, config)
+        from parsers.scheduler import reload_scheduler_jobs
+        reload_scheduler_jobs()
+        logger.info(f"[设置] 用户 {user_code} 修改定时器: {timer_id} {current}")
         return JsonResponse({'success': True, 'message': '修改成功'})
     except (json.JSONDecodeError, ValueError) as e:
         return JsonResponse({'success': False, 'error': f'数据格式错误: {e}'}, status=400)
@@ -360,18 +273,45 @@ def settings_data_refresh_timer_detail(request, timer_id, time_mode='current'):
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
 
 
+@csrf_exempt
+@require_http_methods(["POST"])
+def settings_restore(request, time_mode='current'):
+    if not allow_restore(request, time_mode):
+        return JsonResponse({'success': False, 'error': '当前不能恢复默认'}, status=403)
+    user_code, _editing = settings_subject(request, time_mode)
+    try:
+        data = json.loads(request.body or '{}')
+        group = data.get('group')
+        restore_group(user_code, group)
+        if group in ('data_refresh_timer', 'radar_alert_config'):
+            from parsers.scheduler import reload_scheduler_jobs
+            reload_scheduler_jobs()
+        if group == 'carrier':
+            from utils.flight_selection import recompute_selected_flight_state
+            from utils.user_settings import active_job_user
+            if user_code == active_job_user():
+                recompute_selected_flight_state(time_mode, user_code)
+        logger.info(f"[设置] 用户 {user_code} 恢复默认: {group}")
+        return JsonResponse({'success': True, 'message': '已恢复默认'})
+    except ValueError as exc:
+        return JsonResponse({'success': False, 'error': str(exc)}, status=400)
+    except Exception as exc:
+        logger.error(f"恢复默认失败: {exc}")
+        return JsonResponse({'success': False, 'error': str(exc)}, status=500)
+
+
 # ===================== 弹窗设置 =====================
 
 @csrf_exempt
 @require_http_methods(["GET", "PUT"])
 def settings_popup(request, time_mode='current'):
-    user_code = _get_user_code(request, time_mode)
+    user_code, editing = settings_subject(request, time_mode)
 
     if request.method == 'GET':
         try:
             ps = PopupSettings.objects.filter(user_code=user_code).first()
-            if not ps:
-                ps = PopupSettings.objects.filter(user_code='default').first()
+            if not ps and user_code not in (TEMPLATE, 'test'):
+                ps = PopupSettings.objects.filter(user_code=TEMPLATE).first()
 
             if not ps:
                 return JsonResponse({'success': False, 'error': '未找到弹窗设置'}, status=404)
@@ -379,11 +319,12 @@ def settings_popup(request, time_mode='current'):
             return JsonResponse({
                 'success': True,
                 'data': {
-                    'operation_metar_popup_leeway': ps.operation_metar_popup_leeway if ps.operation_metar_popup_leeway is not None else 0,
-                    'operation_metar_popup_level': ps.operation_metar_popup_level or 'Y',
-                    'parking_metar_popup_level': ps.parking_metar_popup_level or 'Y',
-                    'trace_time': int(ps.trace_time) if ps.trace_time is not None else 6,
-                }
+                    'operation_metar_popup_leeway': ps.operation_metar_popup_leeway if ps and ps.operation_metar_popup_leeway is not None else 0,
+                    'operation_metar_popup_level': (ps.operation_metar_popup_level if ps else None) or 'Y',
+                    'parking_metar_popup_level': (ps.parking_metar_popup_level if ps else None) or 'Y',
+                    'trace_time': int(ps.trace_time) if ps and ps.trace_time is not None else 6,
+                },
+                **scope_meta(request, time_mode),
             })
         except Exception as e:
             logger.error(f"获取弹窗设置失败: {e}")
@@ -393,8 +334,8 @@ def settings_popup(request, time_mode='current'):
     denied = _deny_settings_write(request, 'settings_popup')
     if denied:
         return denied
-    if user_code in ('default', 'test'):
-        return JsonResponse({'success': False, 'error': 'default/test 账号设置不可修改'}, status=403)
+    if user_code == TEMPLATE and not editing:
+        return JsonResponse({'success': False, 'error': '不能修改默认模板'}, status=403)
 
     try:
         data = json.loads(request.body)
@@ -421,9 +362,9 @@ def settings_popup(request, time_mode='current'):
 
         updated = PopupSettings.objects.filter(user_code=user_code).update(**update_dict)
         if updated == 0:
-            default_ps = PopupSettings.objects.filter(user_code='default').first()
+            default_ps = None if user_code == 'test' else PopupSettings.objects.filter(user_code=TEMPLATE).first()
             create_data = {'user_code': user_code}
-            if default_ps:
+            if default_ps and user_code != TEMPLATE:
                 create_data.update({
                     'operation_metar_popup_leeway': default_ps.operation_metar_popup_leeway,
                     'operation_metar_popup_level': default_ps.operation_metar_popup_level,
@@ -463,17 +404,52 @@ def _parse_min_cloud_amt(value):
     return amount
 
 
+def _threshold_values(row, personalized, label=None):
+    data = {
+        'airport_4code': row.airport_4code,
+        'min_cloud_amt': row.min_cloud_amt,
+        'personalized': personalized,
+    }
+    if label:
+        data['label'] = label
+    for field in _THRESHOLD_FIELDS:
+        data[field] = getattr(row, field)
+    return data
+
+
 @csrf_exempt
 @require_http_methods(["GET", "POST"])
 def settings_alert_thresholds(request, time_mode='current'):
-    user_code = _get_user_code(request, time_mode)
+    user_code, editing = settings_subject(request, time_mode)
 
     if request.method == 'GET':
         try:
-            rows = list(AirportAlertThresholds.objects.values(
-                'airport_4code', *_THRESHOLD_FIELDS, 'min_cloud_amt'
-            ).order_by('airport_4code'))
-            return JsonResponse({'success': True, 'data': rows})
+            if editing or user_code == 'test':
+                owned = list(
+                    AirportAlertThresholds.objects.filter(user_code=user_code).order_by('airport_4code')
+                )
+                generic = [row for row in owned if row.airport_4code == 'default']
+                specific = [row for row in owned if row.airport_4code != 'default']
+                rows = [
+                    _threshold_values(row, True, '通用' if row.airport_4code == 'default' else None)
+                    for row in generic + specific
+                ]
+            else:
+                rows = []
+                generic = get_threshold_row(user_code, 'default')
+                if generic:
+                    own_generic = AirportAlertThresholds.objects.filter(
+                        user_code=user_code, airport_4code='default'
+                    ).exists()
+                    item = _threshold_values(generic, own_generic, '通用')
+                    item['airport_4code'] = 'default'
+                    rows.append(item)
+                rows.extend(
+                    _threshold_values(row, True)
+                    for row in AirportAlertThresholds.objects.filter(user_code=user_code)
+                    .exclude(airport_4code='default').order_by('airport_4code')
+                )
+            return JsonResponse({'success': True, 'data': rows, **scope_meta(request, time_mode)})
         except Exception as e:
             logger.error(f"获取告警阈值失败: {e}")
             return JsonResponse({'success': False, 'error': str(e)}, status=500)
@@ -488,10 +464,10 @@ def settings_alert_thresholds(request, time_mode='current'):
             return JsonResponse({'success': False, 'error': '机场四字代码必须为4位英文大写字母'}, status=400)
         if code == 'DEFAULT':
             return JsonResponse({'success': False, 'error': '不可使用保留代码 DEFAULT'}, status=400)
-        if AirportAlertThresholds.objects.filter(airport_4code=code).exists():
+        if AirportAlertThresholds.objects.filter(user_code=user_code, airport_4code=code).exists():
             return JsonResponse({'success': False, 'error': f'{code} 告警阈值记录已存在'}, status=400)
 
-        kwargs = {'airport_4code': code}
+        kwargs = {'user_code': user_code, 'airport_4code': code}
         for f in _THRESHOLD_FIELDS:
             if f not in data or data[f] == '':
                 return JsonResponse({'success': False, 'error': f'{f} 为必填项'}, status=400)
@@ -514,18 +490,28 @@ def settings_alert_thresholds(request, time_mode='current'):
 @csrf_exempt
 @require_http_methods(["PUT", "DELETE"])
 def settings_alert_thresholds_detail(request, airport_4code, time_mode='current'):
-    user_code = _get_user_code(request, time_mode)
+    user_code, _editing = settings_subject(request, time_mode)
     denied = _deny_settings_write(request, 'settings_alert_thresholds')
     if denied:
         return denied
 
-    if airport_4code.upper() == 'DEFAULT':
-        return JsonResponse({'success': False, 'error': 'default 行不可修改或删除'}, status=403)
-
-    try:
-        obj = AirportAlertThresholds.objects.get(airport_4code=airport_4code)
-    except AirportAlertThresholds.DoesNotExist:
-        return JsonResponse({'success': False, 'error': '记录不存在'}, status=404)
+    code = airport_4code.strip()
+    if code.lower() == 'default':
+        if request.method == 'DELETE':
+            return JsonResponse({'success': False, 'error': '通用行请使用恢复默认'}, status=403)
+        obj = AirportAlertThresholds.objects.filter(user_code=user_code, airport_4code='default').first()
+        if obj is None:
+            source = get_threshold_row(TEMPLATE if user_code != 'test' else user_code, 'default')
+            obj = AirportAlertThresholds(user_code=user_code, airport_4code='default')
+            if source is not None:
+                for field in _THRESHOLD_FIELDS:
+                    setattr(obj, field, getattr(source, field))
+                obj.min_cloud_amt = source.min_cloud_amt
+    else:
+        try:
+            obj = AirportAlertThresholds.objects.get(user_code=user_code, airport_4code=code)
+        except AirportAlertThresholds.DoesNotExist:
+            return JsonResponse({'success': False, 'error': '记录不存在'}, status=404)
 
     if request.method == 'PUT':
         try:
@@ -656,20 +642,48 @@ def settings_weather_type_detail(request, type_id, time_mode='current'):
 @csrf_exempt
 @require_http_methods(["GET", "POST"])
 def settings_weather_alert(request, time_mode='current'):
-    user_code = _get_user_code(request, time_mode)
+    user_code, editing = settings_subject(request, time_mode)
 
     if request.method == 'GET':
         try:
-            rows = list(WeatherAlertLevels.objects.values(
-                'id', 'weather', 'alert_level', 'type1', 'type2', 'type3', 'description'
-            ).order_by('weather', 'alert_level'))
-            # normalise 'None' strings
-            for r in rows:
-                for f in ('type1', 'type2', 'type3'):
-                    if r[f] == 'None':
-                        r[f] = None
+            def _clean(row, personalized):
+                data = {
+                    'id': row.id,
+                    'weather': row.weather,
+                    'alert_level': row.alert_level,
+                    'type1': None if row.type1 == 'None' else row.type1,
+                    'type2': None if row.type2 == 'None' else row.type2,
+                    'type3': None if row.type3 == 'None' else row.type3,
+                    'description': row.description,
+                    'personalized': personalized,
+                    'from_template': not personalized,
+                }
+                return data
+
+            if editing or user_code == 'test':
+                rows = [
+                    _clean(row, True)
+                    for row in WeatherAlertLevels.objects.filter(user_code=user_code).order_by('weather', 'alert_level')
+                ]
+            else:
+                own = {
+                    (row.weather, row.alert_level): row
+                    for row in WeatherAlertLevels.objects.filter(user_code=user_code)
+                }
+                rows = []
+                seen = set()
+                for row in WeatherAlertLevels.objects.filter(user_code=TEMPLATE).order_by('weather', 'alert_level'):
+                    key = (row.weather, row.alert_level)
+                    seen.add(key)
+                    picked = own.get(key, row)
+                    rows.append(_clean(picked, key in own))
+                for key, row in own.items():
+                    if key not in seen:
+                        rows.append(_clean(row, True))
             type_codes = list(WeatherTypeInfo.objects.values_list('weather_type_code', 'description_cn').order_by('weather_type_code'))
-            return JsonResponse({'success': True, 'data': rows, 'type_codes': type_codes})
+            return JsonResponse({
+                'success': True, 'data': rows, 'type_codes': type_codes, **scope_meta(request, time_mode),
+            })
         except Exception as e:
             logger.error(f"获取天气告警等级失败: {e}")
             return JsonResponse({'success': False, 'error': str(e)}, status=500)
@@ -692,10 +706,11 @@ def settings_weather_alert(request, time_mode='current'):
             return JsonResponse({'success': False, 'error': '告警等级只能为 R/Y/G'}, status=400)
         if not type1:
             return JsonResponse({'success': False, 'error': '类型1为必填项'}, status=400)
-        if WeatherAlertLevels.objects.filter(weather=weather, alert_level=level).exists():
+        if WeatherAlertLevels.objects.filter(user_code=user_code, weather=weather, alert_level=level).exists():
             return JsonResponse({'success': False, 'error': f'{weather}/{level} 组合已存在'}, status=400)
 
         obj = WeatherAlertLevels.objects.create(
+            user_code=user_code,
             weather=weather, alert_level=level,
             type1=type1, type2=type2, type3=type3, description=description,
         )
@@ -711,7 +726,7 @@ def settings_weather_alert(request, time_mode='current'):
 @csrf_exempt
 @require_http_methods(["PUT", "DELETE"])
 def settings_weather_alert_detail(request, alert_id, time_mode='current'):
-    user_code = _get_user_code(request, time_mode)
+    user_code, _editing = settings_subject(request, time_mode)
     denied = _deny_settings_write(request, 'settings_weather_alert')
     if denied:
         return denied
@@ -737,7 +752,20 @@ def settings_weather_alert_detail(request, alert_id, time_mode='current'):
                 return JsonResponse({'success': False, 'error': '告警等级只能为 R/Y/G'}, status=400)
             if not type1:
                 return JsonResponse({'success': False, 'error': '类型1为必填项'}, status=400)
-            if WeatherAlertLevels.objects.filter(weather=weather, alert_level=level).exclude(id=alert_id).exists():
+            if obj.user_code != user_code:
+                if WeatherAlertLevels.objects.filter(
+                    user_code=user_code, weather=weather, alert_level=level
+                ).exists():
+                    return JsonResponse({'success': False, 'error': f'{weather}/{level} 组合已存在'}, status=400)
+                WeatherAlertLevels.objects.create(
+                    user_code=user_code, weather=weather, alert_level=level,
+                    type1=type1, type2=type2, type3=type3, description=description,
+                )
+                logger.info(f"[设置] 用户 {user_code} 自定义天气告警等级: {weather}/{level}")
+                return JsonResponse({'success': True, 'message': '修改成功'})
+            if WeatherAlertLevels.objects.filter(
+                user_code=user_code, weather=weather, alert_level=level
+            ).exclude(id=alert_id).exists():
                 return JsonResponse({'success': False, 'error': f'{weather}/{level} 组合已存在'}, status=400)
 
             obj.weather = weather
@@ -755,6 +783,8 @@ def settings_weather_alert_detail(request, alert_id, time_mode='current'):
             logger.error(f"修改天气告警等级失败: {e}")
             return JsonResponse({'success': False, 'error': str(e)}, status=500)
 
+    if obj.user_code != user_code:
+        return JsonResponse({'success': False, 'error': '不能删除默认模板中的天气'}, status=403)
     try:
         obj.delete()
         logger.info(f"[设置] 用户 {user_code} 删除天气告警等级: id={alert_id}")
@@ -798,19 +828,114 @@ def _prefix_payload(data):
         raise ValueError('性质只能是国内或国际')
     if not area:
         raise ValueError('请填写区域')
-    return prefix, classification, area, remark
+    try:
+        sequence = int(data.get('sequence'))
+    except (TypeError, ValueError):
+        raise ValueError('序号须为正整数')
+    if sequence < 1:
+        raise ValueError('序号须为正整数')
+    return prefix, classification, area, remark, sequence
+
+
+def _sequence_taken(classification, sequence, area, keep_group=None):
+    qs = AirportPrefixArea.objects.filter(
+        classification=classification, sequence=sequence,
+    ).exclude(area=area)
+    if keep_group:
+        qs = qs.exclude(sequence=keep_group[0], classification=keep_group[1], area=keep_group[2])
+    return qs.exists()
+
+
+def _prefix_sheet_rows(data):
+    """整表保存。性质不能改道，只能在各自框架里增删区域。"""
+    raw_rows = data.get('rows')
+    if not isinstance(raw_rows, list) or not raw_rows:
+        raise ValueError('请提交完整的区域配置')
+    cleaned = []
+    seen_prefix = set()
+    seen_seq = {}
+    areas_by_kind = {'国内': set(), '国际': set()}
+    for raw in raw_rows:
+        if not isinstance(raw, dict):
+            raise ValueError('区域配置格式不正确')
+        prefix, classification, area, remark, sequence = _prefix_payload(raw)
+        if prefix in seen_prefix:
+            raise ValueError(f'前缀 {prefix} 重复')
+        seen_prefix.add(prefix)
+        seq_key = (classification, sequence)
+        other = seen_seq.get(seq_key)
+        if other is not None and other != area:
+            raise ValueError(f'{classification}下序号 {sequence} 重复')
+        seen_seq[seq_key] = area
+        areas_by_kind[classification].add((area, sequence))
+        cleaned.append({
+            'prefix': prefix,
+            'classification': classification,
+            'area': area,
+            'remark': remark,
+            'sequence': sequence,
+        })
+    area_seq = {}
+    for item in cleaned:
+        key = (item['classification'], item['area'])
+        previous = area_seq.get(key)
+        if previous is not None and previous != item['sequence']:
+            raise ValueError(f'{item["classification"]}下区域「{item["area"]}」的序号不一致')
+        area_seq[key] = item['sequence']
+    for kind in ('国内', '国际'):
+        if not areas_by_kind[kind]:
+            raise ValueError(f'{kind}至少要有一个区域')
+    return cleaned
+
+
+def _replace_prefix_sheet(rows):
+    keep = [row['prefix'] for row in rows]
+    with transaction.atomic():
+        AirportPrefixArea.objects.exclude(prefix__in=keep).delete()
+        for row in rows:
+            AirportPrefixArea.objects.update_or_create(
+                prefix=row['prefix'],
+                defaults={
+                    'sequence': row['sequence'],
+                    'classification': row['classification'],
+                    'area': row['area'],
+                    'remark': row['remark'],
+                },
+            )
+        for rule in AirportPrefixArea.objects.filter(prefix__in=keep):
+            _backfill_prefix(rule)
 
 
 # ===================== 机场区域 =====================
 
 @csrf_exempt
-@require_http_methods(["GET", "POST"])
+@require_http_methods(["GET", "POST", "PUT"])
 def settings_prefix_area(request, time_mode='current'):
     user_code = _get_user_code(request, time_mode)
+    if request.method == 'PUT':
+        denied = _deny_settings_write(request, 'settings_prefix_area')
+        if denied:
+            return denied
+        try:
+            data = json.loads(request.body or '{}')
+            rows = _prefix_sheet_rows(data)
+            _replace_prefix_sheet(rows)
+            logger.info(f"[设置] 用户 {user_code} 保存机场区域，共 {len(rows)} 条前缀")
+            return JsonResponse({'success': True, 'message': '已保存'})
+        except (json.JSONDecodeError, ValueError) as e:
+            return JsonResponse({'success': False, 'error': str(e)}, status=400)
+        except Exception as e:
+            logger.error(f"保存机场区域失败: {e}")
+            return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
     if request.method == 'GET':
         rows = list(AirportPrefixArea.objects.values(
-            'prefix', 'classification', 'area', 'remark'
-        ).order_by('prefix'))
+            'prefix', 'sequence', 'classification', 'area', 'remark'
+        ))
+        rows.sort(key=lambda row: (
+            0 if row['classification'] == '国内' else 1,
+            row['sequence'], row['area'], row['prefix'],
+        ))
         return JsonResponse({'success': True, 'data': rows})
 
     denied = _deny_settings_write(request, 'settings_prefix_area')
@@ -818,11 +943,14 @@ def settings_prefix_area(request, time_mode='current'):
         return denied
     try:
         data = json.loads(request.body)
-        prefix, classification, area, remark = _prefix_payload(data)
+        prefix, classification, area, remark, sequence = _prefix_payload(data)
         if AirportPrefixArea.objects.filter(prefix=prefix).exists():
             return JsonResponse({'success': False, 'error': f'前缀 {prefix} 已存在'}, status=400)
+        if _sequence_taken(classification, sequence, area):
+            return JsonResponse({'success': False, 'error': '同一性质下序号不能重复'}, status=400)
         rule = AirportPrefixArea.objects.create(
-            prefix=prefix, classification=classification, area=area, remark=remark,
+            prefix=prefix, sequence=sequence, classification=classification,
+            area=area, remark=remark,
         )
         _backfill_prefix(rule)
         logger.info(f"[设置] 用户 {user_code} 新增前缀区域: {prefix}")
@@ -853,11 +981,34 @@ def settings_prefix_area_detail(request, prefix, time_mode='current'):
 
     try:
         data = json.loads(request.body)
-        _prefix, classification, area, remark = _prefix_payload({**data, 'prefix': rule.prefix})
-        rule.classification = classification
-        rule.area = area
-        rule.remark = remark
-        rule.save()
+        new_prefix, classification, area, remark, sequence = _prefix_payload({
+            **data, 'prefix': data.get('prefix') or rule.prefix,
+        })
+        keep = (rule.sequence, rule.classification, rule.area)
+        if _sequence_taken(classification, sequence, area, keep):
+            return JsonResponse({'success': False, 'error': '同一性质下序号不能重复'}, status=400)
+        if data.get('apply_group'):
+            AirportPrefixArea.objects.filter(
+                sequence=rule.sequence, classification=rule.classification, area=rule.area,
+            ).update(sequence=sequence, classification=classification, area=area)
+            for item in AirportPrefixArea.objects.filter(
+                sequence=sequence, classification=classification, area=area,
+            ):
+                _backfill_prefix(item)
+            logger.info(f"[设置] 用户 {user_code} 修改区域组: {classification}-{area}")
+            return JsonResponse({'success': True, 'message': '区域已更新'})
+        if new_prefix != rule.prefix:
+            if AirportPrefixArea.objects.filter(prefix=new_prefix).exists():
+                return JsonResponse({'success': False, 'error': f'前缀 {new_prefix} 已存在'}, status=400)
+            AirportPrefixArea.objects.create(
+                prefix=new_prefix, sequence=rule.sequence, classification=rule.classification,
+                area=rule.area, remark=remark,
+            )
+            rule.delete()
+            rule = AirportPrefixArea.objects.get(prefix=new_prefix)
+        else:
+            rule.remark = remark
+            rule.save(update_fields=['remark'])
         _backfill_prefix(rule)
         logger.info(f"[设置] 用户 {user_code} 修改前缀区域: {rule.prefix}")
         return JsonResponse({'success': True, 'message': '修改成功'})

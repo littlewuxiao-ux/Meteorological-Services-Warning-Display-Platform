@@ -98,8 +98,7 @@ _WX_FALLBACK_ZH = {
 }
 
 _WX_CACHE_TTL = 300
-_wx_cache: dict[str, str] = {}
-_wx_cache_at = 0.0
+_wx_cache: dict = {}
 
 _TX_TN_RE = re.compile(r'\bT(X|N)(M?\d{2})/(\d{4})Z\b', re.IGNORECASE)
 _TREND_RE = re.compile(r'\b(?:TEMPO|BECMG|INTER)\b.*?(?=\sRMK\b|$)', re.IGNORECASE | re.DOTALL)
@@ -112,27 +111,25 @@ _METAR_WS_RE = re.compile(
 # ── 天气现象中文名 ──────────────────────────────────────────────
 
 def _weather_zh_map() -> dict[str, str]:
-    """weather_alert_levels.description 缓存（TTL 5 分钟，设置里改完很快生效）。"""
-    global _wx_cache, _wx_cache_at
+    """当前用户改过的描述优先，其余用模板。"""
+    from utils.user_settings import current_settings_user, weather_rows_for
+
+    user = current_settings_user()
     now = time.time()
-    if _wx_cache and now - _wx_cache_at < _WX_CACHE_TTL:
-        return _wx_cache
+    cached = _wx_cache.get(user)
+    if cached and now - cached[0] < _WX_CACHE_TTL:
+        return cached[1]
     mapping: dict[str, str] = {}
     try:
-        from core.models import WeatherAlertLevels
-        rows = WeatherAlertLevels.objects.exclude(description=None).exclude(
-            description=''
-        ).values_list('weather', 'description')
-        for code, desc in rows:
-            key = str(code or '').strip().upper()
-            text = str(desc or '').strip()
+        for row in weather_rows_for(user):
+            key = str(row.weather or '').strip().upper()
+            text = str(row.description or '').strip()
             if key and text:
                 mapping.setdefault(key, text)
     except Exception as exc:
         logger.warning(f'读取天气现象中文名失败: {exc}')
-        return _wx_cache
-    _wx_cache = mapping
-    _wx_cache_at = now
+        return cached[1] if cached else {}
+    _wx_cache[user] = (now, mapping)
     return mapping
 
 

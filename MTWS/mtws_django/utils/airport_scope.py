@@ -101,11 +101,11 @@ def get_parking_airport_codes() -> set:
 
 
 def get_flight_airport_codes() -> set:
-    from parsers.models import Flight
+    """按当前入库用户的承运人从航班事件计算，不依赖可能过期的 has_flight 标记。"""
+    from utils.flight_selection import visible_airport_codes
+    from utils.user_settings import active_job_user
 
-    return set(
-        Flight.objects.filter(has_flight=True).values_list('airport_4code', flat=True)
-    )
+    return visible_airport_codes(active_job_user())
 
 
 def get_monitored_airport_codes() -> list:

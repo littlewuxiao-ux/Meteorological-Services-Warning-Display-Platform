@@ -528,3 +528,22 @@ class Taf(models.Model):
         return f"TAF {self.airport_4code} - {self.taf_observation_time}"
 
 
+class UserAirportAlert(models.Model):
+    """每个用户、每个机场、实况或预报只留最新一条告警结果。"""
+
+    user_code = models.CharField(max_length=12, verbose_name='用户代码')
+    airport_4code = models.CharField(max_length=4, verbose_name='机场四字代码')
+    kind = models.CharField(max_length=8, verbose_name='metar或taf')
+    source_key = models.CharField(max_length=50, verbose_name='来源报文标识')
+    warnings = models.JSONField(default=dict, verbose_name='告警字段')
+    updated_at = models.DateTimeField(auto_now=True, verbose_name='更新时间')
+
+    class Meta:
+        db_table = 'user_airport_alert'
+        verbose_name = '用户机场告警'
+        unique_together = [['user_code', 'airport_4code', 'kind']]
+
+    def __str__(self):
+        return f'{self.user_code} {self.airport_4code} {self.kind}'
+
+

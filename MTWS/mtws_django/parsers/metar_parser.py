@@ -675,22 +675,8 @@ class MetarParser:
             return self.airport_thresholds[airport_4code]
         
         try:
-            # 先查找具体机场的阈值
-            airport_info = AirportAlertThresholds.objects.filter(
-                airport_4code=airport_4code
-            ).first()
-            
-            if not airport_info:
-                # 使用默认阈值
-                default_airport_info = AirportAlertThresholds.objects.filter(
-                    airport_4code='default'
-                ).first()
-                
-                if default_airport_info:
-                    from copy import deepcopy
-                    airport_info = deepcopy(default_airport_info)
-                    airport_info.airport_4code = airport_4code  # 使用实际机场代码
-                    airport_info.airport_name = f'未配置机场 ({airport_4code})'  # 合理的名称
+            from utils.user_settings import bound_or, get_threshold_row
+            airport_info = get_threshold_row(bound_or(self.user_code, self.time_mode), airport_4code)
             
             if airport_info:
                 thresholds = {
@@ -756,7 +742,8 @@ class MetarParser:
     def _get_weather_alert_level(self, weather_code: str) -> str:
         """获取天气现象告警等级"""
         try:
-            weather_alert = WeatherAlertLevels.objects.filter(weather=weather_code).first()
+            from utils.user_settings import bound_or, weather_row
+            weather_alert = weather_row(bound_or(self.user_code, self.time_mode), weather_code)
             if weather_alert:
                 return weather_alert.alert_level
         except Exception as e:
@@ -888,7 +875,8 @@ class MetarParser:
         try:
             from core.models import WeatherAlertLevels
             
-            weather_alert = WeatherAlertLevels.objects.filter(weather=weather_code).first()
+            from utils.user_settings import bound_or, weather_row
+            weather_alert = weather_row(bound_or(self.user_code, self.time_mode), weather_code)
             if weather_alert:
                 # 收集非空的type字段
                 types = []
