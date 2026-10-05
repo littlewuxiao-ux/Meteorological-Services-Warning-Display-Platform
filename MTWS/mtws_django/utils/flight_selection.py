@@ -1,4 +1,4 @@
-"""已选承运人：入库保留全部航班，派生结果只认 carrier 表里启用的代码。"""
+"""已选承运人：入库保留全部航班，派生结果只认 carrier 表里的代码。"""
 
 import json
 import logging
@@ -23,16 +23,21 @@ def sort_carrier_codes(codes) -> list:
     return uniq
 
 
+def carrier_code_or_blank(value) -> str:
+    """恰好 2 位字母或数字。其他内容视为无效。"""
+    code = normalize_carrier(value)
+    if len(code) == 2 and code.isalnum():
+        return code
+    return ''
+
+
 def selected_carrier_codes() -> set:
     from core.models import Carrier
 
     return {
         code
-        for code in (
-            normalize_carrier(raw)
-            for raw in Carrier.objects.filter(is_active=True).values_list('carrier_code', flat=True)
-        )
-        if code
+        for raw in Carrier.objects.values_list('carrier_code', flat=True)
+        if (code := carrier_code_or_blank(raw))
     }
 
 
@@ -103,42 +108,31 @@ def distinct_flight_carriers() -> list:
     found = set()
     for raw in Flight.objects.values_list('events', flat=True):
         for ev in _as_event_list(raw):
-            code = normalize_carrier(ev.get('carrier') if isinstance(ev, dict) else '')
-            if len(code) == 2:
+            code = carrier_code_or_blank(ev.get('carrier') if isinstance(ev, dict) else '')
+            if code:
                 found.add(code)
     return sort_carrier_codes(found)
 
 
-def _two_letter_codes(codes) -> list:
-    return sort_carrier_codes(
-        code for code in (normalize_carrier(raw) for raw in (codes or []))
-        if len(code) == 2
-    )
-
-
-def save_selected_carriers(codes, visible=None, time_mode='current') -> list:
-    """勾选结果写回 carrier 表，并重算已选承运人的航班派生数据。
-
-    只改本次矩阵里出现的代码。航班里暂时没有的已选承运人保持原状。
-    """
+def apply_carrier_change(action: str, code: str, time_mode='current') -> list:
+    """勾选写入 carrier，取消勾选删除该行，并重算航班派生数据。"""
     from core.models import Carrier
 
-    cleaned = _two_letter_codes(codes)
-    shown = set(_two_letter_codes(visible if visible is not None else distinct_flight_carriers()))
-    chosen = set(cleaned)
+    cleaned = carrier_code_or_blank(code)
+    if not cleaned:
+        raise ValueError('请输入2位字母或数字')
+    if action not in ('add', 'remove'):
+        raise ValueError('未知操作')
     with transaction.atomic():
-        for code in shown:
-            if code in chosen:
-                continue
-            Carrier.objects.filter(carrier_code__iexact=code).update(is_active=False)
-        for code in cleaned:
-            row = Carrier.objects.filter(carrier_code__iexact=code).first()
-            if row:
-                row.carrier_code = code
-                row.is_active = True
-                row.save(update_fields=['carrier_code', 'is_active', 'updated_at'])
-            else:
-                Carrier.objects.create(carrier_code=code, is_active=True)
+        if action == 'add':
+            row = Carrier.objects.filter(carrier_code__iexact=cleaned).first()
+            if row is None:
+                Carrier.objects.create(carrier_code=cleaned)
+            elif row.carrier_code != cleaned:
+                row.carrier_code = cleaned
+                row.save(update_fields=['carrier_code', 'updated_at'])
+        else:
+            Carrier.objects.filter(carrier_code__iexact=cleaned).delete()
     recompute_selected_flight_state(time_mode)
     return sort_carrier_codes(selected_carrier_codes())
 

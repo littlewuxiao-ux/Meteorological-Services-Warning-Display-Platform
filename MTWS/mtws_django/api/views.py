@@ -23,7 +23,7 @@ from parsers.parsing_manager import ParsingManager
 from utils.time_manager import TimeManager
 from utils.flight_selection import (
     distinct_flight_carriers,
-    save_selected_carriers,
+    apply_carrier_change,
     selected_carrier_codes,
     selected_events,
     sort_carrier_codes,
@@ -1844,25 +1844,25 @@ def airport_search(request, time_mode='current'):
 @csrf_exempt
 @require_http_methods(["GET", "POST"])
 def flight_carriers(request, time_mode='current'):
-    """主页承运人矩阵：全量代码来自 flight，勾选结果写入 carrier。"""
+    """主页承运人矩阵：航班里出现的代码加上 carrier 表。勾选写入，取消勾选删除。"""
     try:
         if request.method == 'GET':
             return JsonResponse({
                 'success': True,
-                'all': distinct_flight_carriers(),
+                'flights': distinct_flight_carriers(),
                 'selected': sort_carrier_codes(selected_carrier_codes()),
             })
         data = json.loads(request.body or '{}')
-        raw = data.get('selected')
-        visible = data.get('all')
-        if not isinstance(raw, list):
-            return JsonResponse({'success': False, 'error': 'selected 必须是承运人代码数组'}, status=400)
-        if visible is not None and not isinstance(visible, list):
-            return JsonResponse({'success': False, 'error': 'all 必须是承运人代码数组'}, status=400)
-        selected = save_selected_carriers(raw, visible, time_mode)
+        action = data.get('action')
+        if action not in ('add', 'remove'):
+            return JsonResponse({'success': False, 'error': 'action 必须是 add 或 remove'}, status=400)
+        try:
+            selected = apply_carrier_change(action, data.get('code'), time_mode)
+        except ValueError as exc:
+            return JsonResponse({'success': False, 'error': str(exc)}, status=400)
         return JsonResponse({
             'success': True,
-            'all': distinct_flight_carriers(),
+            'flights': distinct_flight_carriers(),
             'selected': selected,
         })
     except json.JSONDecodeError:

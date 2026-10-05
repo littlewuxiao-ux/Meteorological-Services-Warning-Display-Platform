@@ -170,7 +170,6 @@ class Carrier(models.Model):
     
     carrier_code = models.CharField(max_length=2, unique=True, verbose_name='航空公司二字代码')
     carrier_name = models.CharField(max_length=100, blank=True, null=True, verbose_name='航空公司名称')
-    is_active = models.BooleanField(default=True, verbose_name='是否启用')
     
     # 时间戳
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')

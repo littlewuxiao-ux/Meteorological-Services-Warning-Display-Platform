@@ -299,10 +299,7 @@ class DatabaseManager:
             bool: 是否有效
         """
         try:
-            return Carrier.objects.filter(
-                carrier_code=carrier_code,
-                is_active=True
-            ).exists()
+            return Carrier.objects.filter(carrier_code=carrier_code).exists()
         except Exception as e:
             logger.error(f"检查航空公司代码失败: {e}")
             return False 

@@ -424,6 +424,25 @@ body.trend-alert-locked .filter-btn[data-group="international"]:hover {
   border-color: white;
   font-weight: 700;
 }
+.carrier-cell.is-on.is-absent {
+  background: #9aa3ad;
+  color: #2c3e50;
+  border-color: #9aa3ad;
+}
+.carrier-cell.carrier-add {
+  font-size: 18px;
+  line-height: 1;
+  font-weight: 700;
+}
+.carrier-add-input {
+  width: 100%;
+  box-sizing: border-box;
+  text-align: center;
+  text-transform: uppercase;
+  background: #fff;
+  color: #2c3e50;
+  padding: 0;
+}
 
 
 /* 弹窗控制区域 */
