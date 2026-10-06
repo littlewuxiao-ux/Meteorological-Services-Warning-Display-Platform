@@ -1465,7 +1465,7 @@ function setupGlobalToolbar() {
         history.push({ timestamp: Date.now(), hours: pbState.validityHours || 24, data: JSON.parse(JSON.stringify(pbState.confirmedData)) });
         localStorage.setItem('sf_publish_history_v1', JSON.stringify(history.slice(-50)));
         renderPublishHistory();
-        alert('已保存已编发内容');
+        window.OMICSUI?.notify('已保存已编发内容');
     });
     renderPublishHistory();
     document.querySelectorAll('input[name="export-text-timezone"]').forEach(option => {
@@ -1786,42 +1786,9 @@ function setupModalEvents() {
       globalModal.style.display = 'flex';
       
       // 🌟 核心修复：延迟 10 毫秒，彻底抹除 script.js 残留的内联灰底色，实现大一统！
-      setTimeout(() => {
-          const currentMode = document.querySelector('input[name="forecast-mode"]:checked')?.value;
-          
-          document.querySelectorAll('.set-nav').forEach(n => {
-              n.classList.remove('active');
-              // 关键：剥夺原有的内联背景色统治权
-              n.style.background = '';
-              n.style.backgroundColor = '';
-              // 仅清除普通项的字体颜色，防止冲掉机场字典/管理员的专属黄橙色
-              if (n.dataset.target === 'pane-qa' || n.dataset.target === 'pane-pb') {
-                  n.style.color = ''; 
-              }
-          });
-          
-          document.querySelectorAll('.set-pane').forEach(p => p.style.display = 'none');
-          
-          if (currentMode === 'publish') {
-              const pbNav = document.querySelector('.set-nav[data-target="pane-pb"]');
-              if(pbNav) { pbNav.classList.add('active'); document.getElementById('pane-pb').style.display = 'block'; }
-          } else {
-              const qaNav = document.querySelector('.set-nav[data-target="pane-qa"]');
-              if(qaNav) { qaNav.classList.add('active'); document.getElementById('pane-qa').style.display = 'block'; }
-          }
-      }, 10);
+      window.OMICSSettingsUI?.open();
   });
 
-  document.querySelectorAll('.set-nav').forEach(nav => {
-      nav.addEventListener('click', () => {
-          document.querySelectorAll('.set-nav').forEach(n => n.classList.remove('active'));
-          nav.classList.add('active');
-          document.querySelectorAll('.set-pane').forEach(p => p.style.display = 'none');
-          const tgt = document.getElementById(nav.dataset.target);
-          if (tgt) tgt.style.display = 'block';
-      });
-  });
-  
   document.getElementById('pb-settings-save-btn')?.addEventListener('click', () => { 
       saveModalForm(); 
       globalModal.style.display = 'none';
@@ -2555,25 +2522,6 @@ function showPublishLoadingStatus(message) {
     const loader = document.getElementById('publish-loading-indicator');
     if (!loader) return;
     loader.style.display = 'flex';
-    loader.style.position = 'fixed';
-    loader.style.left = '50%';
-    loader.style.top = '50%';
-    loader.style.transform = 'translate(-50%, -50%)';
-    loader.style.width = 'min(560px, calc(100vw - 32px))';
-    loader.style.minHeight = '112px';
-    loader.style.alignItems = 'center';
-    loader.style.justifyContent = 'center';
-    loader.style.gap = '12px';
-    loader.style.boxSizing = 'border-box';
-    // Keep publish progress behind the login modal so a failed refresh
-    // cannot obscure the QR code when the user signs in again.
-    loader.style.zIndex = '10050';
-    loader.style.margin = '0';
-    loader.style.borderRadius = '14px';
-    loader.style.border = '1px solid rgba(148,163,184,.35)';
-    loader.style.background = 'rgba(255,255,255,.96)';
-    loader.style.boxShadow = '0 18px 55px rgba(15, 23, 42, 0.24)';
-    loader.style.color = '#005A9C';
     loader.innerHTML = `<div class="publish-loading-head"><span class="publish-loading-orbit"><span class="spinner"></span></span><span><b class="publish-loading-title">天气数据同步中</b><span class="publish-loading-message">${message}</span></span></div><div class="publish-loading-bar"><i></i></div>`;
 }
 window.showPublishLoadingStatus = showPublishLoadingStatus;
@@ -2602,24 +2550,7 @@ async function loadForecastData(retainOrder = false) {
         const isError = explicitStage ? legacyError : Boolean(msgOrError);
         if (key) progressState[key] = isError ? '失败' : msg;
         loader.style.display = 'flex'; loader.style.color = isError ? '#dc2626' : '#005A9C';
-        loader.style.position = 'fixed';
-        loader.style.left = '50%';
-        loader.style.top = '50%';
-        loader.style.transform = 'translate(-50%, -50%)';
-        loader.style.width = 'min(560px, calc(100vw - 32px))';
-        loader.style.minHeight = '132px';
-        loader.style.alignItems = 'center';
-        loader.style.justifyContent = 'center';
-        loader.style.gap = '12px';
-        loader.style.boxSizing = 'border-box';
-        // The login modal uses the shared modal layer (z-index: 2000).
-        // Progress and error messages must remain below it.
-        loader.style.zIndex = '10050';
-        loader.style.margin = '0';
-        loader.style.borderRadius = '14px';
-        loader.style.border = '1px solid rgba(148,163,184,.35)';
-        loader.style.background = 'rgba(255,255,255,.97)';
-        loader.style.boxShadow = '0 18px 55px rgba(15, 23, 42, 0.24)';
+        window.OMICSUI?.task(msg, isError);
         loader.innerHTML = isError
             ? `<div class="publish-loading-head publish-loading-error"><span class="publish-loading-orbit">!</span><span><b class="publish-loading-title">加载遇到问题</b><span class="publish-loading-message">${msg}</span></span><button type="button" class="mini-btn" data-close-publish-loading>关闭</button></div>`
             : `<div class="publish-loading-head"><span class="publish-loading-orbit"><span class="spinner"></span></span><span><b class="publish-loading-title">天气数据同步中</b><span class="publish-loading-message">${msg}</span></span></div><div class="publish-loading-bar"><i></i></div>`;
@@ -2824,6 +2755,7 @@ async function loadForecastData(retainOrder = false) {
         PBLOG(`数据加载完成，共渲染 ${apAnalysis.length} 个机场`);
 
         if (loader) loader.style.display = 'none';
+        window.OMICSUI?.task(new Date().toLocaleTimeString('zh-CN', { timeZone: 'Asia/Shanghai' }) + ' | ' + apAnalysis.length + ' airports updated');
         PBLOG_FLUSH();
 
     } catch (e) {

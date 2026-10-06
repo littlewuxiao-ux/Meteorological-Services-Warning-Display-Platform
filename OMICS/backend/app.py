@@ -257,7 +257,7 @@ def load_settings_config():
     return data
 
 
-def save_settings_config(settings):
+def save_settings_config(settings, replace=False):
     # 🌟 健壮性：以 默认 -> 磁盘已存 -> 本次传入 的顺序逐层叠加，
     # 避免某次只传部分字段的 sync 把磁盘上其他已保存配置抹掉。
     with _SETTINGS_WRITE_LOCK:
@@ -270,6 +270,8 @@ def save_settings_config(settings):
                 data = deep_merge_dict(data, upgrade_settings_config(legacy))
         else:
             data = deep_merge_dict(data, upgrade_settings_config(saved))
+        if replace:
+            data = copy.deepcopy(DEFAULT_SETTINGS_CONFIG)
         data = deep_merge_dict(data, settings if isinstance(settings, dict) else {})
         data["schema_version"] = CURRENT_SETTINGS_SCHEMA_VERSION
         # Also keep personnel_mapping.json in sync for launcher/legacy readers.
@@ -1141,6 +1143,26 @@ def personnel_mapping_api():
     except Exception as exc:
         return jsonify({"success": False, "error": str(exc)}), 200
 
+try:
+    from .logic.settings_archive import SettingsArchive, validate_settings
+except ImportError:
+    from logic.settings_archive import SettingsArchive, validate_settings
+settings_archive = SettingsArchive(os.path.join(_PERSIST_DIR, 'runtime', 'settings_backups'))
+
+@app.route('/api/settings_backups', methods=['GET', 'POST'])
+def settings_backups_api():
+    try:
+        if request.method == 'GET':
+            return jsonify(success=True, data=settings_archive.list())
+        payload = request.get_json(silent=True) or {}
+        if payload.get('restore'):
+            settings = settings_archive.read(payload['restore'])
+            settings_archive.create(load_settings_config())
+            return jsonify(success=True, data=save_settings_config(settings, replace=True))
+        return jsonify(success=True, data=settings_archive.create(load_settings_config()))
+    except Exception as exc:
+        return jsonify(success=False, error=str(exc)), 400
+
 @app.route('/api/settings_config', methods=['GET', 'POST'])
 def settings_config_api():
     """Persist system settings outside browser localStorage.
@@ -1152,7 +1174,10 @@ def settings_config_api():
     payload = request.get_json(silent=True) or {}
     settings = payload.get('settings', payload)
     try:
-        saved = save_settings_config(settings)
+        validate_settings(settings)
+        if payload.get('replace'):
+            settings_archive.create(load_settings_config())
+        saved = save_settings_config(settings, replace=bool(payload.get('replace')))
         return jsonify({"success": True, "data": saved})
     except Exception as exc:
         LOG.warning("保存系统设置配置失败: %s", exc)

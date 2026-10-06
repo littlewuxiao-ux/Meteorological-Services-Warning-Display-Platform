@@ -726,7 +726,11 @@
                 // source set may also contain airports from an earlier import.
                 const groups = typeof window.getPublishAirportGroups === 'function' ? window.getPublishAirportGroups() : [];
                 residentGroups.forEach(index => (groups[Number(index)]?.airports || []).forEach(icao => operationSources.resident.add(icao)));
+                // Parsing is finished: reveal the inline refresh status before
+                // starting the network requests, rather than after they finish.
+                importModal.style.display = 'none';
                 if (needsNetwork) {
+                    await new Promise(resolve => requestAnimationFrame(resolve));
                     await window.loadForecastData?.(true);
                 } else {
                     window.renderPublishTable?.();
@@ -758,7 +762,7 @@
                     `运行机场：${sourceCounts.running || 0} 个`,
                     `手动新增：${sourceCounts.custom || 0} 个`
                 ];
-                alert(reportLines.join('\n'));
+                window.OMICSUI?.notify(reportLines.join('\n'));
             } catch (error) {
                 alert('导入失败：' + error.message);
             } finally {

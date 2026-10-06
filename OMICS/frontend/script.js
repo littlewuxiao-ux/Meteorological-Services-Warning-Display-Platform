@@ -106,22 +106,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         return c && typeof c === 'object' ? c[key] : undefined;
     }
     async function loadSettingsConfigFromServer() {
-        // 同步注入的唯一配置源优先。
-        if (window.OMICS_CONFIG && typeof window.OMICS_CONFIG === 'object') {
-            return window.OMICS_CONFIG;
-        }
-        try {
-            const res = await fetch(SETTINGS_CONFIG_URL, { cache: 'no-store' });
-            const data = await res.json();
-            if (data.success && data.data) return data.data;
-        } catch (e) {
-            console.warn('读取系统设置配置文件失败,回退 localStorage', e);
-        }
-        return null;
+        try { return await window.OMICSSettings.load(); }
+        catch (error) { window.OMICSUI?.notify(error.message, 'error'); return window.OMICS_CONFIG || null; }
     }
 
-    // 🌟 各配置块的构造函数,供全量 snapshot 与分块 PATCH 共用。
-    //   localStorage 缺失时回退到 window.OMICS_CONFIG(持久唯一源),绝不提交空块覆盖磁盘。
     function buildPathsBlock() {
         const s = cfgBlock('paths') || {};
         return {
@@ -167,24 +155,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         };
     }
 
-    async function saveSettingsConfigToServer(settings) {
-        try {
-            const res = await fetch(SETTINGS_CONFIG_URL, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ settings })
-            });
-            const data = await res.json();
-            if (data.success && data.data) {
-                window.OMICS_CONFIG = data.data;
-                window.OMICS_SETTINGS_CONFIG = data.data;
-                return data.data;
-            }
-            console.warn('保存系统设置配置文件失败', data.error || data);
-        } catch (e) {
-            console.warn('保存系统设置配置文件失败', e);
-        }
-        return null;
+    function saveSettingsConfigToServer(settings) {
+        return window.OMICSSettings.patch(settings);
     }
 
     function syncSettingsConfigToServer() {
@@ -277,7 +249,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         clearLocalAuthState();
         try { userInfoDiv.classList.add('hidden'); } catch (e) {}
         try { loginBtn.classList.remove('hidden'); } catch (e) {}
-        const adminSection = document.getElementById('admin-only-section');
+        const adminSection = document.getElementById('pane-admin');
         if (adminSection) {
             adminSection.classList.add('hidden');
             adminSection.style.display = 'none';
@@ -492,7 +464,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
             if (pbForecaster) pbForecaster.value = chineseName;
 
-            const adminSection = document.getElementById('admin-only-section');
+            const adminSection = document.getElementById('pane-admin');
             if (adminSection) {
                 // 🌟 只认吴霄工号常量,不依赖会被配置同步覆盖的姓名映射
                 if (currentUserId === ADMIN_ID) {
@@ -799,7 +771,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 loginBtn.classList.remove('hidden');
                 userInfoDiv.classList.add('hidden');
 
-                const adminSection = document.getElementById('admin-only-section');
+                const adminSection = document.getElementById('pane-admin');
                 if (adminSection) {
                     adminSection.classList.add('hidden');
                     adminSection.style.display = 'none';
@@ -850,7 +822,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         globalSettingsModal.style.display = 'flex';
         renderPersonnelList();
 
-        const adminSection = document.getElementById('admin-only-section');
+        const adminSection = document.getElementById('pane-admin');
         const adminNavBtn = document.querySelector('.set-nav[data-target="pane-admin"]');
         if (adminSection) {
             // 只有吴霄账号能看到高级管理员配置;输密码进来的只能进普通设置。
@@ -876,17 +848,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         globalSettingsModal.style.display = 'none';
     });
 
-    // 左右面板切换逻辑 (纯净版,样式交由 CSS .active 控制)
-    document.querySelectorAll('.set-nav').forEach(nav => {
-        nav.addEventListener('click', (e) => {
-            document.querySelectorAll('.set-nav').forEach(n => n.classList.remove('active'));
-            document.querySelectorAll('.set-pane').forEach(p => p.style.display = 'none');
-
-            e.target.classList.add('active');
-            document.getElementById(e.target.dataset.target).style.display = 'block';
-        });
-    });
-
     function hideModal(modal) { modal.style.display = 'none'; }
     closeLoginModalBtn.onclick = () => { hideModal(loginModal); if(pollTimer) clearInterval(pollTimer); };
     closeMetarModalBtn.onclick = () => { hideModal(metarModal); };
@@ -906,7 +867,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         loginBtn.classList.remove('hidden');
         setTimeout(() => startLogin(), 0);
 
-        const adminSection = document.getElementById('admin-only-section');
+        const adminSection = document.getElementById('pane-admin');
         if (adminSection) {
             adminSection.classList.add('hidden');
             adminSection.style.display = 'none';
