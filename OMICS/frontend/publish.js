@@ -2866,7 +2866,7 @@ function renderPublishTableTriRow(apAnalysis, preserveDrafts = true) {
         }
 
         trEdit.innerHTML = `
-            <td class="col-airport td-airport" rowspan="1" draggable="true" data-icao="${icao}" title="${tafRaw || '无TAF报文'}\n\nMETAR:\n${metarRaw || '暂无最新METAR'}" style="font-weight:bold; vertical-align:middle; cursor:move; position:sticky; ${isGray?'color:#94a3b8;':''}">${apName}<button class="airport-delete-x" data-icao="${icao}" title="删除该机场">×</button></td>
+            <td class="col-airport td-airport" rowspan="1" draggable="true" data-icao="${icao}" title="${metarRaw || '暂无最新METAR'}\n${tafRaw || '无TAF报文'}" style="font-weight:bold; vertical-align:middle; cursor:move; position:sticky; ${isGray?'color:#94a3b8;':''}">${apName}<button class="airport-delete-x" data-icao="${icao}" title="删除该机场">×</button></td>
             <td rowspan="1" class="col-airport-type" contenteditable="true" spellcheck="false" title="点击修改机场性质" style="vertical-align:middle; border-right:2px solid #cbd5e1;">${apType}</td>
             ${srcOpHTML}
         `;
@@ -3802,19 +3802,18 @@ function setupAirportInteraction() {
 
       const inp = eTr.querySelector('.new-ap-input');
       inp.focus();
-      
-      // 🌟 修复 Bug 5：点击外部自动销毁
-      inp.addEventListener('blur', () => {
-          if (!inp.value.trim()) {
+      let finalized = false;
+      const finalizeNewAirport = async () => {
+          if (finalized) return;
+          const rawValue = inp.value.trim();
+          if (!rawValue) {
               eTr.remove();
               if(window.updateAllRowspans) window.updateAllRowspans();
+              return;
           }
-      });
-      
-      inp.addEventListener('keydown', async (ev) => {
-          if (ev.key === 'Enter') {
-              const icao = resolveAirportInput(inp.value);
-              if(!icao) return alert("请输入有效的四字码或机场名称");
+          const icao = resolveAirportInput(rawValue);
+          if(!icao) { alert("请输入有效的四字码或机场名称"); inp.focus(); return; }
+          finalized = true;
               if (isAirportVisibleInPublishTable(icao)) {
                   eTr.remove();
                   alert('该机场已经存在表格中');
@@ -3837,7 +3836,12 @@ function setupAirportInteraction() {
               await new Promise(resolve => requestAnimationFrame(resolve));
               await loadForecastData(true);
               window.saveConfirmedDataToLocal?.();
-          }
+      };
+      // Enter and focus loss share the same path, so leaving the field also
+      // commits a valid airport while an empty field is simply cancelled.
+      inp.addEventListener('blur', () => { setTimeout(finalizeNewAirport, 0); });
+      inp.addEventListener('keydown', ev => {
+          if (ev.key === 'Enter') { ev.preventDefault(); finalizeNewAirport(); }
       });
   });
   
