@@ -145,12 +145,17 @@ const pbState = {
   draftData: {},
   cfgIceTemp: 10, cfgIceDewPointDiff: 0, cfgIceVis: 1500, cfgIcePrecipHours: 12, cfgExtColdTemp: -30,
   specialConditionAirports: new Map(),
+  specialConditionManual: false,
   loadGeneration: 0
 };
 
 let _nextRowIdx = 0, _cachedAirports = [];
 window.pbState = pbState;
 window.renderPublishTable = function() { renderPublishTableTriRow(window.currentApAnalysis || []); };
+
+function getBeijingDateKey(timestamp = Date.now()) {
+    return new Date(timestamp + 8 * 3600000).toISOString().slice(0, 10);
+}
 
 // 🌟 需求B：全局统一的保存方法（记录打卡人与时间戳）
 window.saveConfirmedDataToLocal = function() {
@@ -169,11 +174,16 @@ window.saveConfirmedDataToLocal = function() {
     const domOrder = Array.from(document.querySelectorAll('#forecast-table tr.tr-edit[data-icao]'))
         .map(row => row.dataset.icao).filter(Boolean);
     if (domOrder.length) pbState.importSequence = domOrder;
-    const wrapper = { timestamp: Date.now(), user: curUser, data: pbState.confirmedData,
+    const wrapper = { timestamp: Date.now(), dateKey: getBeijingDateKey(), user: curUser, data: pbState.confirmedData,
         draftData: pbState.draftData, importSequence: pbState.importSequence,
-        manualAirportOrder: pbState.manualAirportOrder,
+        manualAirportOrder: pbState.manualAirportOrder, airportOrderMode: pbState.airportOrderMode,
+        sourceAirports: Object.fromEntries(Object.entries(pbState.sourceAirports).map(([key, values]) => [key, Array.from(values)])),
+        sourceSequences: pbState.sourceSequences,
+        selectedResidentGroups: Array.from(pbState.selectedResidentGroups),
+        forceShowAirports: Array.from(pbState.forceShowAirports),
         importedAirportTypes: pbState.importedAirportTypes,
-        specialConditionText: document.getElementById('pb-special-airports')?.value || localStorage.getItem('pb_special_condition_text') || '无',
+        specialConditionText: document.getElementById('pb-special-airports')?.value ?? localStorage.getItem('pb_special_condition_text') ?? '无',
+        specialConditionManual: pbState.specialConditionManual,
         manualAirportTypes: pbState.manualAirportTypes,
         manuallyRemovedAirports: Array.from(pbState.manuallyRemovedAirports || []) };
     localStorage.setItem('sf_confirmed_forecasts_v3', JSON.stringify(wrapper));
@@ -339,6 +349,15 @@ function sortPublishAirportAnalysis(items) {
         const icaoB = String(b.icao || '').trim().toUpperCase();
         const groupA = getSelectedAirportGroupInfo(a.icao);
         const groupB = getSelectedAirportGroupInfo(b.icao);
+        if (pbState.airportOrderMode === 'manual') {
+            const orderA = manualOrder.get(icaoA);
+            const orderB = manualOrder.get(icaoB);
+            if (orderA !== undefined || orderB !== undefined) {
+                if (orderA === undefined) return 1;
+                if (orderB === undefined) return -1;
+                if (orderA !== orderB) return orderA - orderB;
+            }
+        }
         const tierA = getSourceTier(icaoA, groupA);
         const tierB = getSourceTier(icaoB, groupB);
         if (tierA !== tierB) return tierA - tierB;
@@ -511,16 +530,37 @@ window.initPublishModule = async function() {
         const removed = JSON.parse(localStorage.getItem('sf_manually_removed_airports_v1') || '[]');
         pbState.manuallyRemovedAirports = new Set(Array.isArray(removed) ? removed : []);
         const savedWrapper = JSON.parse(localStorage.getItem('sf_confirmed_forecasts_v3'));
-        if (savedWrapper && savedWrapper.timestamp && (Date.now() - savedWrapper.timestamp < 24 * 3600 * 1000)) {
+        const savedDateKey = savedWrapper?.dateKey || (savedWrapper?.timestamp ? getBeijingDateKey(savedWrapper.timestamp) : '');
+        if (savedWrapper && savedDateKey === getBeijingDateKey()) {
             pbState.confirmedData = savedWrapper.data || {};
             pbState.draftData = savedWrapper.draftData || {};
             pbState.importSequence = Array.isArray(savedWrapper.importSequence) ? savedWrapper.importSequence : [];
             pbState.manualAirportOrder = Array.isArray(savedWrapper.manualAirportOrder) ? savedWrapper.manualAirportOrder : [];
+            pbState.airportOrderMode = savedWrapper.airportOrderMode || 'default';
+            if (savedWrapper.sourceAirports) {
+                Object.keys(pbState.sourceAirports).forEach(source => {
+                    pbState.sourceAirports[source] = new Set(savedWrapper.sourceAirports[source] || []);
+                });
+            } else {
+                // Legacy snapshots did not save source ownership. Treat their
+                // confirmed airports as manually added so they render and can be cleared.
+                pbState.sourceAirports.custom = new Set(Object.keys(pbState.confirmedData));
+            }
+            if (savedWrapper.sourceSequences) {
+                Object.keys(pbState.sourceSequences).forEach(source => {
+                    pbState.sourceSequences[source] = Array.isArray(savedWrapper.sourceSequences[source]) ? savedWrapper.sourceSequences[source] : [];
+                });
+            }
+            pbState.selectedResidentGroups = new Set(savedWrapper.selectedResidentGroups || []);
+            pbState.forceShowAirports = new Set(savedWrapper.forceShowAirports || Object.keys(pbState.confirmedData));
+            pbState.textImportAirports = new Set(pbState.sourceAirports.text);
             pbState.importedAirportTypes = savedWrapper.importedAirportTypes || {};
-            if (savedWrapper.specialConditionText) {
+            if (Object.prototype.hasOwnProperty.call(savedWrapper, 'specialConditionText')) {
                 const footer = document.getElementById('pb-special-airports');
                 if (footer) footer.value = savedWrapper.specialConditionText;
+                localStorage.setItem('pb_special_condition_text', savedWrapper.specialConditionText);
             }
+            pbState.specialConditionManual = !!savedWrapper.specialConditionManual;
             pbState.manualAirportTypes = savedWrapper.manualAirportTypes || {};
             if (Array.isArray(savedWrapper.manuallyRemovedAirports)) pbState.manuallyRemovedAirports = new Set(savedWrapper.manuallyRemovedAirports);
             pbState.confirmedUser = savedWrapper.user;
@@ -538,6 +578,10 @@ window.initPublishModule = async function() {
             }, 2000);
         } else {
             pbState.confirmedData = {};
+            localStorage.removeItem('sf_confirmed_forecasts_v3');
+            localStorage.removeItem('sf_manually_removed_airports_v1');
+            localStorage.removeItem('pb_special_condition_text');
+            pbState.manuallyRemovedAirports.clear();
         }
     } catch(e) {
         pbState.confirmedData = {};
@@ -569,8 +613,8 @@ window.initPublishModule = async function() {
     }
 
     const loader = document.getElementById('publish-loading-indicator');
-    window.currentApAnalysis = [];
-    renderPublishTableTriRow([]);
+    window.currentApAnalysis = Object.keys(pbState.confirmedData).map(icao => ({ icao }));
+    renderPublishTableTriRow(window.currentApAnalysis);
     if (loader) loader.style.display = 'none';
     PBLOG('发布页初始化完成，等待选择机场来源');
 
@@ -2046,25 +2090,47 @@ async function fetchLatestMetarForAirports(airports, setProgress) {
     const fmt = ms => { const d = new Date(ms); return `${d.getUTCFullYear()}${String(d.getUTCMonth()+1).padStart(2,'0')}${String(d.getUTCDate()).padStart(2,'0')}${String(d.getUTCHours()).padStart(2,'0')}00`; };
     try {
         const res = await fetch((window.OMICS_API_URL || (path => `/api/${path}`))('fetch_data'), { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ token, start_time: fmt(now - 36 * 3600000), end_time: fmt(now), airports: airports.join(' '), wtypes:['SA','SP'] }) });
+        if (!res.ok) throw new Error(`METAR HTTP ${res.status}`);
         const result = await res.json();
         const map = {};
-        const rows = Array.isArray(result.data) ? result.data : (Array.isArray(result.obj) ? result.obj : []);
-        rows.forEach(row => {
-            const icao = String(row.airport4Code || row.airport || row.icao || '').toUpperCase();
-            const text = row.metar || row.report || row.raw || row.data || '';
-            if (!icao || !text) return;
+        const requested = new Set(airports.map(code => String(code).toUpperCase()));
+        const rows = [];
+        const collect = (value, airportHint = '') => {
+            if (!value) return;
+            if (typeof value === 'string') {
+                value.split(/\r?\n/).map(line => line.trim()).filter(Boolean)
+                    .forEach(text => rows.push({ text, airportHint }));
+                return;
+            }
+            if (Array.isArray(value)) { value.forEach(item => collect(item, airportHint)); return; }
+            if (typeof value !== 'object') return;
+            const text = value.metar || value.report || value.raw || value.message;
+            if (text) { rows.push({ ...value, text, airportHint }); return; }
+            Object.entries(value).forEach(([key, item]) => collect(item, /^[A-Z]{4}$/.test(key) ? key : airportHint));
+        };
+        collect(result.data ?? result.obj ?? result);
+        const reportTime = text => {
+            const match = String(text).match(/\b(\d{2})(\d{2})(\d{2})Z\b/);
+            if (!match) return 0;
+            const reference = new Date();
+            const candidates = [-1, 0, 1].map(monthOffset => Date.UTC(
+                reference.getUTCFullYear(), reference.getUTCMonth() + monthOffset,
+                Number(match[1]), Number(match[2]), Number(match[3])
+            ));
+            return candidates.reduce((best, value) => Math.abs(value - now) < Math.abs(best - now) ? value : best);
+        };
+        rows.forEach((row, index) => {
+            const text = String(row.text || row.data || '').trim();
+            const codeMatch = text.match(/(?:METAR|SPECI)?\s*([A-Z]{4})\s+\d{6}Z/);
+            const icao = String(row.airport4Code || row.airport || row.icao || row.airportHint || codeMatch?.[1] || '').toUpperCase();
+            if (!requested.has(icao) || !text) return;
             const rawTs = row.observationTime || row.receiveTime || row.obsTime || row.reportTime || row.time || 0;
             const numericTs = Number(rawTs);
-            const ts = Number.isFinite(numericTs) && numericTs > 0 ? numericTs : (Date.parse(rawTs) || 0);
-            // Keep one scalar report per airport: the newest timestamp wins. If
-            // the service omits timestamps, preserve its first (normally newest)
-            // row instead of exposing a historical list in the publish UI.
-            if (!map[icao] || (!map[icao].ts && ts) || ts > map[icao].ts) {
-                map[icao] = { text: String(text), ts };
-            }
+            const ts = (Number.isFinite(numericTs) && numericTs > 0 ? numericTs : Date.parse(rawTs)) || reportTime(text) || -index;
+            if (!map[icao] || ts > map[icao].ts) map[icao] = { text, ts };
         });
         return Object.fromEntries(Object.entries(map).map(([k,v]) => [k, v.text]));
-    } catch (e) { return {}; }
+    } catch (e) { PBLOG(`METAR 获取失败: ${e}`, 'ERROR'); return {}; }
 }
 
 // ==========================================
@@ -2288,6 +2354,7 @@ function getAirportSpecialConditions(nwp) {
 function updateSpecialConditionFooter() {
   const input = document.getElementById('pb-special-airports');
   if (!input) return;
+  if (pbState.specialConditionManual) return;
   const grouped = new Map();
   sortPublishAirportAnalysis(window.currentApAnalysis || []).forEach(ap => {
       if (!isAirportRegionEnabled(ap.icao)) return;
@@ -2312,6 +2379,7 @@ function updateSpecialConditionFooter() {
 
 // 汇总说明允许人工调整（例如补充机场、修改条件文字），并随当前发布草稿保存。
 document.getElementById('pb-special-airports')?.addEventListener('input', event => {
+  pbState.specialConditionManual = true;
   localStorage.setItem('pb_special_condition_text', event.target.value);
   window.saveConfirmedDataToLocal?.();
 });
@@ -3320,12 +3388,16 @@ function setupDragAndDrop() {
         if (tr) {
             const targetIcao = tr.dataset.icao;
             if (targetIcao !== draggedIcao) {
-                const fromIdx = window.currentApAnalysis.findIndex(a => a.icao === draggedIcao);
-                const toIdx = window.currentApAnalysis.findIndex(a => a.icao === targetIcao);
+                const visibleOrder = Array.from(table.querySelectorAll('tr.tr-edit[data-icao]')).map(row => row.dataset.icao);
+                const fromIdx = visibleOrder.indexOf(draggedIcao);
+                const toIdx = visibleOrder.indexOf(targetIcao);
                 if (fromIdx >= 0 && toIdx >= 0) {
-                    const [moved] = window.currentApAnalysis.splice(fromIdx, 1);
-                    window.currentApAnalysis.splice(toIdx, 0, moved);
-                    pbState.manualAirportOrder = window.currentApAnalysis.map(item => item.icao);
+                    visibleOrder.splice(fromIdx, 1);
+                    visibleOrder.splice(toIdx, 0, draggedIcao);
+                    const rank = new Map(visibleOrder.map((icao, index) => [icao, index]));
+                    window.currentApAnalysis.sort((a, b) => (rank.get(a.icao) ?? Number.MAX_SAFE_INTEGER) - (rank.get(b.icao) ?? Number.MAX_SAFE_INTEGER));
+                    pbState.manualAirportOrder = visibleOrder;
+                    pbState.airportOrderMode = 'manual';
                     pbState.importSequence = [...pbState.manualAirportOrder];
                     window.saveConfirmedDataToLocal?.();
                     pbState.forceShowAirports.add(draggedIcao); 
