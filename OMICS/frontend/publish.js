@@ -3777,6 +3777,7 @@ function setupAirportInteraction() {
 
   document.getElementById('ctx-add-airport')?.addEventListener('click', () => {
       if(!selectedIcao) return;
+      const anchorIcao = selectedIcao;
       const srcTd = document.querySelector(`.td-airport[data-icao="${selectedIcao}"]`);
       if(!srcTd) return;
       const srcTr = srcTd.closest('tr');
@@ -3824,13 +3825,16 @@ function setupAirportInteraction() {
                   return;
               }
 
-              const currentOrder = (window.currentApAnalysis || [])
+              const currentOrder = sortPublishAirportAnalysis(window.currentApAnalysis || [])
                   .map(item => String(item.icao || '').trim().toUpperCase())
                   .filter(code => code && code !== icao);
-              const anchorIndex = currentOrder.indexOf(String(selectedIcao || '').trim().toUpperCase());
+              const anchorIndex = currentOrder.indexOf(String(anchorIcao || '').trim().toUpperCase());
               currentOrder.splice(anchorIndex >= 0 ? anchorIndex + 1 : currentOrder.length, 0, icao);
               pbState.manualAirportOrder = currentOrder;
               pbState.importSequence = [...currentOrder];
+              // A context-menu insertion is an explicit user order. Keep the
+              // manually supplied sequence authoritative over source grouping.
+              pbState.airportOrderMode = 'manual';
               pbState.customCoords[icao] = window.AIRPORT_COORDS[icao]; 
               pbState.forceShowAirports.add(icao);
               pbState.manuallyRemovedAirports.delete(icao);
