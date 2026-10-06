@@ -135,7 +135,7 @@ const pbState = {
   textImportAirports: new Set(),
   allowOtherCarriers: false,
   carrierFilter: ['O3', '8K', 'YG'],
-  defaultShowTaf: true, defaultShowEc: false,
+  defaultShowTaf: true, defaultShowEc: true,
   confirmedData: {},
   manuallyRemovedAirports: new Set(),
   // 🌟 一键编发状态：记录本次批量采纳的机场，供撤回
@@ -511,6 +511,8 @@ window.initPublishModule = async function() {
     try { localEcCfg = JSON.parse(localStorage.getItem('pb_auto_ec_cfg')); } catch (e) {}
     const savedEcCfg = publishConfig.auto_ec_cfg && Object.keys(publishConfig.auto_ec_cfg).length ? publishConfig.auto_ec_cfg : localEcCfg;
     if (savedEcCfg) {
+        if (typeof savedEcCfg.defaultShowTaf === 'boolean') pbState.defaultShowTaf = savedEcCfg.defaultShowTaf;
+        if (typeof savedEcCfg.defaultShowEc === 'boolean') pbState.defaultShowEc = savedEcCfg.defaultShowEc;
         pbState.filterTempHigh = Number(savedEcCfg.highTemp ?? pbState.filterTempHigh);
         pbState.cfgIceTemp = Number(savedEcCfg.groundIceTemp ?? savedEcCfg.iceTemp ?? pbState.cfgIceTemp);
         pbState.cfgIceDewPointDiff = Number(savedEcCfg.groundIceDewPointDiff ?? savedEcCfg.iceDew ?? pbState.cfgIceDewPointDiff);
@@ -1650,7 +1652,11 @@ function buildPublishBlockFromLocal() {
     try { ec = localStorage.getItem('pb_auto_ec_cfg') ? JSON.parse(localStorage.getItem('pb_auto_ec_cfg')) : null; } catch (e) {}
     return {
         airport_groups: (groups && groups.length) ? groups : (s.airport_groups || []),
-        auto_ec_cfg: (ec && Object.keys(ec).length) ? ec : (s.auto_ec_cfg || {}),
+        auto_ec_cfg: {
+            ...((ec && Object.keys(ec).length) ? ec : (s.auto_ec_cfg || {})),
+            defaultShowTaf: pbState.defaultShowTaf,
+            defaultShowEc: pbState.defaultShowEc
+        },
         carrier_filter: pbState.carrierFilter,
         display_elements: {
             wind: pbState.showWind,
@@ -1733,6 +1739,8 @@ function saveModalForm() {
   pbState.cfgIcePrecipHours = Math.max(1, Math.round(numberValue('cfg-ice-precip-hours', 12)));
   pbState.cfgExtColdTemp = numberValue('cfg-ext-cold-temp', -30);
   localStorage.setItem('pb_auto_ec_cfg', JSON.stringify({
+      defaultShowTaf: pbState.defaultShowTaf,
+      defaultShowEc: pbState.defaultShowEc,
       highTemp: pbState.filterTempHigh,
       groundIceTemp: pbState.cfgIceTemp,
       groundIceDewPointDiff: pbState.cfgIceDewPointDiff,
@@ -2515,20 +2523,27 @@ function persistAllPublishDraftsFromDom() {
 function showPublishLoadingStatus(message) {
     const loader = document.getElementById('publish-loading-indicator');
     if (!loader) return;
-    loader.style.display = 'block';
+    loader.style.display = 'flex';
     loader.style.position = 'fixed';
     loader.style.left = '50%';
     loader.style.top = '50%';
     loader.style.transform = 'translate(-50%, -50%)';
-    loader.style.width = 'min(520px, calc(100vw - 40px))';
+    loader.style.width = 'min(560px, calc(100vw - 32px))';
+    loader.style.minHeight = '112px';
+    loader.style.alignItems = 'center';
+    loader.style.justifyContent = 'center';
+    loader.style.gap = '12px';
     loader.style.boxSizing = 'border-box';
     // Keep publish progress behind the login modal so a failed refresh
     // cannot obscure the QR code when the user signs in again.
     loader.style.zIndex = '10050';
     loader.style.margin = '0';
-    loader.style.boxShadow = '0 12px 40px rgba(15, 23, 42, 0.22)';
+    loader.style.borderRadius = '14px';
+    loader.style.border = '1px solid rgba(148,163,184,.35)';
+    loader.style.background = 'rgba(255,255,255,.96)';
+    loader.style.boxShadow = '0 18px 55px rgba(15, 23, 42, 0.24)';
     loader.style.color = '#005A9C';
-    loader.innerHTML = `<span class="spinner"></span> ${message}`;
+    loader.innerHTML = `<span class="spinner"></span><span class="publish-loading-message">${message}</span>`;
 }
 window.showPublishLoadingStatus = showPublishLoadingStatus;
 
@@ -2555,22 +2570,29 @@ async function loadForecastData(retainOrder = false) {
         const msg = explicitStage ? String(msgOrError) : String(stageOrMsg);
         const isError = explicitStage ? legacyError : Boolean(msgOrError);
         if (key) progressState[key] = isError ? '失败' : msg;
-        loader.style.display = 'block'; loader.style.color = isError ? '#dc2626' : '#005A9C';
+        loader.style.display = 'flex'; loader.style.color = isError ? '#dc2626' : '#005A9C';
         loader.style.position = 'fixed';
         loader.style.left = '50%';
         loader.style.top = '50%';
         loader.style.transform = 'translate(-50%, -50%)';
-        loader.style.width = 'min(520px, calc(100vw - 40px))';
+        loader.style.width = 'min(560px, calc(100vw - 32px))';
+        loader.style.minHeight = '132px';
+        loader.style.alignItems = 'center';
+        loader.style.justifyContent = 'center';
+        loader.style.gap = '12px';
         loader.style.boxSizing = 'border-box';
         // The login modal uses the shared modal layer (z-index: 2000).
         // Progress and error messages must remain below it.
         loader.style.zIndex = '10050';
         loader.style.margin = '0';
-        loader.style.boxShadow = '0 12px 40px rgba(15, 23, 42, 0.22)';
+        loader.style.borderRadius = '14px';
+        loader.style.border = '1px solid rgba(148,163,184,.35)';
+        loader.style.background = 'rgba(255,255,255,.97)';
+        loader.style.boxShadow = '0 18px 55px rgba(15, 23, 42, 0.24)';
         loader.innerHTML = isError
             ? `❌ ${msg}<button type="button" class="mini-btn" data-close-publish-loading style="float:right;margin-left:12px;">关闭</button>`
-            : `<span class="spinner"></span> ${msg}`;
-        loader.innerHTML += '<div style="text-align:left;font-size:12px;line-height:1.8;margin-top:8px;">' + [['flight','航班'],['taf','TAF'],['metar','METAR'],['ec','EC'],['parse','解析'],['layout','排版']].map(([k,label]) => '<div>' + label + '：' + progressState[k] + '</div>').join('') + '</div>';
+            : `<span class="spinner"></span><span class="publish-loading-message">${msg}</span>`;
+        loader.innerHTML += '<div class="publish-loading-stages">' + [['flight','航班'],['taf','TAF'],['metar','METAR'],['ec','EC'],['parse','解析'],['layout','排版']].map(([k,label]) => `<span><b>${label}</b>${progressState[k]}</span>`).join('') + '</div>';
         loader.querySelector('[data-close-publish-loading]')?.addEventListener('click', hidePublishLoadingStatus);
     };
 

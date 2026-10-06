@@ -134,6 +134,11 @@ textarea:focus { border-color: var(--sf-red); outline: none; background: white; 
 
 #publish-loading-indicator { box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08); }
 #publish-loading-indicator .spinner { width: 22px; height: 22px; vertical-align: -7px; }
+#publish-loading-indicator::before { content: ''; position: fixed; inset: 0; z-index: -1; background: rgba(15, 23, 42, .16); backdrop-filter: blur(2px); }
+#publish-loading-indicator .publish-loading-message { flex: 1; text-align: left; font-size: 14px; font-weight: 700; color: #1e293b; line-height: 1.45; }
+#publish-loading-indicator .publish-loading-stages { position: absolute; left: 20px; right: 20px; bottom: 12px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px 8px; color: #64748b; font-size: 10px; line-height: 1.4; }
+#publish-loading-indicator .publish-loading-stages span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#publish-loading-indicator .publish-loading-stages b { margin-right: 3px; color: #2563eb; font-weight: 800; }
 #login-modal { z-index: 11000 !important; }
 #forecast-table .airport-confirmed .td-airport,
 #forecast-table .airport-confirmed .col-airport-type { font-weight: 800 !important; color: #0f172a !important; }
