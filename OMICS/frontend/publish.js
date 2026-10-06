@@ -617,7 +617,7 @@ window.initPublishModule = async function() {
     const loader = document.getElementById('publish-loading-indicator');
     window.currentApAnalysis = Object.keys(pbState.confirmedData).map(icao => ({ icao }));
     renderPublishTableTriRow(window.currentApAnalysis);
-    if (loader) loader.style.display = 'none';
+    hidePublishLoadingStatus();
     PBLOG('发布页初始化完成，等待选择机场来源');
 
     document.getElementById('logout-btn')?.addEventListener('click', () => {
@@ -625,7 +625,7 @@ window.initPublishModule = async function() {
         localStorage.removeItem('sf_confirmed_forecasts');
         // 注销不应触发任何机场或预报请求；同时让仍在执行的加载结果失效。
         pbState.loadGeneration += 1;
-        if (loader) loader.style.display = 'none';
+        hidePublishLoadingStatus();
     });
 
     setupDragAndDrop();
@@ -1772,7 +1772,7 @@ async function syncAirportsToServer() {
         console.error("同步机场至服务器静态文件失败:", e);
     } finally {
         const loader = document.getElementById('publish-loading-indicator');
-        if (loader) loader.style.display = 'none';
+        hidePublishLoadingStatus();
     }
 }
 
@@ -2518,25 +2518,46 @@ function persistAllPublishDraftsFromDom() {
     });
 }
 
+function setPublishLoadingVisible(visible) {
+    const loader = document.getElementById('publish-loading-indicator');
+    if (!loader) return;
+    let overlay = document.getElementById('publish-progress-overlay');
+    if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.id = 'publish-progress-overlay';
+        overlay.setAttribute('role', 'dialog');
+        overlay.setAttribute('aria-modal', 'true');
+        overlay.setAttribute('aria-label', '预报数据加载进度');
+        overlay.tabIndex = -1;
+        document.body.appendChild(overlay);
+        overlay.appendChild(loader);
+    }
+    overlay.style.display = visible ? 'flex' : 'none';
+    loader.style.display = visible ? 'flex' : 'none';
+    document.querySelector('.container').inert = visible;
+    if (visible) overlay.focus();
+}
+
 function showPublishLoadingStatus(message) {
     const loader = document.getElementById('publish-loading-indicator');
     if (!loader) return;
-    loader.style.display = 'flex';
+    setPublishLoadingVisible(true);
     loader.innerHTML = `<div class="publish-loading-head"><span class="publish-loading-orbit"><span class="spinner"></span></span><span><b class="publish-loading-title">天气数据同步中</b><span class="publish-loading-message">${message}</span></span></div><div class="publish-loading-bar"><i></i></div>`;
 }
 window.showPublishLoadingStatus = showPublishLoadingStatus;
 
 function hidePublishLoadingStatus() {
     const loader = document.getElementById('publish-loading-indicator');
-    if (loader) loader.style.display = 'none';
+    setPublishLoadingVisible(false);
 }
 window.hidePublishLoadingStatus = hidePublishLoadingStatus;
 
 // ==========================================
 // 🌟 核心引擎：数据加载与三行独立渲染
 // ==========================================
-async function loadForecastData(retainOrder = false) {
+async function loadForecastData(retainOrder = false, onlyAirports = null) {
     const loadGeneration = ++pbState.loadGeneration;
+    const retainedAnalysis = onlyAirports ? (window.currentApAnalysis || []).filter(ap => !onlyAirports.includes(ap.icao)) : [];
     const token = (localStorage.getItem('sf_weather_token') || localStorage.getItem('mtws_token'));
     const loader = document.getElementById('publish-loading-indicator');
     PBLOG(`loadForecastData 开始 | retainOrder=${retainOrder} | startDate=${pbState.startDate} startHour=${pbState.startHour} validity=${pbState.validityHours}h`);
@@ -2549,18 +2570,18 @@ async function loadForecastData(retainOrder = false) {
         const msg = explicitStage ? String(msgOrError) : String(stageOrMsg);
         const isError = explicitStage ? legacyError : Boolean(msgOrError);
         if (key) progressState[key] = isError ? '失败' : msg;
-        loader.style.display = 'flex'; loader.style.color = isError ? '#dc2626' : '#005A9C';
+        setPublishLoadingVisible(true); loader.style.color = isError ? '#dc2626' : '#005A9C';
         window.OMICSUI?.task(msg, isError);
         loader.innerHTML = isError
             ? `<div class="publish-loading-head publish-loading-error"><span class="publish-loading-orbit">!</span><span><b class="publish-loading-title">加载遇到问题</b><span class="publish-loading-message">${msg}</span></span><button type="button" class="mini-btn" data-close-publish-loading>关闭</button></div>`
-            : `<div class="publish-loading-head"><span class="publish-loading-orbit"><span class="spinner"></span></span><span><b class="publish-loading-title">天气数据同步中</b><span class="publish-loading-message">${msg}</span></span></div><div class="publish-loading-bar"><i></i></div>`;
+            : `<div class="publish-loading-head"><span class="publish-loading-orbit"><span class="spinner"></span></span><span><b class="publish-loading-title">天气数据同步中</b><span class="publish-loading-message">${key ? "正在同步机场天气数据，请稍候" : msg}</span></span></div><div class="publish-loading-bar"><i></i></div>`;
         loader.innerHTML += '<div class="publish-loading-stages">' + [['flight','航班'],['taf','TAF'],['metar','METAR'],['ec','EC'],['parse','解析'],['layout','排版']].map(([k,label]) => `<span><b>${label}</b>${progressState[k]}</span>`).join('') + '</div>';
         loader.querySelector('[data-close-publish-loading]')?.addEventListener('click', hidePublishLoadingStatus);
     };
 
     if (!token) PBLOG('loadForecastData：无内网 token，将跳过 TAF/航班接口并继续处理 EC 数据', 'WARN');
 
-    pbState.specialConditionAirports = new Map();
+    if (!onlyAirports) pbState.specialConditionAirports = new Map();
     updateSpecialConditionFooter();
 
     try {
@@ -2570,12 +2591,12 @@ async function loadForecastData(retainOrder = false) {
         const flightEndMs = baseEndMs + (3 * 3600000); 
         
         let flightAps = [];
-        if (pbState.runningImportMode) {
+        if (pbState.runningImportMode && !onlyAirports) {
             setProgress('查询: 正在获取当前运行航班机场列表...');
             flightAps = await fetchActiveFlightAirports(startMs, flightEndMs, setProgress);
             registerSourceAirports('running', flightAps, { replace: true });
             pbState.runningAllAirports = new Set(flightAps);
-        } else {
+        } else if (!onlyAirports) {
             pbState.sourceAirports.running.clear();
             pbState.runningAllAirports.clear();
         }
@@ -2600,7 +2621,7 @@ async function loadForecastData(retainOrder = false) {
         getActiveTextImportAirports().forEach(ap => { if(!seen.has(ap)){ seen.add(ap); combinedAps.push(ap); } });
         Object.keys(pbState.confirmedData).forEach(ap => { if(!seen.has(ap)){ seen.add(ap); combinedAps.push(ap); } });
 
-        const validAps = combinedAps.filter(icao => window.AIRPORT_COORDS[icao] || pbState.customCoords[icao]);
+        const validAps = (onlyAirports || combinedAps).filter(icao => window.AIRPORT_COORDS[icao] || pbState.customCoords[icao]);
 
         if (validAps.length === 0) {
             setProgress('⚠️ 没有找到带有坐标的有效机场！', true);
@@ -2669,8 +2690,8 @@ async function loadForecastData(retainOrder = false) {
         let forecastMap = {};
         validAps.forEach((icao, idx) => { if (nwpArr[idx] && !nwpArr[idx].error) forecastMap[icao] = processAirportData(nwpArr[idx]); });
 
-        pbState.specialConditionAirports = new Map();
-        const apAnalysis = validAps.map(icao => {
+        if (!onlyAirports) pbState.specialConditionAirports = new Map();
+        let apAnalysis = validAps.map(icao => {
             const isConfirmed = !!pbState.confirmedData[icao];
             const nwp = forecastMap[icao];
             const tafObj = tafDataMap && tafDataMap[icao] ? tafDataMap[icao] : { raw: [], hourly: null };
@@ -2722,6 +2743,8 @@ async function loadForecastData(retainOrder = false) {
             return { icao, hasAlert, hasAlertEC, hasAlertTAF, nwp, tafRaw, tafHourly, metarRaw: '' };
         });
 
+        setProgress('parse', '已完成');
+        apAnalysis = [...retainedAnalysis, ...apAnalysis];
         const previousAnalysis = new Map((window.currentApAnalysis || []).map(item => [item.icao, item]));
         // Pass the full visible set; fetchLatestMetarForAirports filters fresh
         // session-cache entries and only requests expired or new airports.
@@ -2735,7 +2758,6 @@ async function loadForecastData(retainOrder = false) {
         renderPublishTableTriRow(displayAnalysis);
         // The forecast table is usable now; METAR is supplementary tooltip data.
         // Do not block the page behind the loading panel while it is fetched.
-        if (loader) loader.style.display = 'none';
         const metarMap = await metarPromise;
         displayAnalysis.forEach(item => { if (metarMap[item.icao]) item.metarRaw = metarMap[item.icao]; });
         if (loadGeneration === pbState.loadGeneration) renderPublishTableTriRow(displayAnalysis);
@@ -2754,7 +2776,7 @@ async function loadForecastData(retainOrder = false) {
         updateSpecialConditionFooter();
         PBLOG(`数据加载完成，共渲染 ${apAnalysis.length} 个机场`);
 
-        if (loader) loader.style.display = 'none';
+        setPublishLoadingVisible(false);
         window.OMICSUI?.task(new Date().toLocaleTimeString('zh-CN', { timeZone: 'Asia/Shanghai' }) + ' | ' + apAnalysis.length + ' airports updated');
         PBLOG_FLUSH();
 
@@ -3816,7 +3838,8 @@ function setupAirportInteraction() {
               showPublishLoadingStatus(`正在添加 ${window.GLOBAL_AIRPORT_NAME_MAP?.[icao] || icao}，获取 EC/TAF 数据...`);
               // 先让浏览器绘制提示，再开始联网加载，避免回车后页面看起来像卡住。
               await new Promise(resolve => requestAnimationFrame(resolve));
-              await loadForecastData(true);
+              eTr.remove();
+              await loadForecastData(true, [icao]);
               window.saveConfirmedDataToLocal?.();
       };
       // Enter and focus loss share the same path, so leaving the field also
