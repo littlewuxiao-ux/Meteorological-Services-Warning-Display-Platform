@@ -648,6 +648,66 @@ input:not([type="radio"]):not([type="checkbox"]):focus, select:focus, textarea:f
 #evaluation-workspace #download-airports { min-width: 260px; border-radius: 8px; }
 #evaluation-workspace #fetch-manual-btn,
 #evaluation-workspace #fetch-taf-list-btn { background: #20354d !important; border-color: #20354d !important; box-shadow: 0 4px 10px rgba(32,53,77,.18); }
+
+/* OMICS workbench refinement: presentation-only polish for the existing controls. */
+.top-bar { min-height: 64px; padding: 0 22px; border-radius: 16px; }
+.app-title { font-weight: 800; letter-spacing: .04em; }
+.top-controls { gap: 7px; }
+.top-controls .mini-btn { background: #fff; color: #334155; border: 1px solid #d9e2ec; }
+.top-controls #settings-toggle-btn { color: #1d4ed8; background: #eff6ff; border-color: #bfdbfe; }
+.top-controls #login-btn { color: #fff; background: #20354d; border-color: #20354d; }
+.top-controls #exit-app-btn { background: #fff !important; color: #b42318 !important; border: 1px solid #f2b8b5 !important; }
+.mode-switcher { padding: 0 22px; gap: 2px; background: #f8fafc; }
+.mode-option label { position: relative; padding: 16px 20px 14px; color: #64748b; font-weight: 700; transition: color .18s ease, background .18s ease; }
+.mode-option label::after { content: ''; position: absolute; left: 18px; right: 18px; bottom: -1px; height: 3px; border-radius: 3px 3px 0 0; background: transparent; transition: background .18s ease; }
+.mode-option input:checked + label { color: #1d4ed8; background: #fff; }
+.mode-option input:checked + label::after { background: #2563eb; }
+.publish-toolbar { position: relative; overflow: hidden; }
+.publish-toolbar::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: linear-gradient(180deg,#2563eb,#14b8a6); }
+.publish-view-toolbar-row { padding-left: 3px; }
+.publish-view-title { min-width: 54px; color: #1e3a8a; }
+.publish-source-control { min-height: 32px; }
+.publish-source-control label { font-weight: 800; color: #334155; }
+.publish-source-control input, .publish-region-row input { accent-color: #2563eb; }
+.publish-compile-control { margin-left: auto; }
+.publish-command-toolbar { align-items: center; }
+.publish-command-toolbar > button { min-height: 31px; }
+#global-import-airports-btn { background: #2563eb !important; }
+#global-clear-airports-btn { background: #fff !important; color: #b42318 !important; border-color: #f1b7b3 !important; }
+#global-export-text-btn { background: #fff7ed !important; color: #c2410c !important; border-color: #fed7aa !important; }
+#global-export-image-btn { background: #ecfdf5 !important; color: #047857 !important; border-color: #a7f3d0 !important; }
+#global-export-excel-btn { background: #eff6ff !important; color: #1d4ed8 !important; border-color: #bfdbfe !important; }
+#global-adopt-all { background: linear-gradient(135deg,#7c3aed,#5b21b6) !important; box-shadow: 0 5px 12px rgba(124,58,237,.2); }
+#global-refresh-btn { box-shadow: 0 5px 12px rgba(37,99,235,.18); }
+#pb-export-header { border: 1px solid rgba(255,255,255,.08); }
+#pb-main-title-select { font-weight: 800 !important; }
+#table-wrapper { position: relative; }
+#table-wrapper::before { content: '预报明细'; position: absolute; left: 14px; top: -11px; z-index: 30; padding: 2px 8px; color: #64748b; background: #fff; border: 1px solid #dce3eb; border-radius: 5px; font-size: 10px; font-weight: 800; letter-spacing: .04em; }
+#forecast-table tbody tr.tr-edit:hover td { box-shadow: inset 0 1px rgba(37,99,235,.12), inset 0 -1px rgba(37,99,235,.12); }
+#global-settings-modal .system-settings-shell { width: min(1120px, calc(100vw - 32px)) !important; height: min(820px, calc(100vh - 32px)) !important; border: 1px solid #dce3eb; border-radius: 18px !important; box-shadow: 0 28px 80px rgba(15,23,42,.28) !important; }
+#global-settings-modal .system-settings-sidebar { width: 205px !important; background: #172033 !important; }
+#global-settings-modal .system-settings-brand { padding: 23px 18px !important; text-align: left !important; color: #f8fafc; letter-spacing: .05em; }
+#global-settings-modal .set-nav { padding: 14px 18px !important; border-bottom: 0 !important; color: #cbd5e1 !important; font-size: 12px; transition: background .18s ease, color .18s ease; }
+#global-settings-modal .set-nav:hover { background: #24334b !important; color: #fff !important; }
+#global-settings-modal .set-nav.active { background: #24334b !important; color: #93c5fd !important; border-left: 3px solid #60a5fa !important; box-shadow: none !important; }
+#global-settings-modal .system-settings-topbar { height: 62px !important; padding: 0 24px !important; background: #fff !important; border-bottom: 1px solid #e5eaf0; box-shadow: none !important; }
+#global-settings-modal .system-settings-context { margin-right: auto; color: #172033; font-size: 15px; font-weight: 800; }
+#global-settings-modal #close-global-settings { background: #fff !important; color: #64748b !important; border: 1px solid #d7dee8 !important; }
+#global-settings-modal .system-settings-scroll { padding: 24px !important; background: #f6f8fb; }
+#global-settings-modal .set-pane > h3 { color: #172033 !important; border-bottom-color: #dce3eb !important; font-size: 18px; }
+#global-settings-modal .publish-filter-settings-group { border-color: #e1e7ef; box-shadow: 0 3px 10px rgba(23,32,51,.035); }
+
+@media (max-width: 760px) {
+    .container { padding: 10px 10px 24px; }
+    .top-bar { align-items: flex-start; flex-direction: column; gap: 10px; padding: 14px; }
+    .top-controls { width: 100%; flex-wrap: wrap; }
+    .publish-compile-control { margin-left: 0; }
+    .publish-region-toolbar { grid-template-columns: 1fr; }
+    #global-settings-modal .system-settings-shell { flex-direction: column; height: calc(100vh - 20px) !important; }
+    #global-settings-modal .system-settings-sidebar { width: 100% !important; height: auto; flex-direction: row !important; overflow-x: auto; }
+    #global-settings-modal .system-settings-brand { display: none; }
+    #global-settings-modal .set-nav { flex: 0 0 auto; padding: 11px 14px !important; }
+}
 #evaluation-workspace #manual-forecast-input-area { background: #fff; border-color: #d9e2ec; border-top-color: #2d6a8a; }
 #evaluation-workspace .manual-grid-wrapper,
 #evaluation-workspace #manual-forecast-grid-container { border-radius: 10px; border-color: #d9e2ec; }
