@@ -2574,7 +2574,7 @@ function showPublishLoadingStatus(message) {
     loader.style.background = 'rgba(255,255,255,.96)';
     loader.style.boxShadow = '0 18px 55px rgba(15, 23, 42, 0.24)';
     loader.style.color = '#005A9C';
-    loader.innerHTML = `<span class="spinner"></span><span class="publish-loading-message">${message}</span>`;
+    loader.innerHTML = `<div class="publish-loading-head"><span class="publish-loading-orbit"><span class="spinner"></span></span><span><b class="publish-loading-title">天气数据同步中</b><span class="publish-loading-message">${message}</span></span></div><div class="publish-loading-bar"><i></i></div>`;
 }
 window.showPublishLoadingStatus = showPublishLoadingStatus;
 
@@ -2621,8 +2621,8 @@ async function loadForecastData(retainOrder = false) {
         loader.style.background = 'rgba(255,255,255,.97)';
         loader.style.boxShadow = '0 18px 55px rgba(15, 23, 42, 0.24)';
         loader.innerHTML = isError
-            ? `❌ ${msg}<button type="button" class="mini-btn" data-close-publish-loading style="float:right;margin-left:12px;">关闭</button>`
-            : `<span class="spinner"></span><span class="publish-loading-message">${msg}</span>`;
+            ? `<div class="publish-loading-head publish-loading-error"><span class="publish-loading-orbit">!</span><span><b class="publish-loading-title">加载遇到问题</b><span class="publish-loading-message">${msg}</span></span><button type="button" class="mini-btn" data-close-publish-loading>关闭</button></div>`
+            : `<div class="publish-loading-head"><span class="publish-loading-orbit"><span class="spinner"></span></span><span><b class="publish-loading-title">天气数据同步中</b><span class="publish-loading-message">${msg}</span></span></div><div class="publish-loading-bar"><i></i></div>`;
         loader.innerHTML += '<div class="publish-loading-stages">' + [['flight','航班'],['taf','TAF'],['metar','METAR'],['ec','EC'],['parse','解析'],['layout','排版']].map(([k,label]) => `<span><b>${label}</b>${progressState[k]}</span>`).join('') + '</div>';
         loader.querySelector('[data-close-publish-loading]')?.addEventListener('click', hidePublishLoadingStatus);
     };

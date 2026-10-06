@@ -132,13 +132,21 @@ textarea:focus { border-color: var(--sf-red); outline: none; background: white; 
 /* 🌟 修复：publish.js 使用 <span class="spinner"> 作加载动画，之前 CSS 未定义导致不显示 */
 .spinner { display: inline-block; width: 16px; height: 16px; vertical-align: -3px; margin-right: 8px; border: 3px solid rgba(0,90,156,0.25); border-top-color: var(--sf-red, #005A9C); border-radius: 50%; animation: spin 0.8s linear infinite; }
 
-#publish-loading-indicator { box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08); }
-#publish-loading-indicator .spinner { width: 22px; height: 22px; vertical-align: -7px; }
+#publish-loading-indicator { flex-direction: column; align-items: stretch !important; justify-content: flex-start !important; gap: 0 !important; padding: 22px 24px !important; overflow: hidden; box-shadow: 0 24px 70px rgba(15, 23, 42, 0.28) !important; }
+#publish-loading-indicator .spinner { width: 20px; height: 20px; margin: 0; vertical-align: middle; }
 #publish-loading-indicator::before { content: ''; position: fixed; inset: 0; z-index: -1; background: rgba(15, 23, 42, .16); backdrop-filter: blur(2px); }
-#publish-loading-indicator .publish-loading-message { flex: 1; text-align: left; font-size: 14px; font-weight: 700; color: #1e293b; line-height: 1.45; }
-#publish-loading-indicator .publish-loading-stages { position: absolute; left: 20px; right: 20px; bottom: 12px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px 8px; color: #64748b; font-size: 10px; line-height: 1.4; }
+#publish-loading-indicator .publish-loading-head { display: flex; align-items: center; gap: 13px; min-height: 42px; text-align: left; }
+#publish-loading-indicator .publish-loading-orbit { display: grid; place-items: center; flex: 0 0 42px; width: 42px; height: 42px; border-radius: 50%; color: #fff; background: linear-gradient(135deg,#2563eb,#0f766e); box-shadow: 0 7px 16px rgba(37,99,235,.28); }
+#publish-loading-indicator .publish-loading-title { display: block; margin-bottom: 3px; color: #0f172a; font-size: 14px; line-height: 1.2; }
+#publish-loading-indicator .publish-loading-message { display: block; color: #64748b; font-size: 12px; font-weight: 500; line-height: 1.4; }
+#publish-loading-indicator .publish-loading-bar { height: 4px; margin: 17px 0 13px; overflow: hidden; border-radius: 99px; background: #e2e8f0; }
+#publish-loading-indicator .publish-loading-bar i { display: block; width: 42%; height: 100%; border-radius: inherit; background: linear-gradient(90deg,#2563eb,#14b8a6); animation: publish-loading-sweep 1.25s ease-in-out infinite; }
+#publish-loading-indicator .publish-loading-stages { position: static; display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px 9px; color: #64748b; font-size: 10px; line-height: 1.4; }
 #publish-loading-indicator .publish-loading-stages span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #publish-loading-indicator .publish-loading-stages b { margin-right: 3px; color: #2563eb; font-weight: 800; }
+#publish-loading-indicator .publish-loading-error .publish-loading-orbit { background: #dc2626; font-weight: 800; font-size: 18px; }
+#publish-loading-indicator .publish-loading-error .publish-loading-message { color: #b91c1c; }
+@keyframes publish-loading-sweep { 0% { transform: translateX(-115%); } 55%, 100% { transform: translateX(250%); } }
 #login-modal { z-index: 11000 !important; }
 #forecast-table .airport-confirmed .td-airport,
 #forecast-table .airport-confirmed .col-airport-type { font-weight: 800 !important; color: #0f172a !important; }
