@@ -2093,15 +2093,38 @@ async function fetchTafDataForAirports(airports, startMs, endMs, setProgress) {
 async function fetchLatestMetarForAirports(airports, setProgress) {
     const token = localStorage.getItem('sf_weather_token') || localStorage.getItem('mtws_token');
     if (!token || !airports.length) return {};
-    setProgress?.('METAR', '正在调取最新 METAR 实况数据...');
+    const cacheKey = 'pb_latest_metar_cache_v1';
+    const cacheTtl = 10 * 60 * 1000;
+    let cache = {};
+    try { cache = JSON.parse(sessionStorage.getItem(cacheKey) || '{}'); } catch (e) {}
     const now = Date.now();
+    const resultMap = {};
+    const missing = [];
+    airports.forEach(icao => {
+        const entry = cache[icao];
+        if (entry && entry.text && now - entry.timestamp < cacheTtl) resultMap[icao] = entry.text;
+        else missing.push(icao);
+    });
+    if (!missing.length) {
+        setProgress?.('METAR', `使用缓存 ${airports.length}/${airports.length} 个机场`);
+        return resultMap;
+    }
+    setProgress?.('METAR', `请求 ${missing.length}/${airports.length} 个机场（其余使用缓存）`);
     const fmt = ms => { const d = new Date(ms); return `${d.getUTCFullYear()}${String(d.getUTCMonth()+1).padStart(2,'0')}${String(d.getUTCDate()).padStart(2,'0')}${String(d.getUTCHours()).padStart(2,'0')}00`; };
     try {
-        const res = await fetch((window.OMICS_API_URL || (path => `/api/${path}`))('fetch_data'), { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ token, start_time: fmt(now - 36 * 3600000), end_time: fmt(now), airports: airports.join(' '), wtypes:['SA','SP'] }) });
+        const timeout = new AbortController();
+        const timeoutId = setTimeout(() => timeout.abort(), 12000);
+        let res;
+        try {
+            res = await fetch((window.OMICS_API_URL || (path => `/api/${path}`))('fetch_data'), {
+                method:'POST', headers:{'Content-Type':'application/json'}, signal: timeout.signal,
+                body: JSON.stringify({ token, start_time: fmt(now - 3 * 3600000), end_time: fmt(now), airports: missing.join(' '), wtypes:['SA','SP'] })
+            });
+        } finally { clearTimeout(timeoutId); }
         if (!res.ok) throw new Error(`METAR HTTP ${res.status}`);
         const result = await res.json();
         const map = {};
-        const requested = new Set(airports.map(code => String(code).toUpperCase()));
+        const requested = new Set(missing.map(code => String(code).toUpperCase()));
         const rows = [];
         const collect = (value, airportHint = '') => {
             if (!value) return;
@@ -2137,8 +2160,16 @@ async function fetchLatestMetarForAirports(airports, setProgress) {
             const ts = (Number.isFinite(numericTs) && numericTs > 0 ? numericTs : Date.parse(rawTs)) || reportTime(text) || -index;
             if (!map[icao] || ts > map[icao].ts) map[icao] = { text, ts };
         });
-        return Object.fromEntries(Object.entries(map).map(([k,v]) => [k, v.text]));
-    } catch (e) { PBLOG(`METAR 获取失败: ${e}`, 'ERROR'); return {}; }
+        Object.entries(map).forEach(([icao, value]) => {
+            resultMap[icao] = value.text;
+            cache[icao] = { text: value.text, timestamp: now };
+        });
+        try { sessionStorage.setItem(cacheKey, JSON.stringify(cache)); } catch (e) {}
+        return resultMap;
+    } catch (e) {
+        PBLOG(`METAR 获取失败: ${e}`, 'WARN');
+        return resultMap;
+    }
 }
 
 // ==========================================
@@ -2645,7 +2676,7 @@ async function loadForecastData(retainOrder = false) {
             return;
         }
 
-        setProgress(`加载: 正在并发请求 ${validAps.length} 个机场的数值与 TAF 数据...`);
+        setProgress(`正在加载 ${validAps.length} 个机场的天气和报文数据...`);
         const lats = []; const lons = [];
         validAps.forEach(icao => {
             const coords = window.AIRPORT_COORDS[icao] || pbState.customCoords[icao];
@@ -2692,13 +2723,12 @@ async function loadForecastData(retainOrder = false) {
 
         setProgress('TAF', '正在并行拉取 TAF 报文...');
         setProgress('EC', '正在并行拉取 EC 数值预报...');
-        const [tafDataMap, metarMap, ...nwpChunks] = await Promise.all([
+        const [tafDataMap, ...weatherResults] = await Promise.all([
             fetchTafDataForAirports(validAps, startMs, flightEndMs, setProgress),
-            fetchLatestMetarForAirports(validAps, setProgress),
             ...nwpPromises
         ]);
+        const nwpChunks = weatherResults;
         setProgress('TAF', '已完成');
-        setProgress('METAR', '已完成');
         setProgress('EC', '已完成');
 
         setProgress('5/6 正在解析数据与判断恶劣天气...');
@@ -2758,8 +2788,28 @@ async function loadForecastData(retainOrder = false) {
             // 🌟 需求：EC/TAF 未勾选时不作为筛选依据。hasAlert 只由被勾选的数据源决定。
             // （常驻机场、手动追加、已确认机场不受此限制，在过滤/排序环节另行豁免）
             const hasAlert = isConfirmed || (pbState.defaultShowEc && hasAlertEC) || (pbState.defaultShowTaf && hasAlertTAF);
-            return { icao, hasAlert, hasAlertEC, hasAlertTAF, nwp, tafRaw, tafHourly, metarRaw: metarMap?.[icao] || '' };
+            return { icao, hasAlert, hasAlertEC, hasAlertTAF, nwp, tafRaw, tafHourly, metarRaw: '' };
         });
+
+        const previousAnalysis = new Map((window.currentApAnalysis || []).map(item => [item.icao, item]));
+        // Pass the full visible set; fetchLatestMetarForAirports filters fresh
+        // session-cache entries and only requests expired or new airports.
+        const metarTargets = validAps;
+        const metarPromise = fetchLatestMetarForAirports(metarTargets, setProgress);
+        const displayAnalysis = apAnalysis.map(item => ({
+            ...item,
+            metarRaw: previousAnalysis.get(item.icao)?.metarRaw || ''
+        }));
+        window.currentApAnalysis = displayAnalysis;
+        renderPublishTableTriRow(displayAnalysis);
+        // The forecast table is usable now; METAR is supplementary tooltip data.
+        // Do not block the page behind the loading panel while it is fetched.
+        if (loader) loader.style.display = 'none';
+        const metarMap = await metarPromise;
+        displayAnalysis.forEach(item => { if (metarMap[item.icao]) item.metarRaw = metarMap[item.icao]; });
+        if (loadGeneration === pbState.loadGeneration) renderPublishTableTriRow(displayAnalysis);
+        const metarByAirport = new Map(displayAnalysis.map(item => [item.icao, item.metarRaw || '']));
+        apAnalysis.forEach(item => { item.metarRaw = metarByAirport.get(item.icao) || ''; });
 
         setProgress('6/6 正在排版...');
         apAnalysis.forEach((ap, idx) => ap.originalIdx = idx);
