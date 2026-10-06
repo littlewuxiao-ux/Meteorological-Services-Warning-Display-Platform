@@ -977,7 +977,7 @@ input:not([type="radio"]):not([type="checkbox"]):focus, select:focus, textarea:f
 #global-settings-modal .settings-transfer p { margin: 0 0 12px; color: #64748b; font-size: 12px; }
 #global-settings-modal .settings-transfer button { margin-right: 8px; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; padding: 7px 12px; cursor: pointer; }
 #global-settings-modal .settings-transfer button:hover { border-color: #3b82f6; color: #1d4ed8; }
-.workbench-status { display:flex; gap:10px; flex-wrap:wrap; align-items:center; padding:8px 14px; background:#f8fafc; border-bottom:1px solid #e2e8f0; color:#64748b; font-size:12px; }
+.workbench-status { display:flex; flex-shrink:0; gap:10px; flex-wrap:wrap; align-items:center; padding:8px 14px; margin-bottom:12px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; color:#64748b; font-size:12px; }
 .workbench-status span + span { border-left:1px solid #cbd5e1; padding-left:10px; }
 .workbench-status .status-error { color:#b91c1c; }
 .omics-toasts { position:fixed; right:18px; bottom:18px; z-index:11000; display:grid; gap:8px; max-width:min(380px, calc(100vw - 36px)); }
@@ -986,7 +986,7 @@ input:not([type="radio"]):not([type="checkbox"]):focus, select:focus, textarea:f
 @media (min-width: 1500px) { .main-grid { width:100%; max-width:none; margin-inline:0; min-width:0; } .publish-view-toolbar-row { gap:14px; } }
 @media (max-width: 700px) { .top-bar { flex-wrap:wrap; gap:8px; } .app-title { font-size:18px !important; } .top-controls { width:100%; overflow:auto; } .workspace-navigation { overflow-x:auto; } .workspace-navigation .mode-option { flex:0 0 auto; } .publish-view-toolbar-row, .publish-command-toolbar { flex-wrap:wrap !important; } .publish-loading-stages { grid-template-columns:repeat(3,1fr); } .workbench-status { font-size:11px; } }
 
-.workspace-navigation { width: auto; }
+.workspace-navigation { width: auto; margin-top:0; flex-shrink:0; }
 
 /* Unified workbench controls */
 .publish-command-toolbar .mini-btn,
