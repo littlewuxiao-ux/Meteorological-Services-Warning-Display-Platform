@@ -466,6 +466,7 @@ function clearAirportsBySources(sources) {
 function setupClearAirportsControls() {
     const modal = document.getElementById('clear-airports-modal');
     const allControl = document.getElementById('clear-source-all');
+    const specialControl = document.getElementById('clear-special-conditions');
     const options = Array.from(document.querySelectorAll('.clear-source-option'));
     const close = () => { if (modal) modal.style.display = 'none'; };
     document.getElementById('global-clear-airports-btn')?.addEventListener('click', () => {
@@ -476,18 +477,31 @@ function setupClearAirportsControls() {
             if (countElement) countElement.textContent = String(count);
         });
         if (allControl) allControl.checked = false;
+        if (specialControl) specialControl.checked = false;
         if (modal) modal.style.display = 'flex';
     });
     document.getElementById('close-clear-airports-modal')?.addEventListener('click', close);
     document.getElementById('cancel-clear-airports')?.addEventListener('click', close);
-    allControl?.addEventListener('change', () => options.forEach(option => { option.checked = allControl.checked; }));
+    allControl?.addEventListener('change', () => {
+        options.forEach(option => { option.checked = allControl.checked; });
+        if (specialControl) specialControl.checked = allControl.checked;
+    });
     options.forEach(option => option.addEventListener('change', () => {
-        if (allControl) allControl.checked = options.every(item => item.checked);
+        if (allControl) allControl.checked = options.every(item => item.checked) && !!specialControl?.checked;
     }));
+    specialControl?.addEventListener('change', () => {
+        if (allControl) allControl.checked = options.every(item => item.checked) && specialControl.checked;
+    });
     document.getElementById('confirm-clear-airports')?.addEventListener('click', () => {
         const sources = options.filter(option => option.checked).map(option => option.value);
-        if (!sources.length) return;
-        clearAirportsBySources(sources);
+        if (!sources.length && !specialControl?.checked) return;
+        if (sources.length) clearAirportsBySources(sources);
+        if (specialControl?.checked) {
+            pbState.specialConditionManual = false;
+            pbState.specialConditionAirports.clear();
+            updateSpecialConditionFooter();
+            window.saveConfirmedDataToLocal?.();
+        }
         close();
     });
 }
@@ -2542,7 +2556,7 @@ function showPublishLoadingStatus(message) {
     const loader = document.getElementById('publish-loading-indicator');
     if (!loader) return;
     setPublishLoadingVisible(true);
-    loader.innerHTML = `<div class="publish-loading-head"><span class="publish-loading-orbit"><span class="spinner"></span></span><span><b class="publish-loading-title">天气数据同步中</b><span class="publish-loading-message">${message}</span></span></div><div class="publish-loading-bar"><i></i></div>`;
+    loader.innerHTML = `<div class="publish-loading-head"><span><b class="publish-loading-title">天气数据同步中</b><span class="publish-loading-message">${message}</span></span></div><div class="publish-loading-bar"><i></i></div>`;
 }
 window.showPublishLoadingStatus = showPublishLoadingStatus;
 
@@ -2574,7 +2588,7 @@ async function loadForecastData(retainOrder = false, onlyAirports = null) {
         window.OMICSUI?.task(msg, isError);
         loader.innerHTML = isError
             ? `<div class="publish-loading-head publish-loading-error"><span class="publish-loading-orbit">!</span><span><b class="publish-loading-title">加载遇到问题</b><span class="publish-loading-message">${msg}</span></span><button type="button" class="mini-btn" data-close-publish-loading>关闭</button></div>`
-            : `<div class="publish-loading-head"><span class="publish-loading-orbit"><span class="spinner"></span></span><span><b class="publish-loading-title">天气数据同步中</b><span class="publish-loading-message">${key ? "正在同步机场天气数据，请稍候" : msg}</span></span></div><div class="publish-loading-bar"><i></i></div>`;
+            : `<div class="publish-loading-head"><span><b class="publish-loading-title">天气数据同步中</b><span class="publish-loading-message">${key ? "正在同步机场天气数据，请稍候" : msg}</span></span></div><div class="publish-loading-bar"><i></i></div>`;
         loader.innerHTML += '<div class="publish-loading-stages">' + [['flight','航班'],['taf','TAF'],['metar','METAR'],['ec','EC'],['parse','解析'],['layout','排版']].map(([k,label]) => `<span><b>${label}</b>${progressState[k]}</span>`).join('') + '</div>';
         loader.querySelector('[data-close-publish-loading]')?.addEventListener('click', hidePublishLoadingStatus);
     };
