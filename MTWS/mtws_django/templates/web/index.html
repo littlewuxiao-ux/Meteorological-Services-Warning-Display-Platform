@@ -341,296 +341,145 @@
       </div>
     </div>
     <div class="settings-tabs">
-      <button class="settings-tab active" data-tab="airport-info">机场信息</button>
-      <button class="settings-tab" data-tab="prefix-area">机场区域</button>
-      <button class="settings-tab" data-tab="taf-import">预报入库告警</button>
-      <button class="settings-tab" data-tab="data-refresh-timer">数据更新</button>
-      <button class="settings-tab" data-tab="popup">弹窗设置</button>
-      <button class="settings-tab" data-tab="alert-thresholds">告警阈值</button>
-      <button class="settings-tab" data-tab="weather-type">天气类型</button>
-      <button class="settings-tab" data-tab="weather-alert">天气告警等级</button>
-      <button class="settings-tab" data-tab="radar-alert">雷达告警</button>
-      <button class="settings-tab" data-tab="trend-alert">实况趋势告警</button>
-      <button class="settings-tab" data-tab="map-style">地图样式</button>
+      <div class="settings-tab-group settings-tab-group-personal active">
+        <span class="settings-group-title" data-group="personal">个性化设置</span>
+        <button class="settings-tab active" data-tab="data-refresh-timer">数据更新</button>
+        <button class="settings-tab" data-tab="popup">弹窗设置</button>
+        <button class="settings-tab" data-tab="alert-thresholds">告警阈值</button>
+        <button class="settings-tab" data-tab="weather-alert">天气告警等级</button>
+        <button class="settings-tab" data-tab="radar-alert">雷达告警</button>
+        <button class="settings-tab" data-tab="trend-alert">实况趋势告警</button>
+        <button class="settings-tab" data-tab="map-style">地图样式</button>
+      </div>
+      <div class="settings-tab-group settings-tab-group-global">
+        <span class="settings-group-title" data-group="global">全局设置</span>
+        <button class="settings-tab" data-tab="airport-info">机场信息</button>
+        <button class="settings-tab" data-tab="prefix-area">机场区域</button>
+        <button class="settings-tab" data-tab="taf-import">预报入库告警</button>
+        <button class="settings-tab" data-tab="weather-type">天气类型</button>
+      </div>
     </div>
+    <div id="settings-default-banner" class="settings-default-banner" hidden>正在编辑默认模板。这里保存的内容，会作为其他账号还没有单独设置时使用的默认值。</div>
     <div class="settings-tab-body">
 
       <!-- Tab1: 机场信息（按四字代码查询） -->
-      <div class="settings-tab-pane active" id="settings-pane-airport-info">
+      <div class="settings-tab-pane" id="settings-pane-airport-info">
         <div class="loc-search-wrap airport-info-search">
           <div class="loc-search-bar">
             <input type="text" id="airport-search-input" maxlength="4" class="settings-input loc-search-input"
               placeholder="机场较多，请输入四字代码查询" style="text-transform:uppercase;">
             <button class="settings-btn-save loc-search-btn" id="airport-search-btn">查询</button>
+            <button class="settings-add-btn loc-search-btn" id="airport-add-btn" type="button">+ 新增机场</button>
           </div>
+          <div class="settings-msg" id="airport-msg"></div>
           <div id="airport-result-area" class="loc-result-area"></div>
-          <div class="loc-form-card airport-info-form-card" id="airport-form-panel" style="display:none;">
-            <h4 id="airport-form-title">新增机场</h4>
-            <div class="settings-form-scroll">
-              <!-- 必填项 -->
-              <div class="settings-form-row">
-                <label>机场四字代码 <span class="settings-required">*</span></label>
-                <input type="text" id="af-4code" maxlength="4" placeholder="如 ZBAA" class="settings-input" style="text-transform:uppercase;">
-              </div>
-              <div class="settings-form-row">
-                <label>机场名称 <span class="settings-hint">可留空</span></label>
-                <input type="text" id="af-name" maxlength="100" placeholder="留空时主页显示“机场名称未配置”" class="settings-input">
-              </div>
-              <div class="settings-form-row">
-                <label>类别 <span class="settings-required">*</span></label>
-                <div class="settings-toggle-wrap">
-                  <label class="settings-toggle-label">
-                    <input type="checkbox" id="af-classification-chk" class="settings-toggle-chk">
-                    <div class="settings-toggle-track">
-                      <span class="settings-toggle-side">国内</span>
-                      <span class="settings-toggle-side">国际</span>
-                      <div class="settings-toggle-thumb"></div>
-                    </div>
-                  </label>
-                </div>
-              </div>
-              <div class="settings-form-row">
-                <label>区域 <span class="settings-hint">前缀未识别时可手动选择</span></label>
-                <select id="af-area" class="settings-input settings-select"></select>
-              </div>
-              <div class="settings-form-row">
-                <label>纬度 <span class="settings-hint">选填，十进制度</span></label>
-                <input type="number" id="af-lat" step="any" class="settings-input settings-input-sm">
-              </div>
-              <div class="settings-form-row">
-                <label>经度 <span class="settings-hint">选填，十进制度</span></label>
-                <input type="number" id="af-lon" step="any" class="settings-input settings-input-sm">
-              </div>
-              <!-- 选填项 -->
-              <div class="settings-form-divider"></div>
-              <div class="settings-form-row">
-                <label>机场三字代码 <span class="settings-hint">选填</span></label>
-                <input type="text" id="af-3code" maxlength="3" placeholder="如 PEK" class="settings-input" style="text-transform:uppercase;">
-              </div>
-              <div class="settings-form-row">
-                <label>区号 <span class="settings-hint">选填</span></label>
-                <input type="text" id="af-area-code" maxlength="10" placeholder="10位以内" class="settings-input">
-              </div>
-              <div class="settings-form-row">
-                <label>预报电话 <span class="settings-hint">选填</span></label>
-                <input type="text" id="af-forecast-phone" maxlength="100" placeholder="100位以内" class="settings-input">
-              </div>
-              <div class="settings-form-row">
-                <label>观测电话 <span class="settings-hint">选填</span></label>
-                <input type="text" id="af-obs-phone" maxlength="100" placeholder="100位以内" class="settings-input">
-              </div>
-              <div class="settings-form-row">
-                <label>其他联系方式 <span class="settings-hint">选填，100位以内</span></label>
-                <input type="text" id="af-other-phone" maxlength="100" placeholder="100位以内" class="settings-input">
-              </div>
-            </div>
-            <div class="settings-form-actions">
-              <button class="settings-btn-save" id="airport-save-btn">保存</button>
-              <button class="settings-btn-cancel" id="airport-cancel-btn">取消</button>
-            </div>
-          </div>
         </div>
-        <div class="settings-msg" id="airport-msg"></div>
       </div>
 
       <!-- Tab3: 数据自动更新 -->
       <div class="settings-tab-pane" id="settings-pane-data-refresh-timer">
+        <div class="settings-list-toolbar">
+          <button type="button" class="settings-btn-cancel settings-restore-btn" data-group="data_refresh_timer" data-msg="timer-msg">恢复默认</button>
+          <button type="button" class="settings-btn-save" id="timer-mode-btn">编辑</button>
+          <button type="button" class="settings-btn-cancel" id="timer-cancel-btn" disabled>取消</button>
+        </div>
+        <div class="settings-msg" id="timer-msg"></div>
         <div class="settings-timer-table-wrap">
           <table class="settings-table settings-timer-table" id="timer-table">
             <thead>
-              <tr><th>数据类型</th><th>初始时间（分钟）<span class="settings-hint">0–50，步进0.5</span></th><th>更新间隔（分钟）<span class="settings-hint">0.5–30，步进0.5</span></th><th>操作</th></tr>
+              <tr><th>数据类型</th><th>初始时间（分钟）<span class="settings-hint">0–50，步进0.5</span></th><th>更新间隔（分钟）<span class="settings-hint">0.5–30，步进0.5</span></th></tr>
             </thead>
             <tbody id="timer-tbody"></tbody>
           </table>
         </div>
-        <div class="settings-form-actions">
-          <button type="button" class="settings-btn-cancel settings-restore-btn" data-group="data_refresh_timer" data-msg="timer-msg">恢复默认</button>
-        </div>
-        <div class="settings-msg" id="timer-msg"></div>
       </div>
 
       <!-- Tab4: 弹窗设置 -->
       <div class="settings-tab-pane" id="settings-pane-popup">
-        <div class="settings-popup-form">
+        <div class="settings-msg" id="popup-msg"></div>
+        <div class="settings-sheet">
           <p class="settings-hint">主页【运行类】【停场类】【降级免打扰】为各席位本地开关，不在此保存。此处仅维护全站解析规则。</p>
-          <div class="settings-form-row">
-            <label>运行类弹窗告警裕度（0–9整数）</label>
-            <input type="number" id="pf-leeway" min="0" max="9" step="1" class="settings-input settings-input-sm">
-          </div>
-          <div class="settings-form-row">
-            <label>弹窗追溯时间（小时，0–9整数）</label>
-            <input type="number" id="pf-trace-time" min="0" max="9" step="1" class="settings-input settings-input-sm">
-          </div>
-          <div class="settings-form-row">
-            <label>运行类弹窗告警等级</label>
-            <div class="settings-track-wrap">
-              <div class="settings-track" id="pf-op-level-track" data-value="Y">
-                <span class="settings-track-seg" data-val="R">红(R)</span>
-                <span class="settings-track-seg" data-val="Y">黄(Y)</span>
-                <span class="settings-track-seg" data-val="G">绿(G)</span>
-                <div class="settings-track-thumb"></div>
+          <div class="settings-sheet-card settings-sheet-card-form">
+            <div class="settings-field-grid">
+              <div class="settings-field">
+                <label for="pf-leeway">运行类弹窗告警裕度</label>
+                <input type="number" id="pf-leeway" min="0" max="9" step="1" class="settings-input settings-input-sm">
+                <span class="settings-hint">0–9 整数</span>
+              </div>
+              <div class="settings-field">
+                <label for="pf-trace-time">弹窗追溯时间（小时）</label>
+                <input type="number" id="pf-trace-time" min="0" max="9" step="1" class="settings-input settings-input-sm">
+                <span class="settings-hint">0–9 整数</span>
               </div>
             </div>
-          </div>
-          <div class="settings-form-row">
-            <label>停场类弹窗告警等级</label>
-            <div class="settings-track-wrap">
-              <div class="settings-track" id="pf-park-level-track" data-value="Y">
-                <span class="settings-track-seg" data-val="R">红(R)</span>
-                <span class="settings-track-seg" data-val="Y">黄(Y)</span>
-                <span class="settings-track-seg" data-val="G">绿(G)</span>
-                <div class="settings-track-thumb"></div>
+            <div class="settings-field">
+              <label>运行类弹窗告警等级</label>
+              <div class="settings-track-wrap">
+                <div class="settings-track" id="pf-op-level-track" data-value="Y">
+                  <span class="settings-track-seg" data-val="R">红(R)</span>
+                  <span class="settings-track-seg" data-val="Y">黄(Y)</span>
+                  <span class="settings-track-seg" data-val="G">绿(G)</span>
+                  <div class="settings-track-thumb"></div>
+                </div>
               </div>
             </div>
-          </div>
-          <div class="settings-form-actions">
-            <button class="settings-btn-save" id="popup-save-btn">保存规则</button>
-            <button type="button" class="settings-btn-cancel settings-restore-btn" data-group="popup" data-msg="popup-msg">恢复默认</button>
+            <div class="settings-field">
+              <label>停场类弹窗告警等级</label>
+              <div class="settings-track-wrap">
+                <div class="settings-track" id="pf-park-level-track" data-value="Y">
+                  <span class="settings-track-seg" data-val="R">红(R)</span>
+                  <span class="settings-track-seg" data-val="Y">黄(Y)</span>
+                  <span class="settings-track-seg" data-val="G">绿(G)</span>
+                  <div class="settings-track-thumb"></div>
+                </div>
+              </div>
+            </div>
+            <div class="settings-form-actions">
+              <button type="button" class="settings-btn-cancel settings-restore-btn" data-group="popup" data-msg="popup-msg">恢复默认</button>
+              <button type="button" class="settings-btn-save" id="popup-mode-btn">编辑</button>
+              <button type="button" class="settings-btn-cancel" id="popup-cancel-btn" disabled>取消</button>
+            </div>
           </div>
         </div>
-        <div class="settings-msg" id="popup-msg"></div>
       </div>
 
       <!-- Tab6: 机场告警阈值 -->
       <div class="settings-tab-pane" id="settings-pane-alert-thresholds">
-        <div class="settings-split">
-          <div class="settings-list-panel">
-            <div class="settings-list-toolbar">
-              <button class="settings-add-btn" id="threshold-add-btn">+ 新增</button>
-              <button type="button" class="settings-btn-cancel settings-restore-btn" data-group="airport_alert_thresholds" data-msg="threshold-msg">恢复默认</button>
-            </div>
-            <div class="settings-list-scroll">
-              <table class="settings-table settings-table-auto" id="threshold-table">
-                <thead><tr><th>四字代码</th><th>能见度 R/Y/G</th><th>云底高 R/Y/G</th><th>云量下限</th><th>风速 R/Y/G</th><th>阵风 R/Y/G</th><th>低温 R/Y/G</th><th>高温 R/Y/G</th><th>跑道视程 R/Y/G</th><th>操作</th></tr></thead>
-                <tbody id="threshold-tbody"></tbody>
-              </table>
-            </div>
-          </div>
-          <div class="settings-form-panel settings-threshold-form-panel" id="threshold-form-panel" style="display:none;">
-            <h4 id="threshold-form-title">新增告警阈值</h4>
-            <div class="settings-form-scroll">
-              <div class="settings-form-row">
-                <label>机场四字代码 <span class="settings-required">*</span></label>
-                <input type="text" id="tf-4code" maxlength="4" placeholder="如 ZBAA" class="settings-input" style="text-transform:uppercase;">
-              </div>
-              <div class="settings-threshold-group">
-                <div class="settings-threshold-group-title">能见度告警阈值（单位：米）</div>
-                <div class="settings-threshold-row">
-                  <label>红色 <span class="settings-required">*</span></label><input type="number" id="tf-vis-r" min="0" step="1" class="settings-threshold-input">
-                  <label>黄色 <span class="settings-required">*</span></label><input type="number" id="tf-vis-y" min="0" step="1" class="settings-threshold-input">
-                  <label>绿色 <span class="settings-required">*</span></label><input type="number" id="tf-vis-g" min="0" step="1" class="settings-threshold-input">
-                </div>
-              </div>
-              <div class="settings-threshold-group">
-                <div class="settings-threshold-group-title">最底层云底高告警阈值（单位：百英尺）</div>
-                <div class="settings-threshold-row">
-                  <label>红色 <span class="settings-required">*</span></label><input type="number" id="tf-cld-r" min="0" step="1" class="settings-threshold-input">
-                  <label>黄色 <span class="settings-required">*</span></label><input type="number" id="tf-cld-y" min="0" step="1" class="settings-threshold-input">
-                  <label>绿色 <span class="settings-required">*</span></label><input type="number" id="tf-cld-g" min="0" step="1" class="settings-threshold-input">
-                </div>
-                <div class="settings-threshold-row" style="margin-top:8px;">
-                  <label>云量下限 <span class="settings-required">*</span></label>
-                  <select id="tf-min-cloud-amt" class="settings-threshold-input" style="width:88px;">
-                    <option value="FEW">FEW</option>
-                    <option value="SCT" selected>SCT</option>
-                    <option value="BKN">BKN</option>
-                    <option value="OVC">OVC</option>
-                  </select>
-                </div>
-              </div>
-              <div class="settings-threshold-group">
-                <div class="settings-threshold-group-title">平均风速告警阈值（单位：米/秒）</div>
-                <div class="settings-threshold-row">
-                  <label>红色 <span class="settings-required">*</span></label><input type="number" id="tf-ws-r" min="0" step="1" class="settings-threshold-input">
-                  <label>黄色 <span class="settings-required">*</span></label><input type="number" id="tf-ws-y" min="0" step="1" class="settings-threshold-input">
-                  <label>绿色 <span class="settings-required">*</span></label><input type="number" id="tf-ws-g" min="0" step="1" class="settings-threshold-input">
-                </div>
-              </div>
-              <div class="settings-threshold-group">
-                <div class="settings-threshold-group-title">阵风风速告警阈值（单位：米/秒）</div>
-                <div class="settings-threshold-row">
-                  <label>红色 <span class="settings-required">*</span></label><input type="number" id="tf-gs-r" min="0" step="1" class="settings-threshold-input">
-                  <label>黄色 <span class="settings-required">*</span></label><input type="number" id="tf-gs-y" min="0" step="1" class="settings-threshold-input">
-                  <label>绿色 <span class="settings-required">*</span></label><input type="number" id="tf-gs-g" min="0" step="1" class="settings-threshold-input">
-                </div>
-              </div>
-              <div class="settings-threshold-group">
-                <div class="settings-threshold-group-title">低温告警阈值（单位：℃，可为负数）</div>
-                <div class="settings-threshold-row">
-                  <label>红色 <span class="settings-required">*</span></label><input type="number" id="tf-tc-r" step="1" class="settings-threshold-input">
-                  <label>黄色 <span class="settings-required">*</span></label><input type="number" id="tf-tc-y" step="1" class="settings-threshold-input">
-                  <label>绿色 <span class="settings-required">*</span></label><input type="number" id="tf-tc-g" step="1" class="settings-threshold-input">
-                </div>
-              </div>
-              <div class="settings-threshold-group">
-                <div class="settings-threshold-group-title">高温告警阈值（单位：℃）</div>
-                <div class="settings-threshold-row">
-                  <label>红色 <span class="settings-required">*</span></label><input type="number" id="tf-th-r" min="0" step="1" class="settings-threshold-input">
-                  <label>黄色 <span class="settings-required">*</span></label><input type="number" id="tf-th-y" min="0" step="1" class="settings-threshold-input">
-                  <label>绿色 <span class="settings-required">*</span></label><input type="number" id="tf-th-g" min="0" step="1" class="settings-threshold-input">
-                </div>
-              </div>
-              <div class="settings-threshold-group">
-                <div class="settings-threshold-group-title">跑道视程告警阈值（单位：米）</div>
-                <div class="settings-threshold-row">
-                  <label>红色 <span class="settings-required">*</span></label><input type="number" id="tf-rvr-r" min="0" step="1" class="settings-threshold-input">
-                  <label>黄色 <span class="settings-required">*</span></label><input type="number" id="tf-rvr-y" min="0" step="1" class="settings-threshold-input">
-                  <label>绿色 <span class="settings-required">*</span></label><input type="number" id="tf-rvr-g" min="0" step="1" class="settings-threshold-input">
-                </div>
-              </div>
-            </div>
-            <div class="settings-form-actions">
-              <button class="settings-btn-save" id="threshold-save-btn">保存</button>
-              <button class="settings-btn-cancel" id="threshold-cancel-btn">取消</button>
-            </div>
-          </div>
+        <div class="settings-list-toolbar">
+          <button class="settings-add-btn" id="threshold-add-btn" type="button">+ 新增</button>
+          <button type="button" class="settings-btn-save" id="threshold-mode-btn">编辑</button>
+          <button type="button" class="settings-btn-cancel" id="threshold-cancel-btn" disabled>取消</button>
+          <button type="button" class="settings-btn-cancel settings-restore-btn" data-group="airport_alert_thresholds" data-msg="threshold-msg">恢复默认</button>
         </div>
         <div class="settings-msg" id="threshold-msg"></div>
+        <div class="settings-list-scroll">
+          <div id="threshold-list" class="threshold-board"></div>
+        </div>
       </div>
 
       <!-- Tab7: 天气类型信息 -->
       <div class="settings-tab-pane" id="settings-pane-weather-type">
-        <div class="settings-split">
-          <div class="settings-list-panel">
-            <div class="settings-list-toolbar">
-              <button class="settings-add-btn" id="wtype-add-btn">+ 新增天气类型</button>
-            </div>
-            <div class="settings-list-scroll">
-              <table class="settings-table settings-table-auto" id="wtype-table">
-                <thead><tr><th>天气类型代码</th><th>中文说明</th><th>英文说明</th><th>操作</th></tr></thead>
-                <tbody id="wtype-tbody"></tbody>
-              </table>
-            </div>
-          </div>
-          <div class="settings-form-panel" id="wtype-form-panel" style="display:none;">
-            <h4 id="wtype-form-title">新增天气类型</h4>
-            <div class="settings-form-row">
-              <label>天气类型代码 <span class="settings-required">*</span></label>
-              <input type="text" id="wtf-code" maxlength="1" placeholder="1位字符" class="settings-input settings-input-sm">
-            </div>
-            <div class="settings-form-row">
-              <label>天气类型中文说明 <span class="settings-required">*</span></label>
-              <input type="text" id="wtf-cn" maxlength="10" placeholder="10位以内" class="settings-input">
-            </div>
-            <div class="settings-form-row">
-              <label>天气类型英文说明 <span class="settings-required">*</span></label>
-              <input type="text" id="wtf-en" maxlength="20" placeholder="20位以内" class="settings-input">
-            </div>
-            <div class="settings-form-actions">
-              <button class="settings-btn-save" id="wtype-save-btn">保存</button>
-              <button class="settings-btn-cancel" id="wtype-cancel-btn">取消</button>
-            </div>
-          </div>
+        <div class="settings-list-toolbar">
+          <button class="settings-add-btn" id="wtype-add-btn" type="button">+ 新增天气类型</button>
+          <button type="button" class="settings-btn-save" id="wtype-mode-btn">编辑</button>
+          <button type="button" class="settings-btn-cancel" id="wtype-cancel-btn" disabled>取消</button>
         </div>
         <div class="settings-msg" id="wtype-msg"></div>
+        <div class="settings-list-scroll">
+          <table class="settings-table settings-table-auto" id="wtype-table">
+            <thead><tr><th>天气类型代码</th><th>中文说明</th><th>英文说明</th><th>操作</th></tr></thead>
+            <tbody id="wtype-tbody"></tbody>
+          </table>
+        </div>
       </div>
 
       <!-- Tab8: 天气现象告警等级 -->
       <div class="settings-tab-pane" id="settings-pane-weather-alert">
-        <div class="settings-split">
+        <div class="settings-msg" id="walert-msg"></div>
+        <div class="settings-split settings-split-overlay">
           <div class="settings-list-panel">
             <div class="settings-list-toolbar">
-              <button class="settings-add-btn" id="walert-add-btn">+ 新增告警等级</button>
+              <button class="settings-add-btn" id="walert-add-btn">+ 新增天气现象</button>
               <button type="button" class="settings-btn-cancel settings-restore-btn" data-group="weather_alert_levels" data-msg="walert-msg">恢复默认</button>
             </div>
             <div class="settings-list-scroll">
@@ -641,7 +490,7 @@
             </div>
           </div>
           <div class="settings-form-panel" id="walert-form-panel" style="display:none;">
-            <h4 id="walert-form-title">新增天气告警等级</h4>
+            <h4 id="walert-form-title">新增天气现象</h4>
             <div class="settings-form-row">
               <label>天气现象代码 <span class="settings-required">*</span></label>
               <input type="text" id="waf-weather" maxlength="20" placeholder="如 TS" class="settings-input settings-input-sm" style="text-transform:uppercase;">
@@ -679,13 +528,14 @@
             </div>
           </div>
         </div>
-        <div class="settings-msg" id="walert-msg"></div>
       </div>
 
       <!-- 雷达告警配置 -->
       <div class="settings-tab-pane" id="settings-pane-radar-alert">
+        <div class="settings-msg" id="radar-msg"></div>
         <div class="radar-settings-toolbar">
-          <button type="button" class="settings-btn-save" id="radar-save-btn">保存配置</button>
+          <button type="button" class="settings-btn-save" id="radar-save-btn">编辑</button>
+          <button type="button" class="settings-btn-cancel" id="radar-cancel-btn" disabled>取消</button>
           <button type="button" class="settings-btn-cancel settings-restore-btn" data-group="radar_alert_config" data-msg="radar-msg">恢复默认</button>
           <button type="button" class="settings-btn-cancel" id="radar-rebuild-btn">重建瓦片索引</button>
           <div class="radar-alarm-colors" id="radar-alarm-colors">
@@ -790,7 +640,6 @@
             </div>
           </div>
         </div>
-        <div class="settings-msg" id="radar-msg"></div>
       </div>
 
       <!-- Tab: 实况趋势告警 -->
@@ -800,73 +649,79 @@
           <button type="button" class="settings-btn-cancel settings-restore-btn" data-group="trend_alert_config" data-msg="trend-alert-msg">恢复默认</button>
           <span class="settings-hint">规则组计分规则：单个基础条件分值范围为 1.0–5.0 分，多个基础条件分值取平均值或最高值，附加条件分值范围为 0.1–3.0 分，对于多个附加条件，分值在最终基础分值上累加。</span>
         </div>
+        <div class="settings-msg" id="trend-alert-msg"></div>
         <div id="trend-alert-editor"></div>
         <datalist id="trend-weather-list"></datalist>
-        <div class="settings-msg" id="trend-alert-msg"></div>
       </div>
 
       <!-- Tab11: 地图样式 -->
       <div class="settings-tab-pane" id="settings-pane-map-style">
-        <div class="radar-settings-toolbar">
-          <button type="button" class="settings-btn-save" id="map-style-save-btn">保存配置</button>
-          <span class="settings-hint">仅影响地图模式显示</span>
-        </div>
-        <div class="settings-form-row">
-          <label class="settings-section-label">配色方案</label>
-          <div id="ms-color-scheme-group" class="ms-scheme-group"></div>
-        </div>
-        <div class="settings-form-row">
-          <label class="settings-section-label">机场标记</label>
-          <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center;">
-            <label>内圆尺寸 <input type="number" id="ms-inner-size" class="settings-input" style="width:70px;" min="4" max="24"></label>
-            <label>外环尺寸 <input type="number" id="ms-outer-size" class="settings-input" style="width:70px;" min="8" max="32"></label>
-            <label><input type="checkbox" id="ms-airport-labels"> 显示机场名称</label>
+        <div class="settings-sheet">
+          <div class="radar-settings-toolbar">
+            <button type="button" class="settings-btn-save" id="map-style-save-btn">保存配置</button>
+            <span class="settings-hint">仅影响地图模式显示</span>
           </div>
-          <div class="settings-hint" style="margin-top:6px;">实况弹窗条件 → 告警色↔白闪；雷达告警 → 告警色↔白交替涟漪（固定规则）</div>
+          <div class="settings-msg" id="map-style-msg"></div>
+          <div class="settings-sheet-grid">
+            <section class="settings-sheet-card">
+              <div class="settings-sheet-title">配色方案</div>
+              <div id="ms-color-scheme-group" class="ms-scheme-group"></div>
+            </section>
+            <section class="settings-sheet-card">
+              <div class="settings-sheet-title">机场标记</div>
+              <div class="settings-inline-fields">
+                <label>内圆尺寸 <input type="number" id="ms-inner-size" class="settings-input" style="width:70px;" min="4" max="24"></label>
+                <label>外环尺寸 <input type="number" id="ms-outer-size" class="settings-input" style="width:70px;" min="8" max="32"></label>
+              </div>
+              <div class="settings-check-row">
+                <label class="settings-check"><input type="checkbox" id="ms-airport-labels"> 显示机场名称</label>
+              </div>
+              <div class="settings-hint">实况弹窗条件 → 告警色↔白闪；雷达告警 → 告警色↔白交替涟漪（固定规则）</div>
+            </section>
+            <section class="settings-sheet-card">
+              <div class="settings-sheet-title">中国视图</div>
+              <div class="settings-check-row">
+                <label class="settings-check"><input type="checkbox" id="ms-cn-province-borders"> 省界（虚线）</label>
+                <label class="settings-check"><input type="checkbox" id="ms-cn-province-labels"> 省名称</label>
+              </div>
+            </section>
+            <section class="settings-sheet-card">
+              <div class="settings-sheet-title">世界视图</div>
+              <div class="settings-check-row">
+                <label class="settings-check"><input type="checkbox" id="ms-world-admin1-borders"> 州/省级边界（虚线）</label>
+                <label class="settings-check"><input type="checkbox" id="ms-world-admin1-labels"> 州/省名称</label>
+              </div>
+            </section>
+            <section class="settings-sheet-card settings-sheet-card-wide">
+              <div class="settings-sheet-title">全局图层</div>
+              <div class="settings-check-row">
+                <label class="settings-check"><input type="checkbox" id="ms-country-borders"> 国界</label>
+                <label class="settings-check"><input type="checkbox" id="ms-country-labels"> 国家名称</label>
+                <label class="settings-check"><input type="checkbox" id="ms-rivers"> 河流</label>
+                <label class="settings-check"><input type="checkbox" id="ms-lakes"> 湖泊</label>
+              </div>
+              <div class="settings-hint">线宽：国界 &gt; 省界 &gt; 州/省级（代码固定）</div>
+            </section>
+          </div>
         </div>
-        <div class="settings-form-row">
-          <label class="settings-section-label">中国视图</label>
-          <label><input type="checkbox" id="ms-cn-province-borders"> 省界（虚线）</label>
-          <label style="margin-left:12px;"><input type="checkbox" id="ms-cn-province-labels"> 省名称</label>
-        </div>
-        <div class="settings-form-row">
-          <label class="settings-section-label">世界视图</label>
-          <label><input type="checkbox" id="ms-world-admin1-borders"> 州/省级边界（虚线）</label>
-          <label style="margin-left:12px;"><input type="checkbox" id="ms-world-admin1-labels"> 州/省名称</label>
-        </div>
-        <div class="settings-form-row">
-          <label class="settings-section-label">全局图层</label>
-          <label><input type="checkbox" id="ms-country-borders"> 国界</label>
-          <label style="margin-left:12px;"><input type="checkbox" id="ms-country-labels"> 国家名称</label>
-          <label style="margin-left:12px;"><input type="checkbox" id="ms-rivers"> 河流</label>
-          <label style="margin-left:12px;"><input type="checkbox" id="ms-lakes"> 湖泊</label>
-        </div>
-        <div class="settings-hint">线宽：国界 &gt; 省界 &gt; 州/省级（代码固定）</div>
-        <div class="settings-msg" id="map-style-msg"></div>
       </div>
 
       <div class="settings-tab-pane" id="settings-pane-prefix-area">
         <div class="settings-list-panel" style="border-right:0;">
           <div class="settings-list-toolbar">
-            <button class="settings-btn-save" id="prefix-edit-btn" type="button">编辑</button>
-            <button class="settings-btn-save" id="prefix-save-btn" type="button" hidden>保存</button>
-            <button class="settings-btn-cancel" id="prefix-cancel-btn" type="button" hidden>取消</button>
+            <button class="settings-btn-cancel" id="prefix-expand-all" type="button">全部展开</button>
+            <button class="settings-btn-cancel" id="prefix-collapse-all" type="button">全部收起</button>
           </div>
+          <div class="settings-msg" id="prefix-msg"></div>
           <div class="settings-list-scroll">
-            <table class="settings-table settings-table-auto" id="prefix-table">
-              <thead><tr>
-                <th>性质</th><th>区域名称</th><th>序号</th><th>前缀</th><th>备注</th>
-                <th id="prefix-op-head" hidden></th>
-              </tr></thead>
-              <tbody id="prefix-tbody"></tbody>
-            </table>
+            <div id="prefix-board" class="prefix-board"></div>
           </div>
-          <div id="prefix-msg"></div>
         </div>
       </div>
 
       <div class="settings-tab-pane" id="settings-pane-taf-import">
-        <div class="settings-split">
+        <div class="settings-msg" id="taf-msg"></div>
+        <div class="settings-split settings-split-overlay">
           <div class="settings-list-panel">
             <div class="settings-list-toolbar">
               <button class="settings-add-btn" id="taf-add-btn" type="button">+ 新增配置</button>
@@ -877,7 +732,6 @@
                 <tbody id="taf-tbody"></tbody>
               </table>
             </div>
-            <div id="taf-msg"></div>
           </div>
           <div class="settings-form-panel" id="taf-form-panel" style="display:none;">
             <h4 id="taf-form-title">预报入库告警</h4>
@@ -901,7 +755,10 @@
                 <label>接收延迟（分钟） <span class="settings-hint">0–60</span></label>
                 <input type="number" id="tf-delay" min="0" max="60" step="1" class="settings-input settings-input-sm">
               </div>
-              <button class="settings-btn-save" id="taf-save-btn" type="button">保存</button>
+              <div class="settings-form-actions">
+                <button class="settings-btn-save" id="taf-save-btn" type="button">保存</button>
+                <button class="settings-btn-cancel" id="taf-cancel-btn" type="button">取消</button>
+              </div>
             </div>
           </div>
         </div>
@@ -1110,7 +967,7 @@
 <script src="{% static 'js/views_nav.js' %}"></script>
 <script>
 document.getElementById('help-btn').addEventListener('click', function () {
-  window.open('{% url "system_reference_pdf" %}', '_blank');
+  window.open('{% static "docs/MTWS-System-Reference.pdf" %}', '_blank');
 });
 </script>
 {% endblock %}

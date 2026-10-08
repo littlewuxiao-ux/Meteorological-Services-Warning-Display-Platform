@@ -131,13 +131,17 @@ def access_admin(request, time_mode='current'):
 
 
 def system_reference_pdf(request):
-    """在浏览器新标签中打开 docs/MTWS System Reference.pdf。"""
-    pdf_path = Path(django_settings.BASE_DIR).parent / 'docs' / 'MTWS System Reference.pdf'
-    if not pdf_path.is_file():
-        raise Http404('未找到说明文档：docs/MTWS System Reference.pdf')
+    """在浏览器新标签中打开 docs/MTWS-System-Reference.pdf。"""
+    docs_dir = Path(django_settings.BASE_DIR).parent / 'docs'
+    for name in ('MTWS-System-Reference.pdf', 'MTWS System Reference.pdf'):
+        pdf_path = docs_dir / name
+        if pdf_path.is_file():
+            break
+    else:
+        raise Http404('未找到说明文档：docs/MTWS-System-Reference.pdf')
     return FileResponse(
         pdf_path.open('rb'),
         content_type='application/pdf',
         as_attachment=False,
-        filename='MTWS System Reference.pdf',
+        filename='MTWS-System-Reference.pdf',
     )

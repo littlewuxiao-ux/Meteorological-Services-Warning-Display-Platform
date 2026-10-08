@@ -310,7 +310,7 @@ def settings_popup(request, time_mode='current'):
     if request.method == 'GET':
         try:
             ps = PopupSettings.objects.filter(user_code=user_code).first()
-            if not ps and user_code not in (TEMPLATE, 'test'):
+            if not ps and user_code != TEMPLATE:
                 ps = PopupSettings.objects.filter(user_code=TEMPLATE).first()
 
             if not ps:
@@ -362,7 +362,7 @@ def settings_popup(request, time_mode='current'):
 
         updated = PopupSettings.objects.filter(user_code=user_code).update(**update_dict)
         if updated == 0:
-            default_ps = None if user_code == 'test' else PopupSettings.objects.filter(user_code=TEMPLATE).first()
+            default_ps = PopupSettings.objects.filter(user_code=TEMPLATE).first()
             create_data = {'user_code': user_code}
             if default_ps and user_code != TEMPLATE:
                 create_data.update({
@@ -424,7 +424,7 @@ def settings_alert_thresholds(request, time_mode='current'):
 
     if request.method == 'GET':
         try:
-            if editing or user_code == 'test':
+            if editing:
                 owned = list(
                     AirportAlertThresholds.objects.filter(user_code=user_code).order_by('airport_4code')
                 )
@@ -501,7 +501,7 @@ def settings_alert_thresholds_detail(request, airport_4code, time_mode='current'
             return JsonResponse({'success': False, 'error': '通用行请使用恢复默认'}, status=403)
         obj = AirportAlertThresholds.objects.filter(user_code=user_code, airport_4code='default').first()
         if obj is None:
-            source = get_threshold_row(TEMPLATE if user_code != 'test' else user_code, 'default')
+            source = get_threshold_row(TEMPLATE, 'default')
             obj = AirportAlertThresholds(user_code=user_code, airport_4code='default')
             if source is not None:
                 for field in _THRESHOLD_FIELDS:
@@ -660,7 +660,7 @@ def settings_weather_alert(request, time_mode='current'):
                 }
                 return data
 
-            if editing or user_code == 'test':
+            if editing:
                 rows = [
                     _clean(row, True)
                     for row in WeatherAlertLevels.objects.filter(user_code=user_code).order_by('weather', 'alert_level')
