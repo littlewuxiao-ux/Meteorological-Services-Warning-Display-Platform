@@ -1,106 +1,117 @@
 @echo off
 chcp 65001 >nul
-title MTWS ä¾èµ–å®‰è£…
-
+title MTWS ÒÀÀµ°²×°
 cd /d "%~dp0"
 
 echo ========================================
-echo          MTWS ä¾èµ–å®‰è£…
+echo          MTWS ÒÀÀµ°²×°
 echo ========================================
 echo.
-echo å°†ä½¿ç”¨å½“å‰ Python çŽ¯å¢ƒæŒ‰é¡ºåºå®‰è£…è¿è¡Œæ‰€éœ€ä¾èµ–ã€‚
-echo å·²å®‰è£…çš„åŒ…ä¼šæŒ‰æŒ‡å®šç‰ˆæœ¬å‡çº§æˆ–è·³è¿‡ï¼Œå¯é‡å¤æ‰§è¡Œã€‚
+echo ½«Ê¹ÓÃµ±Ç° Python »·¾³°´Ë³Ðò°²×°ÔËÐÐËùÐèÒÀÀµ¡£
+echo ÒÑ°²×°µÄ°ü»á°´Ö¸¶¨°æ±¾²¹Æë£¬¿ÉÖØ¸´Ö´ÐÐ¡£
+echo ÈÕÖ¾£º%~dp0install.log
 echo.
 
 where python >nul 2>&1
 if errorlevel 1 (
-    echo é”™è¯¯ï¼šæœªæ‰¾åˆ° python å‘½ä»¤ã€‚
-    echo è¯·å…ˆå®‰è£… Python å¹¶å‹¾é€‰ "Add python.exe to PATH"ã€‚
+    echo ´íÎó£ºÎ´ÕÒµ½ python ÃüÁî¡£
+    echo ÇëÏÈ°²×° Python 3.10+ ²¢¹´Ñ¡ "Add python.exe to PATH"¡£
     pause
     exit /b 1
 )
-
-echo å½“å‰ Pythonï¼š
+echo µ±Ç° Python£º
 python --version
+python -c "import sys; sys.exit(0 if sys.version_info>=(3,10) else 1)" >nul 2>&1
+if errorlevel 1 (
+    echo ´íÎó£ºÐèÒª Python 3.10 ¼°ÒÔÉÏ°æ±¾¡£
+    pause
+    exit /b 1
+)
 echo.
 
 set FAILED=0
+set LOG=%~dp0install.log
+echo [%date% %time%] MTWS ÒÀÀµ°²×°¿ªÊ¼ > "%LOG%" 2>&1
 
-echo [0/13] å‡çº§ pip ...
-python -m pip install --upgrade pip
+echo [0/14] Éý¼¶ pip / setuptools / wheel ...
+python -m pip install --upgrade pip setuptools wheel >> "%LOG%" 2>&1
+if errorlevel 1 echo ¾¯¸æ£ºpip Éý¼¶Ê§°Ü£¬½«¼ÌÐø³¢ÊÔ°²×°ÒÀÀµ¡£
+
+REM »ù´¡¹¤¾ß -> Web ¿ò¼Ü -> Ê±¼ä -> Êý¾Ý -> ÍøÂç -> ÆøÏó½âÎö -> ¶¨Ê± -> Í¼Ïñ -> GUI/ÍÐÅÌ -> Appµ¥´°¿Ú -> ¿ÉÑ¡ÔöÇ¿
+echo [1/14] °²×°»ù´¡¹¤¾ß°ü ...
+call :install "packaging==26.2"
+call :install "six==1.17.0"
+call :install "typing_extensions==4.15.0"
+
+echo [2/14] °²×° Django ...
+call :install "asgiref==3.11.1"
+call :install "sqlparse==0.5.5"
+call :install "Django>=4.2,<6.1"
+call :install "djangorestframework==3.17.1"
+
+echo [3/14] °²×°Ê±¼äÓëÊ±ÇøÏà¹Ø°ü ...
+call :install "python-dateutil==2.9.0.post0"
+call :install "pytz==2026.1.post1"
+call :install "tzdata==2026.1"
+call :install "tzlocal"
+
+echo [4/14] °²×°Êý¾Ý´¦Àí°ü ...
+call :install "numpy>=1.26,<2.3"
+call :install "pandas>=2.0,<2.3"
+
+echo [5/14] °²×°ÍøÂçÇëÇó°ü ...
+call :install "certifi==2026.4.22"
+call :install "charset-normalizer==3.4.7"
+call :install "idna==3.13"
+call :install "urllib3==2.6.3"
+call :install "requests==2.33.1"
+
+echo [6/14] °²×°ÆøÏó½âÎöÒÀÀµ ^(avwx_custom^) ...
+call :install "httpcore"
+call :install "httpx"
+call :install "geopy"
+call :install "xmltodict"
+
+echo [7/14] °²×°ÈÕ³öÈÕÂä¼ÆËã°ü ...
+call :install "suntime==1.3.2"
+
+echo [8/14] °²×°¶¨Ê±ÈÎÎñ°ü ...
+call :install "APScheduler==3.11.1"
+
+echo [9/14] °²×°Í¼Ïñ´¦Àí°ü ...
+call :install "Pillow==12.2.0"
+
+echo [10/14] °²×°·þÎñ¶Ë GUI ÓëÍÐÅÌ°ü ...
+call :install "customtkinter>=5.2.2"
+call :install "pystray>=0.19.4"
+
+echo [11/14] °²×° App µ¥´°¿Ú°ü ^(app_launcher.py ±ØÐè^) ...
+call :install "pywebview>=5.1"
+
+echo [12/14] °²×° Windows ÔöÇ¿°ü ...
+call :install "pywin32>=307"
+
+echo [13/14] °²×°¿ÉÑ¡ÔöÇ¿°ü ^(µØÍ¼Éú³É / »ú³¡ËÑË÷£¬È±Ê§²»Ó°ÏìÖ÷ÏµÍ³Æô¶¯^) ...
+call :install_optional "shapely"
+call :install_optional "scipy"
+call :install_optional "rapidfuzz"
+
+echo [14/14] ÕýÔÚºË¶Ô¹Ø¼üÄ£¿é ...
+python -c "import django, rest_framework, pandas, numpy, requests, PIL, suntime, apscheduler, customtkinter, pystray, webview, httpx, geopy, xmltodict; print('¹Ø¼üÄ£¿éµ¼Èë³É¹¦')"
 if errorlevel 1 (
-    echo è­¦å‘Šï¼špip å‡çº§å¤±è´¥ï¼Œå°†ç»§ç»­å°è¯•å®‰è£…ä¾èµ–ã€‚
-    echo.
-)
-
-REM æŒ‰ä¾èµ–å…³ç³»é¡ºåºå®‰è£…ï¼šåŸºç¡€å·¥å…· -> Web æ¡†æž¶ -> æ•°æ®å¤„ç† -> ç½‘ç»œ -> è°ƒåº¦ -> æ°”è±¡è§£æž -> GUI
-echo [1/13] å®‰è£…åŸºç¡€å·¥å…·åŒ… ...
-call :install packaging==26.2
-call :install six==1.17.0
-call :install typing_extensions==4.15.0
-
-echo [2/13] å®‰è£… Django ...
-call :install asgiref==3.11.1
-call :install sqlparse==0.5.5
-call :install Django==6.0.4
-call :install djangorestframework==3.17.1
-
-echo [3/13] å®‰è£…æ—¶é—´ä¸Žæ—¶åŒºç›¸å…³åŒ… ...
-call :install python-dateutil==2.9.0.post0
-call :install pytz==2026.1.post1
-call :install tzdata==2026.1
-call :install tzlocal
-
-echo [4/13] å®‰è£…æ•°æ®å¤„ç†åŒ… ...
-call :install numpy==2.4.4
-call :install pandas==3.0.2
-
-echo [5/13] å®‰è£…ç½‘ç»œè¯·æ±‚åŒ… ...
-call :install certifi==2026.4.22
-call :install charset-normalizer==3.4.7
-call :install idna==3.13
-call :install urllib3==2.6.3
-call :install requests==2.33.1
-
-echo [6/13] å®‰è£…æ°”è±¡è§£æžä¾èµ– ^(avwx_custom^) ...
-call :install httpcore
-call :install httpx
-call :install geopy
-call :install xmltodict
-
-echo [7/13] å®‰è£…æ—¥å‡ºæ—¥è½è®¡ç®—åŒ… ...
-call :install suntime==1.3.2
-
-echo [8/13] å®‰è£…å®šæ—¶ä»»åŠ¡åŒ… ...
-call :install APScheduler==3.11.1
-
-echo [9/13] å®‰è£…å›¾åƒå¤„ç†åŒ… ...
-call :install Pillow==12.2.0
-
-echo [10/13] å®‰è£…æœåŠ¡ç«¯ GUI åŒ… ...
-call :install customtkinter
-call :install pystray
-
-echo [11/13] å®‰è£…å¯é€‰å¢žå¼ºåŒ… ^(åœ°å›¾ç”Ÿæˆ / æœºåœºæœç´¢ï¼Œç¼ºå¤±ä¸å½±å“ä¸»ç³»ç»Ÿå¯åŠ¨^) ...
-call :install shapely
-call :install scipy
-call :install rapidfuzz
-
-echo [12/13] å®‰è£…å®Œæˆï¼Œæ­£åœ¨æ ¸å¯¹å…³é”®æ¨¡å— ...
-python -c "import django, rest_framework, pandas, numpy, requests, PIL, suntime, apscheduler, customtkinter, pystray, httpx, geopy, xmltodict; print('å…³é”®æ¨¡å—å¯¼å…¥æˆåŠŸ')"
-if errorlevel 1 (
-    echo æ ¸å¯¹å¤±è´¥ï¼šéƒ¨åˆ†å…³é”®æ¨¡å—æ— æ³•å¯¼å…¥ã€‚
+    echo ºË¶ÔÊ§°Ü£º²¿·Ö¹Ø¼üÄ£¿éÎÞ·¨µ¼Èë£¬Ïê¼û install.log
     set FAILED=1
 ) else (
-    echo æ ¸å¯¹é€šè¿‡ã€‚
+    echo ºË¶ÔÍ¨¹ý¡£
 )
+python -c "import webview; print('App µ¥´°¿ÚÒÀÀµ OK')" >> "%LOG%" 2>&1
 
 echo.
 echo ========================================
 if "%FAILED%"=="1" (
-    echo å®‰è£…è¿‡ç¨‹ä¸­æœ‰å¤±è´¥é¡¹ï¼Œè¯·å‘ä¸Šæ»šåŠ¨æŸ¥çœ‹çº¢è‰²/é”™è¯¯è¾“å‡ºåŽé‡è¯•ã€‚
+    echo °²×°¹ý³ÌÖÐÓÐÊ§°ÜÏî£¬Çë²é¿´ install.log ºóÖØÊÔ¡£
 ) else (
-    echo å…¨éƒ¨ä¾èµ–å·²æŒ‰é¡ºåºå®‰è£…å®Œæˆã€‚
+    echo È«²¿ÒÀÀµÒÑ°´Ë³Ðò°²×°Íê³É¡£
 )
 echo ========================================
 echo.
@@ -109,10 +120,24 @@ exit /b %FAILED%
 
 :install
 echo.
-echo --- æ­£åœ¨å®‰è£… %~1 ---
-python -m pip install "%~1"
+echo --- ÕýÔÚ°²×° %~1 ---
+python -m pip install "%~1" >> "%LOG%" 2>&1
 if errorlevel 1 (
-    echo *** å®‰è£…å¤±è´¥ï¼š%~1 ***
+    echo *** °²×°Ê§°Ü£º%~1£¬Ïê¼û install.log ***
+    echo see install.log
     set FAILED=1
+) else (
+    echo OK£º%~1
+)
+goto :eof
+
+:install_optional
+echo.
+echo --- ÕýÔÚ°²×°¿ÉÑ¡°ü %~1 ---
+python -m pip install "%~1" >> "%LOG%" 2>&1
+if errorlevel 1 (
+    echo Ìø¹ý¿ÉÑ¡°ü£º%~1 °²×°Ê§°Ü£¬²»Ó°ÏìÖ÷ÏµÍ³¡£
+) else (
+    echo OK£º%~1
 )
 goto :eof

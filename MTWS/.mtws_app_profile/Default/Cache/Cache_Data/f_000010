@@ -1,0 +1,1008 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>航空气象报文综合监控告警系统</title>
+  
+  <link rel="icon" type="image/svg+xml" href="/static/svg/mtws-favicon.svg" id="mtws-favicon">
+  <link rel="stylesheet" href="/static/css/main.css">
+  
+<link rel="stylesheet" href="/static/css/views.css">
+<link rel="stylesheet" href="/static/css/trend.css">
+
+</head>
+
+<body>
+  <script>
+    (function () {
+      var raw = '{\u0022R\u0022: {\u0022hex\u0022: \u0022#e74c3c\u0022, \u0022rgb\u0022: \u0022231, 76, 60\u0022}, \u0022Y\u0022: {\u0022hex\u0022: \u0022#f39c12\u0022, \u0022rgb\u0022: \u0022243, 156, 18\u0022}, \u0022G\u0022: {\u0022hex\u0022: \u0022#27ae60\u0022, \u0022rgb\u0022: \u002239, 174, 96\u0022}, \u0022N\u0022: {\u0022hex\u0022: \u0022#95a5a6\u0022, \u0022rgb\u0022: \u0022149, 165, 166\u0022}}';
+      var colors = null;
+      try { colors = raw ? JSON.parse(raw) : null; } catch (e) { colors = null; }
+      window.MTWS_ALERT_COLORS = colors;
+      if (!colors) return;
+      var root = document.documentElement;
+      ['R', 'Y', 'G', 'N'].forEach(function (k) {
+        var c = colors[k];
+        if (!c) return;
+        var key = k.toLowerCase();
+        if (c.hex) root.style.setProperty('--alert-' + key, c.hex);
+        if (c.rgb) root.style.setProperty('--alert-' + key + '-rgb', c.rgb);
+      });
+    })();
+  </script>
+  
+<!-- 服务器断连提示横幅（轮询失败时显示，恢复后自动隐藏） -->
+<div id="server-offline-banner">⚠ 服务器连接已断开，正在等待重连...</div>
+
+<!-- 顶栏 + 功能区 + 时间轴整行：作为一块 sticky（top:0）。
+     三条各自 sticky 时，title-row 的 top:180px 无法跟随功能区真实高度，会随列表滚走。 -->
+<div class="page-chrome">
+<!-- 5.1 头部区域 -->
+<header class="header-section">
+  <h1 class="system-title">
+    <img class="system-title-logo" src="/static/svg/mtws-favicon.svg" width="32" height="32" alt="">
+    <span>航空气象报文综合监控告警系统</span>
+    <button class="help-icon-btn" id="help-btn" title="系统使用说明">?</button>
+  </h1>
+  <!-- 用户信息区域（仅current模式显示） -->
+  <div class="user-info-section" id="user-info-section" style="display: none;">
+    <span class="user-code" id="user-code"></span>
+    <button class="logout-btn" id="logout-btn" style="display: none;">登出</button>
+  </div>
+  <div class="status-info-container">
+    <div class="parsing-status-display">
+      <div class="parsing-status-item" id="flight-status">
+        <span class="status-label">航班</span>
+        <span class="status-indicator" id="flight-indicator">等待中...</span>
+        <span class="status-time" id="flight-time">--:--:--</span>
+      </div>
+      <div class="parsing-status-item" id="metar-status">
+        <span class="status-label">实况</span>
+        <span class="status-indicator" id="metar-indicator">等待中...</span>
+        <span class="status-time" id="metar-time">--:--:--</span>
+      </div>
+      <div class="parsing-status-item" id="taf-status">
+        <span class="status-label">预报</span>
+        <span class="status-indicator" id="taf-indicator">等待中...</span>
+        <span class="status-time" id="taf-time">--:--:--</span>
+      </div>
+    </div>
+  </div>
+</header>
+
+
+<!-- 5.2 功能区域 -->
+<section class="function-section">
+  <!-- 左边区域 -->
+  <div class="function-left">
+    <!-- 第1行：国内区域 -->
+    <div class="filter-row">
+      <span class="filter-title">国内</span>
+      <div class="button-group" id="domestic-button-group">
+        <!-- 国内区域按钮将通过JavaScript动态生成 -->
+      </div>
+    </div>
+
+    <!-- 第2行：国际区域 -->
+    <div class="filter-row">
+      <span class="filter-title">国际</span>
+      <div class="button-group" id="international-button-group">
+        <!-- 国际区域按钮将通过JavaScript动态生成 -->
+      </div>
+    </div>
+  </div>
+
+  <!-- 分隔线 -->
+  <div class="separator"></div>
+
+  <!-- 中间区域：上行告警等级横向按钮 + 下行告警裕度横向轨道 -->
+  <div class="function-middle">
+    <!-- 第1行：告警等级横向按钮 -->
+    <div class="filter-row">
+      <div class="button-group" title="告警等级">
+        <button class="filter-btn alert-red" data-group="alert" data-value="red">红</button>
+        <button class="filter-btn alert-yellow" data-group="alert" data-value="yellow">黄</button>
+        <button class="filter-btn alert-green" data-group="alert" data-value="green">绿</button>
+        <button class="filter-btn alert-none" data-group="alert" data-value="none">无</button>
+      </div>
+    </div>
+
+    <!-- 第2行：告警裕度横向5段轨道（左0右4） -->
+    <div class="filter-row">
+      <div class="margin-h-track" id="margin-v-track" title="告警裕度">
+        <span class="margin-h-label" data-value="0">0</span>
+        <span class="margin-h-label" data-value="1">1</span>
+        <span class="margin-h-label" data-value="2">2</span>
+        <span class="margin-h-label" data-value="3">3</span>
+        <span class="margin-h-label" data-value="4">4</span>
+        <div class="margin-h-thumb" id="margin-v-thumb"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 分隔线 -->
+  <div class="separator"></div>
+
+  <!-- 右边区域 -->
+  <div class="function-right">
+    <!-- 第1行：承运人、实况弹窗、排序、温度辅助 -->
+    <div class="filter-row">
+      <div class="carrier-section">
+        <span class="filter-title carrier-title">承运人</span>
+        <div class="carrier-picker" id="carrier-picker">
+          <button type="button" class="carrier-display" id="carrier-display" aria-expanded="false" aria-haspopup="true">
+            O3
+          </button>
+          <div class="carrier-menu" id="carrier-menu" hidden>
+            <div class="carrier-matrix" id="carrier-matrix"></div>
+            <button type="button" id="carrier-confirm" class="carrier-confirm" disabled>确认</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="popup-control-section">
+        <span class="popup-control-title">实况弹窗</span>
+        <button class="filter-btn popup-toggle-btn" id="intercept-toggle"
+          data-field="intercept">降级免打扰</button>
+        <button class="filter-btn popup-toggle-btn" id="operation-toggle"
+          data-field="operation">运行类</button>
+        <button class="filter-btn popup-toggle-btn" id="parking-toggle" data-field="parking">停场类</button>
+        <button class="snooze-restore-btn snooze-restore-inactive" id="snooze-restore-btn" title="没有可恢复的实况弹窗">
+          <svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg" width="20" height="20">
+            <path
+              d="M833.024 104.448H409.088c-43.008 0-77.824 34.816-77.824 77.824v30.208H188.928c-38.4 0-70.144 31.232-70.144 70.144v559.104c0 38.4 31.232 70.144 70.144 70.144h423.936c38.4 0 70.144-31.232 70.144-70.144V819.2h150.016c43.008 0 77.824-34.816 77.824-77.824V181.76c0-42.496-35.328-77.312-77.824-77.312z m-150.016 552.448v-43.52c63.488-38.912 110.08-101.888 127.488-177.664l15.872-66.56c4.096-16.384-1.536-33.792-14.848-44.032-18.432-14.336-45.056-11.776-59.392 6.656l-57.856 68.096c-3.584 4.608-7.68 8.704-11.776 12.8V281.6c0-38.4-31.232-70.144-70.144-70.144H386.56v-30.208c0-12.288 10.24-22.528 22.528-22.528h423.936c12.288 0 22.528 10.24 22.528 22.528v559.104c0 12.288-10.24 22.528-22.528 22.528h-150.016v-105.984z m-124.928-38.4l-16.384 1.536v103.936c0 2.56-1.024 4.096-2.048 4.608s-2.56 2.048-4.608 2.048c-1.536 0-3.072-0.512-4.608-1.536l-178.688-159.232c-2.56-2.56-3.072-6.656-0.512-9.728l0.512-0.512 178.688-152.576c1.536-1.536 3.072-1.536 4.608-1.536h0.512c1.024 0 3.072 0.512 4.608 2.56 1.024 1.024 1.536 2.56 1.536 4.096v98.816l19.968-2.048c62.464-6.656 119.296-36.864 160.256-84.992l57.856-68.096 0.512-0.512c2.048-3.072 6.656-3.584 9.216-1.024 2.048 1.536 3.072 4.608 2.048 7.168l-15.872 67.072c-24.064 103.424-111.104 179.712-217.6 189.952z"
+              fill="currentColor" />
+          </svg>
+        </button>
+      </div>
+
+      <div class="select-group" title="机场排序方式切换" style="margin-left: 20px;">
+        <select id="airport-sort-select" class="filter-select airport-sort-filter-select">
+          <option value="alert-asc">告警正序</option>
+          <option value="region-asc">区域正序</option>
+          <option value="alert-desc">告警逆序</option>
+          <option value="region-desc">区域逆序</option>
+        </select>
+      </div>
+
+      <button class="action-btn" id="nwp-btn" style="margin-left: 20px;">温度辅助</button>
+      <button class="action-btn margin-left" id="monitor-btn" style="display: none;">异常监控</button>
+    </div>
+
+    <!-- 第2行：时区切换、视图切换、时间范围、搜索、刷新、设置 -->
+    <div class="filter-row">
+      <label class="timezone-toggle-label" title="北京时/世界时切换开关">
+        <input type="checkbox" id="timezone-toggle-input" />
+        <div class="timezone-toggle-track">
+          <span class="timezone-track-label left">CST</span>
+          <span class="timezone-track-label right">UTC</span>
+          <div class="timezone-toggle-thumb"></div>
+        </div>
+      </label>
+
+      <label class="timezone-toggle-label" title="时间范围" style="margin-left: 8px;">
+        <input type="checkbox" id="time-range-toggle-input" />
+        <div class="timezone-toggle-track time-range-toggle-track">
+          <span class="timezone-track-label left">36h</span>
+          <span class="timezone-track-label right">48h</span>
+          <div class="timezone-toggle-thumb"></div>
+        </div>
+      </label>
+
+      <div class="search-input-wrap margin-left">
+        <input type="text" class="search-input" id="search-input" placeholder="输入机场四字代码">
+        <button class="search-clear-btn" id="search-clear-btn" title="清除输入" aria-label="清除">&#x2716;</button>
+      </div>
+      <button class="action-btn" id="search-btn">搜索</button>
+      <button class="action-btn" id="refresh-btn" style="margin-left: 8px;">刷新</button>
+      <button class="action-btn" id="settings-btn" style="margin-left: 8px;">设置</button>
+    </div>
+  </div>
+</section>
+
+<!-- 时间轴标题行 -->
+<div class="title-row main-title-row">
+  <!-- 机场标题 -->
+  <div class="title-airport">
+    <span class="title-text">机场</span>
+  </div>
+
+  <!-- 实况信息标题 -->
+  <div class="title-weather">
+    <span class="title-text">实况信息</span>
+  </div>
+
+  <!-- 时间轴 -->
+  <div class="title-timeline">
+    <!-- 北京时时间轴 -->
+    <div class="timeline-row beijing-time">
+      <div id="beijing-timeline" class="timeline-container"></div>
+    </div>
+    <!-- 世界时时间轴 -->
+    <div class="timeline-row utc-time">
+      <div id="utc-timeline" class="timeline-container"></div>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- 5.3 内容区域 -->
+<section class="content-section">
+  <!-- 正文区域 -->
+  <div class="content-main" id="content-main">
+    <!-- 机场信息将通过JavaScript动态加载 -->
+    <div class="loading-message">正在加载数据...</div>
+  </div>
+</section>
+
+<!-- 地图模式面板（fixed，与列表区等地位，切换显示） -->
+<div id="map-alert-panel" style="display:none;">
+  <div class="trend-toolbar map-flight-toolbar">
+    <div class="map-scope-module">
+    <div class="trend-title">机场范围</div>
+    <div class="trend-toolbar-main">
+      <label class="trend-switch map-wx-check"><input type="radio" name="map-flight-scope" value="has_flight" checked><span class="map-wx-box"></span><span>有航班机场</span></label>
+      <label class="trend-switch map-wx-check"><input type="radio" name="map-flight-scope" value="recent2h"><span class="map-wx-box"></span><span>起降窗口</span></label>
+      <label class="trend-hours" id="map-hours-label" title="过去固定 2 小时，此数字只作用于未来">未来
+        <input type="number" id="map-future-hours" min="0" max="9" step="1" value="2">
+        小时
+      </label>
+    </div>
+    </div>
+    <div class="map-wx-module" id="map-wx-layer-panel">
+      <span class="map-wx-module-title">图层控制</span>
+      <label class="trend-switch map-wx-check">
+        <input type="checkbox" data-wx="radar">
+        <span class="map-wx-box"></span>
+        <span>雷达回波</span>
+      </label>
+      <span class="map-wx-time" data-wx-time="radar"></span>
+      <div class="map-wx-sat" id="map-wx-sat-block">
+        <button type="button" class="trend-switch map-wx-sat-btn" data-wx="sat-toggle">
+          <span class="map-wx-box"></span>
+          <span class="map-wx-sat-label">卫星云图</span>
+        </button>
+        <div class="map-wx-sat-menu" id="map-wx-sat-sub" hidden>
+          <button type="button" data-wx="sat_ir">红外</button>
+          <button type="button" data-wx="sat_wv">水汽</button>
+          <button type="button" data-wx="sat_vis">可见光</button>
+        </div>
+      </div>
+      <span class="map-wx-time" data-wx-time="sat"></span>
+      <span id="map-wx-layer-tip" class="map-wx-layer-tip" style="display:none;"></span>
+    </div>
+  </div>
+  <div class="map-chart-wrap">
+  <!-- 中国/世界切换开关：浮于地图顶部中央 -->
+  <div class="map-view-overlay-wrap">
+    <label class="map-view-toggle-label" title="中国/世界视图切换">
+      <input type="checkbox" id="map-view-toggle-input" />
+      <div class="map-view-toggle-track">
+        <span class="map-view-track-label left">China</span>
+        <span class="map-view-track-label right">World</span>
+        <div class="map-view-toggle-thumb"></div>
+      </div>
+    </label>
+  </div>
+    <div id="map-world" class="map-chart-pane"></div>
+    <div id="map-airport-tip" class="map-airport-tip" style="display:none;"></div>
+  <!-- 强对流雷达预警悬浮列表（可拖动） -->
+  <div id="radar-alert-float" class="radar-alert-float" style="display:none;">
+    <div class="radar-alert-float-header" id="radar-alert-float-drag">
+      <span>强对流预警</span>
+      <div class="radar-alert-mode" id="radar-alert-mode">
+        <span class="radar-alert-mode-alarm">告警项</span>
+        <button type="button" data-mode="observe" title="打开后在告警项下方追加观察项">观察项</button>
+      </div>
+    </div>
+    <div id="radar-alert-rate-tip" class="radar-alert-rate-tip"></div>
+    <div class="radar-alert-float-body" id="radar-alert-float-body"></div>
+    <div class="radar-alert-float-footer">
+      <button type="button" id="radar-alert-run-btn" class="radar-alert-footer-btn">刷新预警</button>
+    </div>
+  </div>
+  </div>
+</div>
+
+<!-- 中文（明语）模式面板：替换机场行 / 实况信息标题 / 时间轴及以下内容，功能区不变 -->
+<section id="plain-panel" style="display:none;">
+  <div class="plain-loading">正在加载数据...</div>
+</section>
+
+<section id="trend-panel" style="display:none;">
+  <div class="trend-toolbar">
+    <div class="trend-title">实况趋势告警</div>
+    <div class="trend-toolbar-main">
+      <label class="trend-switch map-wx-check"><input type="radio" name="trend-scope" value="has_flight" checked><span class="map-wx-box"></span><span>有航班机场</span></label>
+      <label class="trend-switch map-wx-check"><input type="radio" name="trend-scope" value="recent2h"><span class="map-wx-box"></span><span>起降窗口</span></label>
+      <label class="trend-hours" id="trend-hours-label" title="过去固定 2 小时，此数字只作用于未来">未来
+        <input type="number" id="trend-future-hours" min="0" max="9" step="1" value="2">
+        小时
+      </label>
+      <span class="trend-split"></span>
+      <label class="trend-switch"><input type="checkbox" id="trend-half"><span>半点报</span></label>
+      <button type="button" id="trend-refresh" class="trend-refresh">刷新</button>
+      <span id="trend-status" class="trend-status"></span>
+    </div>
+  </div>
+  <div class="trend-table-wrap" id="trend-table-wrap"></div>
+</section>
+
+<section id="import-alert-panel" style="display:none;">
+  <div class="ia-panel-header">
+    <span>&#9888; 报文入库告警详情</span>
+  </div>
+  <div class="ia-tab-bar">
+    <div class="ia-tab active" id="ia-tab-metar">实况 METAR</div>
+    <div class="ia-tab" id="ia-tab-taf">预报 TAF</div>
+  </div>
+  <div class="ia-table-head" id="ia-table-head">
+    <span>机场</span>
+    <span>类型</span>
+    <span>告警时间</span>
+    <span>最近一份报文发布时间</span>
+    <span>应发时间</span>
+    <span>处理结果</span>
+  </div>
+  <div class="ia-list" id="ia-list"></div>
+  <div class="ia-pagination" id="ia-pagination"></div>
+</section>
+
+<!-- 设置弹窗 -->
+<div id="settings-modal" class="modal">
+  <div class="modal-content settings-modal-content">
+    <div class="settings-modal-header">
+      <h3>系统设置</h3>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <span id="settings-admin-unlock" style="display:none;align-items:center;gap:4px;">
+          <input type="password" id="settings-admin-password" placeholder="超级用户密码" autocomplete="current-password" style="width:140px;">
+          <button type="button" class="settings-btn-save" id="settings-admin-unlock-btn">确认</button>
+        </span>
+        <button type="button" class="settings-btn-save" id="superuser-group-btn" style="display:none;">用户组设置</button>
+        <button type="button" class="settings-btn-cancel" id="settings-default-toggle" style="display:none;">编辑默认模板</button>
+        <button type="button" class="settings-btn-save" id="superuser-btn" style="display:none;">超级用户</button>
+        <button class="settings-modal-close-btn" id="settings-modal-close">关闭</button>
+      </div>
+    </div>
+    <div class="settings-tabs">
+      <div class="settings-tab-group settings-tab-group-personal active">
+        <span class="settings-group-title" data-group="personal">个性化设置</span>
+        <button class="settings-tab active" data-tab="data-refresh-timer">数据更新</button>
+        <button class="settings-tab" data-tab="popup">弹窗设置</button>
+        <button class="settings-tab" data-tab="alert-thresholds">告警阈值</button>
+        <button class="settings-tab" data-tab="weather-alert">天气告警等级</button>
+        <button class="settings-tab" data-tab="radar-alert">雷达告警</button>
+        <button class="settings-tab" data-tab="trend-alert">实况趋势告警</button>
+        <button class="settings-tab" data-tab="map-style">地图样式</button>
+      </div>
+      <div class="settings-tab-group settings-tab-group-global">
+        <span class="settings-group-title" data-group="global">全局设置</span>
+        <button class="settings-tab" data-tab="airport-info">机场信息</button>
+        <button class="settings-tab" data-tab="prefix-area">机场区域</button>
+        <button class="settings-tab" data-tab="taf-import">预报入库告警</button>
+        <button class="settings-tab" data-tab="weather-type">天气类型</button>
+      </div>
+    </div>
+    <div id="settings-default-banner" class="settings-default-banner" hidden>正在编辑默认模板。这里保存的内容，会作为其他账号还没有单独设置时使用的默认值。</div>
+    <div class="settings-tab-body">
+
+      <!-- Tab1: 机场信息（按四字代码查询） -->
+      <div class="settings-tab-pane" id="settings-pane-airport-info">
+        <div class="loc-search-wrap airport-info-search">
+          <div class="loc-search-bar">
+            <input type="text" id="airport-search-input" maxlength="4" class="settings-input loc-search-input"
+              placeholder="机场较多，请输入四字代码查询" style="text-transform:uppercase;">
+            <button class="settings-btn-save loc-search-btn" id="airport-search-btn">查询</button>
+            <button class="settings-add-btn loc-search-btn" id="airport-add-btn" type="button">+ 新增机场</button>
+          </div>
+          <div class="settings-msg" id="airport-msg"></div>
+          <div id="airport-result-area" class="loc-result-area"></div>
+        </div>
+      </div>
+
+      <!-- Tab3: 数据自动更新 -->
+      <div class="settings-tab-pane" id="settings-pane-data-refresh-timer">
+        <div class="settings-list-toolbar">
+          <button type="button" class="settings-btn-cancel settings-restore-btn" data-group="data_refresh_timer" data-msg="timer-msg">恢复默认</button>
+          <button type="button" class="settings-btn-save" id="timer-mode-btn">编辑</button>
+          <button type="button" class="settings-btn-cancel" id="timer-cancel-btn" disabled>取消</button>
+        </div>
+        <div class="settings-msg" id="timer-msg"></div>
+        <div class="settings-timer-table-wrap">
+          <table class="settings-table settings-timer-table" id="timer-table">
+            <thead>
+              <tr><th>数据类型</th><th>初始时间（分钟）<span class="settings-hint">0–50，步进0.5</span></th><th>更新间隔（分钟）<span class="settings-hint">0.5–30，步进0.5</span></th></tr>
+            </thead>
+            <tbody id="timer-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Tab4: 弹窗设置 -->
+      <div class="settings-tab-pane" id="settings-pane-popup">
+        <div class="settings-msg" id="popup-msg"></div>
+        <div class="settings-sheet">
+          <p class="settings-hint">主页【运行类】【停场类】【降级免打扰】为各席位本地开关，不在此保存。此处仅维护全站解析规则。</p>
+          <div class="settings-sheet-card settings-sheet-card-form">
+            <div class="settings-field-grid">
+              <div class="settings-field">
+                <label for="pf-leeway">运行类弹窗告警裕度</label>
+                <input type="number" id="pf-leeway" min="0" max="9" step="1" class="settings-input settings-input-sm">
+                <span class="settings-hint">0–9 整数</span>
+              </div>
+              <div class="settings-field">
+                <label for="pf-trace-time">弹窗追溯时间（小时）</label>
+                <input type="number" id="pf-trace-time" min="0" max="9" step="1" class="settings-input settings-input-sm">
+                <span class="settings-hint">0–9 整数</span>
+              </div>
+            </div>
+            <div class="settings-field">
+              <label>运行类弹窗告警等级</label>
+              <div class="settings-track-wrap">
+                <div class="settings-track" id="pf-op-level-track" data-value="Y">
+                  <span class="settings-track-seg" data-val="R">红(R)</span>
+                  <span class="settings-track-seg" data-val="Y">黄(Y)</span>
+                  <span class="settings-track-seg" data-val="G">绿(G)</span>
+                  <div class="settings-track-thumb"></div>
+                </div>
+              </div>
+            </div>
+            <div class="settings-field">
+              <label>停场类弹窗告警等级</label>
+              <div class="settings-track-wrap">
+                <div class="settings-track" id="pf-park-level-track" data-value="Y">
+                  <span class="settings-track-seg" data-val="R">红(R)</span>
+                  <span class="settings-track-seg" data-val="Y">黄(Y)</span>
+                  <span class="settings-track-seg" data-val="G">绿(G)</span>
+                  <div class="settings-track-thumb"></div>
+                </div>
+              </div>
+            </div>
+            <div class="settings-form-actions">
+              <button type="button" class="settings-btn-cancel settings-restore-btn" data-group="popup" data-msg="popup-msg">恢复默认</button>
+              <button type="button" class="settings-btn-save" id="popup-mode-btn">编辑</button>
+              <button type="button" class="settings-btn-cancel" id="popup-cancel-btn" disabled>取消</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab6: 机场告警阈值 -->
+      <div class="settings-tab-pane" id="settings-pane-alert-thresholds">
+        <div class="settings-list-toolbar">
+          <button class="settings-add-btn" id="threshold-add-btn" type="button">+ 新增</button>
+          <button type="button" class="settings-btn-save" id="threshold-mode-btn">编辑</button>
+          <button type="button" class="settings-btn-cancel" id="threshold-cancel-btn" disabled>取消</button>
+          <button type="button" class="settings-btn-cancel settings-restore-btn" data-group="airport_alert_thresholds" data-msg="threshold-msg">恢复默认</button>
+        </div>
+        <div class="settings-msg" id="threshold-msg"></div>
+        <div class="settings-list-scroll">
+          <div id="threshold-list" class="threshold-board"></div>
+        </div>
+      </div>
+
+      <!-- Tab7: 天气类型信息 -->
+      <div class="settings-tab-pane" id="settings-pane-weather-type">
+        <div class="settings-list-toolbar">
+          <button class="settings-add-btn" id="wtype-add-btn" type="button">+ 新增天气类型</button>
+          <button type="button" class="settings-btn-save" id="wtype-mode-btn">编辑</button>
+          <button type="button" class="settings-btn-cancel" id="wtype-cancel-btn" disabled>取消</button>
+        </div>
+        <div class="settings-msg" id="wtype-msg"></div>
+        <div class="settings-list-scroll">
+          <table class="settings-table settings-table-auto" id="wtype-table">
+            <thead><tr><th>天气类型代码</th><th>中文说明</th><th>英文说明</th><th>操作</th></tr></thead>
+            <tbody id="wtype-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Tab8: 天气现象告警等级 -->
+      <div class="settings-tab-pane" id="settings-pane-weather-alert">
+        <div class="settings-msg" id="walert-msg"></div>
+        <div class="settings-split settings-split-overlay">
+          <div class="settings-list-panel">
+            <div class="settings-list-toolbar">
+              <button class="settings-add-btn" id="walert-add-btn">+ 新增天气现象</button>
+              <button type="button" class="settings-btn-cancel settings-restore-btn" data-group="weather_alert_levels" data-msg="walert-msg">恢复默认</button>
+            </div>
+            <div class="settings-list-scroll">
+              <table class="settings-table settings-table-auto" id="walert-table">
+                <thead><tr><th>天气现象代码</th><th>告警等级</th><th>类型1</th><th>类型2</th><th>类型3</th><th>描述</th><th>操作</th></tr></thead>
+                <tbody id="walert-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+          <div class="settings-form-panel" id="walert-form-panel" style="display:none;">
+            <h4 id="walert-form-title">新增天气现象</h4>
+            <div class="settings-form-row">
+              <label>天气现象代码 <span class="settings-required">*</span></label>
+              <input type="text" id="waf-weather" maxlength="20" placeholder="如 TS" class="settings-input settings-input-sm" style="text-transform:uppercase;">
+            </div>
+            <div class="settings-form-row">
+              <label>告警等级 <span class="settings-required">*</span></label>
+              <div class="settings-track-wrap">
+                <div class="settings-track" id="waf-level-track" data-value="R">
+                  <span class="settings-track-seg" data-val="R">红(R)</span>
+                  <span class="settings-track-seg" data-val="Y">黄(Y)</span>
+                  <span class="settings-track-seg" data-val="G">绿(G)</span>
+                  <div class="settings-track-thumb"></div>
+                </div>
+              </div>
+            </div>
+            <div class="settings-form-row">
+              <label>类型1 <span class="settings-required">*</span></label>
+              <select id="waf-type1" class="settings-input settings-select"></select>
+            </div>
+            <div class="settings-form-row">
+              <label>类型2 <span class="settings-hint">选填</span></label>
+              <select id="waf-type2" class="settings-input settings-select"></select>
+            </div>
+            <div class="settings-form-row">
+              <label>类型3 <span class="settings-hint">选填</span></label>
+              <select id="waf-type3" class="settings-input settings-select"></select>
+            </div>
+            <div class="settings-form-row">
+              <label>天气现象描述 <span class="settings-hint">选填</span></label>
+              <input type="text" id="waf-description" maxlength="100" placeholder="100位以内" class="settings-input">
+            </div>
+            <div class="settings-form-actions">
+              <button class="settings-btn-save" id="walert-save-btn">保存</button>
+              <button class="settings-btn-cancel" id="walert-cancel-btn">取消</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 雷达告警配置 -->
+      <div class="settings-tab-pane" id="settings-pane-radar-alert">
+        <div class="settings-msg" id="radar-msg"></div>
+        <div class="radar-settings-toolbar">
+          <button type="button" class="settings-btn-save" id="radar-save-btn">编辑</button>
+          <button type="button" class="settings-btn-cancel" id="radar-cancel-btn" disabled>取消</button>
+          <button type="button" class="settings-btn-cancel settings-restore-btn" data-group="radar_alert_config" data-msg="radar-msg">恢复默认</button>
+          <button type="button" class="settings-btn-cancel" id="radar-rebuild-btn">重建瓦片索引</button>
+          <div class="radar-alarm-colors" id="radar-alarm-colors">
+            <span class="radar-alarm-colors-label">计入告警</span>
+            <label class="radar-alarm-switch radar-alarm-switch-r"><input type="checkbox" class="radar-alarm-color" value="R" checked><span>红</span></label>
+            <label class="radar-alarm-switch radar-alarm-switch-y"><input type="checkbox" class="radar-alarm-color" value="Y" checked><span>黄</span></label>
+            <label class="radar-alarm-switch radar-alarm-switch-g"><input type="checkbox" class="radar-alarm-color" value="G"><span>绿</span></label>
+          </div>
+          <span id="radar-status-text" class="settings-hint"></span>
+        </div>
+        <div class="settings-form-row" style="display:flex;gap:16px;flex-wrap:wrap;align-items:center;">
+          <label><input type="checkbox" id="radar-enabled"> 启用定时计算</label>
+          <label>间隔(分钟) <input type="number" id="radar-interval" class="settings-input" style="width:80px;" min="5" step="1"></label>
+          <label>半径km <span id="radar-radius-display" class="settings-hint">—</span></label>
+          <label>限速/分钟 <input type="number" id="radar-rate" class="settings-input" style="width:80px;" min="20" max="100"></label>
+        </div>
+
+        <div class="radar-flow">
+          <div class="radar-flow-board">
+            <div class="radar-flow-node" data-step="z3">
+              <div class="radar-flow-title">z3初筛：一般回波条件</div>
+              <div class="radar-flow-fields">
+                <label>dBZ <input type="number" id="radar-screen-dbz" class="settings-input"></label>
+                <label>像素 <input type="number" id="radar-z3-min" class="settings-input" min="1"></label>
+              </div>
+              <div class="radar-flow-hint">满足 → 进入 z5；不满足 → 本轮结束</div>
+            </div>
+            <div class="radar-flow-node radar-flow-branch" data-step="z3-skip">
+              <div class="radar-flow-title">z3初筛：强回波条件</div>
+              <div class="radar-flow-fields">
+                <label>dBZ <input type="number" id="radar-z3-skip-dbz" class="settings-input"></label>
+                <label>像素 <input type="number" id="radar-z3-skip-min" class="settings-input" min="1"></label>
+              </div>
+              <div class="radar-flow-hint">满足 → 跳过 z5，直接进入 z7；不满足 → 进入 z5</div>
+            </div>
+            <div class="radar-flow-vlink" data-link="z3z5" aria-hidden="true"></div>
+            <div class="radar-flow-node" data-step="z5">
+              <div class="radar-flow-title">z5 复核</div>
+              <div class="radar-flow-fields">
+                <label>dBZ <input type="number" id="radar-z5-dbz" class="settings-input"></label>
+                <label>像素 <input type="number" id="radar-z5-min" class="settings-input" min="1"></label>
+              </div>
+              <div class="radar-flow-hint">满足 → 进入 z7；不满足 → 本轮无告警</div>
+            </div>
+            <div class="radar-flow-z5-drop" aria-hidden="true"></div>
+            <div class="radar-flow-rail" aria-hidden="true"></div>
+            <div class="radar-flow-merge" aria-hidden="true">
+              <span class="merge-line"></span>
+              <span class="merge-arrow"></span>
+            </div>
+          </div>
+
+          <div class="radar-z7-bundle">
+            <div class="radar-z7-head">
+              <div class="radar-flow-title">z7 终算</div>
+              <div class="radar-flow-hint">两档回波都达到所选颜色才告警；仅一档达到为观察项</div>
+            </div>
+            <div class="settings-form-row radar-rings-shared">
+              <div class="radar-rings-bar">
+                <button type="button" class="settings-btn-cancel" id="radar-add-ring-btn">＋环</button>
+                <span class="settings-section-label">共用环半径（列，两档矩阵共享）</span>
+              </div>
+              <div class="radar-rings-editor" id="radar-rings-editor"></div>
+            </div>
+
+            <div class="radar-z7-levels" id="radar-z7-levels">
+              <div class="radar-z7-level" data-level="0">
+                <div class="radar-z7-level-head">
+                  <span class="radar-z7-level-title">阈值档 A</span>
+                  <div class="radar-flow-fields">
+                    <label>dBZ阈值 <input type="number" id="radar-z7-dbz-0" class="settings-input" style="width:72px;" step="1"></label>
+                    <label>斑块最少像素 <input type="number" id="radar-z7-blob-0" class="settings-input" style="width:72px;" min="1"></label>
+                  </div>
+                  <button type="button" class="settings-btn-cancel radar-add-bin-btn" data-level="0">＋数量档</button>
+                </div>
+                <div class="radar-matrix-wrap">
+                  <table class="settings-table radar-matrix-table" id="radar-matrix-table-0">
+                    <thead id="radar-matrix-head-0"></thead>
+                    <tbody id="radar-matrix-body-0"></tbody>
+                  </table>
+                </div>
+              </div>
+              <div class="radar-z7-level" data-level="1">
+                <div class="radar-z7-level-head">
+                  <span class="radar-z7-level-title">阈值档 B</span>
+                  <div class="radar-flow-fields">
+                    <label>dBZ阈值 <input type="number" id="radar-z7-dbz-1" class="settings-input" style="width:72px;" step="1"></label>
+                    <label>斑块最少像素 <input type="number" id="radar-z7-blob-1" class="settings-input" style="width:72px;" min="1"></label>
+                  </div>
+                  <button type="button" class="settings-btn-cancel radar-add-bin-btn" data-level="1">＋数量档</button>
+                </div>
+                <div class="radar-matrix-wrap">
+                  <table class="settings-table radar-matrix-table" id="radar-matrix-table-1">
+                    <thead id="radar-matrix-head-1"></thead>
+                    <tbody id="radar-matrix-body-1"></tbody>
+                  </table>
+                </div>
+              </div>
+              <div class="radar-count-note" id="radar-count-note">
+                <p>数量档的 lo / hi 按第 1 环填写。每个格子左侧是该环落入这一档所需的像素个数，右侧是告警颜色。实际个数 = 该档上下限 × 这个环的面积比 M，下限含所填的数。M = 本环面积 ÷ 第 1 环面积，面积 = π ×（外半径² − 内半径²）。像素数为 0 不入档；相邻数量档接不上的中间个数也不入档。</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tab: 实况趋势告警 -->
+      <div class="settings-tab-pane" id="settings-pane-trend-alert">
+        <div class="radar-settings-toolbar">
+          <button type="button" class="settings-btn-cancel" id="trend-alert-add-group">新增规则组</button>
+          <button type="button" class="settings-btn-cancel settings-restore-btn" data-group="trend_alert_config" data-msg="trend-alert-msg">恢复默认</button>
+          <span class="settings-hint">规则组计分规则：单个基础条件分值范围为 1.0–5.0 分，多个基础条件分值取平均值或最高值，附加条件分值范围为 0.1–3.0 分，对于多个附加条件，分值在最终基础分值上累加。</span>
+        </div>
+        <div class="settings-msg" id="trend-alert-msg"></div>
+        <div id="trend-alert-editor"></div>
+        <datalist id="trend-weather-list"></datalist>
+      </div>
+
+      <!-- Tab11: 地图样式 -->
+      <div class="settings-tab-pane" id="settings-pane-map-style">
+        <div class="settings-sheet">
+          <div class="radar-settings-toolbar">
+            <button type="button" class="settings-btn-save" id="map-style-save-btn">保存配置</button>
+            <span class="settings-hint">仅影响地图模式显示</span>
+          </div>
+          <div class="settings-msg" id="map-style-msg"></div>
+          <div class="settings-sheet-grid">
+            <section class="settings-sheet-card">
+              <div class="settings-sheet-title">配色方案</div>
+              <div id="ms-color-scheme-group" class="ms-scheme-group"></div>
+            </section>
+            <section class="settings-sheet-card">
+              <div class="settings-sheet-title">机场标记</div>
+              <div class="settings-inline-fields">
+                <label>内圆尺寸 <input type="number" id="ms-inner-size" class="settings-input" style="width:70px;" min="4" max="24"></label>
+                <label>外环尺寸 <input type="number" id="ms-outer-size" class="settings-input" style="width:70px;" min="8" max="32"></label>
+              </div>
+              <div class="settings-check-row">
+                <label class="settings-check"><input type="checkbox" id="ms-airport-labels"> 显示机场名称</label>
+              </div>
+              <div class="settings-hint">实况弹窗条件 → 告警色↔白闪；雷达告警 → 告警色↔白交替涟漪（固定规则）</div>
+            </section>
+            <section class="settings-sheet-card">
+              <div class="settings-sheet-title">中国视图</div>
+              <div class="settings-check-row">
+                <label class="settings-check"><input type="checkbox" id="ms-cn-province-borders"> 省界（虚线）</label>
+                <label class="settings-check"><input type="checkbox" id="ms-cn-province-labels"> 省名称</label>
+              </div>
+            </section>
+            <section class="settings-sheet-card">
+              <div class="settings-sheet-title">世界视图</div>
+              <div class="settings-check-row">
+                <label class="settings-check"><input type="checkbox" id="ms-world-admin1-borders"> 州/省级边界（虚线）</label>
+                <label class="settings-check"><input type="checkbox" id="ms-world-admin1-labels"> 州/省名称</label>
+              </div>
+            </section>
+            <section class="settings-sheet-card settings-sheet-card-wide">
+              <div class="settings-sheet-title">全局图层</div>
+              <div class="settings-check-row">
+                <label class="settings-check"><input type="checkbox" id="ms-country-borders"> 国界</label>
+                <label class="settings-check"><input type="checkbox" id="ms-country-labels"> 国家名称</label>
+                <label class="settings-check"><input type="checkbox" id="ms-rivers"> 河流</label>
+                <label class="settings-check"><input type="checkbox" id="ms-lakes"> 湖泊</label>
+              </div>
+              <div class="settings-hint">线宽：国界 &gt; 省界 &gt; 州/省级（代码固定）</div>
+            </section>
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-tab-pane" id="settings-pane-prefix-area">
+        <div class="settings-list-panel" style="border-right:0;">
+          <div class="settings-list-toolbar">
+            <button class="settings-btn-cancel" id="prefix-expand-all" type="button">全部展开</button>
+            <button class="settings-btn-cancel" id="prefix-collapse-all" type="button">全部收起</button>
+          </div>
+          <div class="settings-msg" id="prefix-msg"></div>
+          <div class="settings-list-scroll">
+            <div id="prefix-board" class="prefix-board"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-tab-pane" id="settings-pane-taf-import">
+        <div class="settings-msg" id="taf-msg"></div>
+        <div class="settings-split settings-split-overlay">
+          <div class="settings-list-panel">
+            <div class="settings-list-toolbar">
+              <button class="settings-add-btn" id="taf-add-btn" type="button">+ 新增配置</button>
+            </div>
+            <div class="settings-list-scroll">
+              <table class="settings-table settings-table-auto">
+                <thead><tr><th>四字代码</th><th>首份发布时间</th><th>间隔</th><th>延迟（分钟）</th><th>操作</th></tr></thead>
+                <tbody id="taf-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+          <div class="settings-form-panel" id="taf-form-panel" style="display:none;">
+            <h4 id="taf-form-title">预报入库告警</h4>
+            <div class="settings-form-scroll">
+              <div class="settings-form-row">
+                <label>机场四字代码</label>
+                <input type="text" id="tf-4code" maxlength="4" class="settings-input" style="text-transform:uppercase;">
+              </div>
+              <div class="settings-form-row">
+                <label>首份预报发布UTC整点</label>
+                <input type="number" id="tf-init" min="0" max="23" step="1" class="settings-input settings-input-sm">
+              </div>
+              <div class="settings-form-row">
+                <label>发布间隔</label>
+                <select id="tf-interval" class="settings-input settings-select">
+                  <option value="6">6小时</option>
+                  <option value="3">3小时</option>
+                </select>
+              </div>
+              <div class="settings-form-row">
+                <label>接收延迟（分钟） <span class="settings-hint">0–60</span></label>
+                <input type="number" id="tf-delay" min="0" max="60" step="1" class="settings-input settings-input-sm">
+              </div>
+              <div class="settings-form-actions">
+                <button class="settings-btn-save" id="taf-save-btn" type="button">保存</button>
+                <button class="settings-btn-cancel" id="taf-cancel-btn" type="button">取消</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div><!-- end settings-tab-body -->
+  </div>
+</div>
+
+<!-- 异常监控弹窗 -->
+<div id="monitor-modal" class="modal">
+  <div class="modal-content">
+    <span class="modal-close">&times;</span>
+    <div id="monitor-content">
+      <h3>异常监控</h3>
+      <p>异常信息内容待定</p>
+    </div>
+  </div>
+</div>
+
+<!-- 机场详情弹窗 -->
+<div id="airport-detail-modal" class="modal">
+  <div class="modal-content airport-detail-content">
+    <span class="modal-close">&times;</span>
+    <div id="airport-detail-content">
+      <!-- 第1行：机场代码和名称（居中） + 日出日落/跑道/联系方式（同一行，左右分布） -->
+      <div class="airport-detail-header airport-detail-header-main">
+        <div class="airport-title-center">
+          <h2 id="airport-title-code"></h2>
+          <div class="airport-title-name" id="airport-title-name"></div>
+        </div>
+        <div class="airport-info-row">
+          <div class="airport-info-left">
+            <div class="info-item">
+              <span class="info-label">日出:</span>
+              <span class="info-value" id="sunrise-time">--:--</span>
+            </div>
+            <div class="info-item">
+              <span class="info-label">日落:</span>
+              <span class="info-value" id="sunset-time">--:--</span>
+            </div>
+            <div class="info-item">
+              <span class="info-label">跑道:</span>
+              <span class="info-value" id="runway-info">--</span><span class="airport-detail-info-hint"
+                title="日出日落时间采用外网公开数据获取的机场坐标经过计算得到，跑道号为公开数据直接获取，以上数据仅做参考，如需详细资料请参考官方数据。" aria-label="说明">&#x24D8;</span>
+            </div>
+          </div>
+          <div class="airport-info-divider"></div>
+          <div class="airport-info-contacts">
+            <div class="contact-item">
+              <span class="contact-label">区号:</span>
+              <span class="contact-value" id="area-code">N/A</span>
+            </div>
+            <div class="contact-item">
+              <span class="contact-label">预报:</span>
+              <span class="contact-value" id="forecast-phone">N/A</span>
+            </div>
+            <div class="contact-item">
+              <span class="contact-label">观测:</span>
+              <span class="contact-value" id="observation-phone">N/A</span>
+            </div>
+            <div class="contact-item">
+              <span class="contact-label">其他:</span>
+              <span class="contact-value" id="other-phone">N/A</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 第2行：机场数据展示区域（复用主页布局） -->
+      <div class="airport-data-section">
+        <div id="airport-detail-plain-metar" class="plain-detail-metar-wrap" hidden></div>
+        <!-- 标题行区域 -->
+        <div class="title-row airport-detail-title-row">
+          <!-- 实况信息标题 -->
+          <div class="title-weather">
+            <span class="title-text">实况信息</span>
+          </div>
+
+          <!-- 时间轴 -->
+          <div class="title-timeline">
+            <!-- 北京时时间轴 -->
+            <div class="timeline-row beijing-time">
+              <div id="airport-detail-beijing-timeline" class="timeline-container"></div>
+            </div>
+            <!-- 世界时时间轴 -->
+            <div class="timeline-row utc-time">
+              <div id="airport-detail-utc-timeline" class="timeline-container"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 机场数据内容 -->
+        <div class="airport-detail-main" id="airport-detail-main">
+          <!-- 机场信息将通过JavaScript动态加载 -->
+        </div>
+      </div>
+
+      <!-- 实况/预报报文 -->
+      <div class="airport-reports-section">
+        <h3>实况/预报报文</h3>
+        <div class="reports-content">
+          <div class="report-group report-group-metar">
+            <div class="report-group-body" id="airport-metar-reports"></div>
+          </div>
+          <div class="report-group report-group-taf">
+            <div class="report-group-body" id="airport-taf-reports"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 图表区域：默认折叠，点击开关展开后才加载图表 -->
+      <div class="airport-chart-section collapsed" id="airport-chart-section">
+        <div class="chart-toggle-switch" onclick="toggleAirportChartSection()">
+          <span class="chart-toggle-switch-text" id="chart-toggle-switch-text">&gt;&gt; 点击展开实况趋势图表 &lt;&lt;</span>
+        </div>
+        <div class="airport-chart-body">
+          <div class="chart-time-selector-row">
+            <div class="chart-time-selector">
+              <div class="chart-time-radios">
+                <label class="chart-time-radio"><input type="radio" name="chart-time-detail" value="3"
+                    checked><span>3</span></label>
+                <label class="chart-time-radio"><input type="radio" name="chart-time-detail"
+                    value="6"><span>6</span></label>
+                <label class="chart-time-radio"><input type="radio" name="chart-time-detail"
+                    value="12"><span>12</span></label>
+                <label class="chart-time-radio"><input type="radio" name="chart-time-detail"
+                    value="24"><span>24</span></label>
+                <label class="chart-time-radio"><input type="radio" name="chart-time-detail"
+                    value="48"><span>48</span></label>
+                <label class="chart-time-radio"><input type="radio" name="chart-time-detail"
+                    value="72"><span>72</span></label>
+              </div>
+              <div class="chart-time-custom">
+                <input type="number" class="chart-time-input" id="chart-time-input-detail" placeholder="2-72小时" min="2"
+                  max="72">
+                <button class="chart-time-btn" onclick="applyCustomChartTimeForDetail()">确定</button>
+              </div>
+            </div>
+          </div>
+          <div class="airport-chart-container">
+            <div class="airport-chart" id="airport-detail-chart"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 机场搜索多结果弹窗（2个及以上四字代码时使用） -->
+<div id="airport-search-modal" class="modal">
+  <div class="modal-content airport-search-modal-content">
+    <span class="modal-close">&times;</span>
+    <div id="airport-search-container" class="airport-search-container">
+      <!-- 机场条目列表（动态生成，每个机场各自含时间轴） -->
+      <div id="airport-search-list" class="airport-search-list">
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 登录界面（仅current模式显示） -->
+<div id="login-modal" class="modal login-modal" style="display: none;">
+  <div class="modal-content login-content">
+    <div class="login-container">
+      <h3>请使用丰声扫码登录</h3>
+      <div class="qrcode-container" id="qrcode-container">
+        <img id="qrcode-image" src="" alt="二维码" style="width: 200px; height: auto;">
+      </div>
+      <div class="login-status" id="login-status">正在获取二维码...</div>
+    </div>
+  </div>
+</div>
+
+<!-- 登出确认弹窗 -->
+<div id="logout-confirm-modal" class="modal">
+  <div class="modal-content logout-confirm-content">
+    <h3>确认登出</h3>
+    <p>确认要登出系统吗？</p>
+    <div class="modal-actions">
+      <button class="action-btn" id="logout-confirm-btn">确认</button>
+      <button class="action-btn" id="logout-cancel-btn">取消</button>
+    </div>
+  </div>
+</div>
+
+<!-- 传递时间模式到前端 -->
+<script>
+  window.timeMode = 'current';
+  window.carriers = ["O3"];
+  window.chartDefaultHours = 3;
+  
+  window.staticUrl = '/static/';
+  
+</script>
+
+
+  <script src="/static/js/echarts.min.js"></script>
+  <script src="/static/js/access.js"></script>
+  <script src="/static/js/main_metar.js"></script>
+  <script src="/static/js/main_taf.js"></script>
+  <script src="/static/js/main_flight.js"></script>
+  <script src="/static/js/main.js"></script>
+  <script src="/static/js/settings.js"></script>
+  <script src="/static/js/trend_settings.js"></script>
+  
+
+<script src="/static/js/NWP.js"></script>
+<script src="/static/js/airport_detail.js"></script>
+<script src="/static/js/popup.js"></script>
+<script src="/static/js/import_alert.js"></script>
+<!-- 视图导航常驻；地图与中文模式脚本由导航按需注入 -->
+<script src="/static/js/views_nav.js"></script>
+<script>
+document.getElementById('help-btn').addEventListener('click', function () {
+  window.open('/static/docs/MTWS-System-Reference.pdf', '_blank');
+});
+</script>
+
+</body>
+
+</html>
