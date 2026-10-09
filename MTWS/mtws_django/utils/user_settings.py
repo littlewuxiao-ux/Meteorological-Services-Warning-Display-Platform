@@ -1,4 +1,4 @@
-"""按登录用户读取配置。没有个人行时用 default；test 单独一套，不回退。"""
+"""按登录用户读取配置。没有个人行时用 default。test 仍单独成套，但没有自己的行时同样读 default。"""
 
 import contextvars
 
@@ -113,7 +113,7 @@ def can_edit_template(request):
 
 def allow_restore(request, time_mode='current'):
     user, editing = settings_subject(request, time_mode)
-    return (not editing) and user not in (TEMPLATE, TEST)
+    return (not editing) and user != TEMPLATE
 
 
 def scope_meta(request, time_mode='current'):
@@ -125,7 +125,7 @@ def scope_meta(request, time_mode='current'):
 
 
 def _fallback(user_code):
-    return user_code not in (TEMPLATE, TEST)
+    return user_code != TEMPLATE
 
 
 def get_threshold_row(user_code, airport_4code):
@@ -257,7 +257,7 @@ def restore_group(user_code, group):
         RadarAlertConfig, TrendAlertConfig, WeatherAlertLevels,
     )
 
-    if user_code in (TEMPLATE, TEST):
+    if user_code == TEMPLATE:
         raise ValueError('这一组不能恢复默认')
     if group == 'airport_alert_thresholds':
         AirportAlertThresholds.objects.filter(

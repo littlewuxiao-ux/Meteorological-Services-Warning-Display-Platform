@@ -1180,8 +1180,19 @@ function positionMarksPastHandle(scope) {
     const tlRect = firstTl.getBoundingClientRect();
     const firstRect = rows[0].getBoundingClientRect();
     const lastRect = rows[rows.length - 1].getBoundingClientRect();
-    const top = firstRect.top;
-    const height = Math.max(36, lastRect.bottom - firstRect.top);
+    // 不得超过时间轴及以上：下限卡在内容区顶部（标题行底部），上滚时自动裁短
+    const hostTop = (() => {
+      const content = sc === 'home'
+        ? document.getElementById('content-main')
+        : sc === 'detail'
+          ? document.getElementById('airport-detail-main')
+          : (rows[0] && rows[0].closest('[id^="search-block-main-"]'));
+      const r = content ? content.getBoundingClientRect() : firstTl.getBoundingClientRect();
+      return r.top;
+    })();
+    const top = Math.max(firstRect.top, hostTop);
+    const bottom = Math.max(top, lastRect.bottom);
+    const height = Math.max(36, bottom - top);
     wrap.style.left = `${Math.round(tlRect.left)}px`;
     wrap.style.top = `${Math.round(top)}px`;
     wrap.style.height = `${Math.round(height)}px`;

@@ -353,6 +353,7 @@
 
 .trend-btn-edit,
 .trend-btn-save,
+.trend-btn-cancel,
 .trend-btn-delete {
   border: none;
   border-radius: 4px;
@@ -361,10 +362,12 @@
   font-size: 13px;
 }
 
-.trend-btn-edit { background: #e6b325; color: #2b2410; }
-.trend-btn-edit:hover { background: #d4a21c; }
-.trend-btn-save { background: #2e9e5b; color: #fff; }
+.trend-btn-edit { background: #2980b9; color: #fff; }
+.trend-btn-edit:hover { background: #2471a3; }
+.trend-btn-save { background: #27ae60; color: #fff; }
 .trend-btn-save:hover { background: #219d55; }
+.trend-btn-cancel { background: #5d6d7e; color: #fff; border: 1px solid #4a5866; }
+.trend-btn-cancel:hover { background: #4a5866; }
 .trend-btn-delete { background: #d64545; color: #fff; }
 .trend-btn-delete:hover { background: #c13333; }
 

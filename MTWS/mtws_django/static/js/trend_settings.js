@@ -404,7 +404,8 @@
             <label>名称 ${text(g, '', 'name', group.name, '规则名称')}</label>
             ${renderLocked
               ? `<button type="button" class="trend-btn-edit" data-action="edit-group" data-g="${g}">编辑</button>`
-              : `<button type="button" class="trend-btn-save" data-action="save-group" data-g="${g}">保存</button>`}
+              : `<button type="button" class="trend-btn-save" data-action="save-group" data-g="${g}">保存</button>
+                 <button type="button" class="trend-btn-cancel" data-action="cancel-group" data-g="${g}">取消</button>`}
             <button type="button" class="trend-btn-delete" data-action="del-group" data-g="${g}">删除规则组</button>
             <button type="button" class="trend-fold" data-action="toggle-fold" data-g="${g}" title="${collapsed ? '展开' : '折叠'}" aria-label="${collapsed ? '展开' : '折叠'}">
               <svg viewBox="0 0 16 16" width="14" height="14" class="${collapsed ? '' : 'is-open'}" aria-hidden="true"><path d="M6 3.2L11 8 6 12.8" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -471,6 +472,11 @@
     } else if (btn.dataset.action === 'save-group') {
       saveGroup(g);
       return;
+    } else if (btn.dataset.action === 'cancel-group') {
+      const saved = (savedConfig.groups || []).find((item) => item.id === group.id);
+      if (saved) config.groups[g] = JSON.parse(JSON.stringify(saved));
+      else { delete groupUi[group.id]; config.groups.splice(g, 1); render(); return; }
+      uiOf(group.id).editing = false;
     } else if (btn.dataset.action === 'del-group') {
       deleteGroup(g);
       return;

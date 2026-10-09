@@ -10,6 +10,7 @@
   let areaOptions = {};          // { '国内': [...], '国际': [...] }
   let airportEditCode = null;    // 正在编辑的机场四字代码，null=新增
   let airportCurrentCode = null; // 当前查询的四字代码
+  let airportViewData = null;    // 当前查询结果，取消编辑时回到这一行
   let settingsScope = '';
   let currentSettingsTab = 'airport-info';
 
@@ -36,6 +37,7 @@
     window.__settingsScope = '';
     const toggle = document.getElementById('settings-default-toggle');
     if (toggle) toggle.textContent = '编辑默认模板';
+    paintDefaultBanner();
     const modal = document.getElementById('settings-modal');
     if (modal && window.getComputedStyle(modal).display !== 'none') loadTab(currentSettingsTab);
   }
@@ -53,6 +55,7 @@
       toggle.style.display = unlocked ? '' : 'none';
       toggle.textContent = settingsScope === 'default' ? '返回我的设置' : '编辑默认模板';
     }
+    paintDefaultBanner();
     if (res && Object.prototype.hasOwnProperty.call(res, 'allow_restore')) {
       const allow = !!res.allow_restore;
       document.querySelectorAll('.settings-restore-btn').forEach((btn) => {
@@ -84,9 +87,20 @@
   function showMsg(elId, text, type) {
     const el = document.getElementById(elId);
     if (!el) return;
-    el.textContent = text;
-    el.className = 'settings-msg ' + (type || '');
-    if (text) setTimeout(() => { if (el.textContent === text) el.textContent = ''; }, 4000);
+    el.textContent = text || '';
+    el.className = 'settings-msg' + (text && type ? ' ' + type : '');
+    if (text) {
+      setTimeout(() => {
+        if (el.textContent !== text) return;
+        el.textContent = '';
+        el.className = 'settings-msg';
+      }, 4000);
+    }
+  }
+
+  function paintDefaultBanner() {
+    const banner = document.getElementById('settings-default-banner');
+    if (banner) banner.hidden = settingsScope !== 'default';
   }
 
   function escHtml(s) {
@@ -124,7 +138,7 @@
   // ========== Tab switching ==========
   function switchTab(tabName) {
     if (tabName !== currentSettingsTab && !confirmLeavePrefixEdit()) return Promise.resolve();
-    if (tabName === currentSettingsTab && prefixEditing) return Promise.resolve();
+    if (tabName === currentSettingsTab && prefixEditingId) return Promise.resolve();
     document.querySelectorAll('.settings-tab').forEach(t => t.classList.remove('active'));
     document.querySelectorAll('.settings-tab-pane').forEach(p => p.classList.remove('active'));
     const btn = document.querySelector(`.settings-tab[data-tab="${tabName}"]`);
@@ -161,30 +175,62 @@
     if (input) input.value = '';
     const area = document.getElementById('airport-result-area');
     if (area) area.innerHTML = '';
-    hideAirportForm();
+    airportViewData = null;
+    airportEditCode = null;
     airportCurrentCode = null;
   }
 
-  function renderAirportResult(a) {
+  function airportRecordRow(label, valueHtml) {
+    return `<div class="airport-record-row"><div class="airport-record-label">${label}</div><div class="airport-record-value">${valueHtml}</div></div>`;
+  }
+
+  function airportClassToggle(isIntl, locked) {
+    return `<label class="settings-toggle-label">
+      <input type="checkbox" id="af-classification-chk" class="settings-toggle-chk"${isIntl ? ' checked' : ''}${locked ? ' disabled' : ''}>
+      <span class="settings-toggle-track">
+        <span class="settings-toggle-side">国内</span>
+        <span class="settings-toggle-side">国际</span>
+        <span class="settings-toggle-thumb"></span>
+      </span>
+    </label>`;
+  }
+
+  function renderAirportCard(data, editing, presetCode) {
     const area = document.getElementById('airport-result-area');
     if (!area) return;
+    const val = (v) => (v == null ? '' : escHtml(v).replace(/"/g, '&quot;'));
+    const lock = editing ? '' : ' disabled';
+    const code = data ? data.airport_4code : (presetCode || '');
+    const classification = data ? (data.classification || '国内') : '国内';
+    const codeLocked = !editing || !!data || !!presetCode;
+    const input = (id, attrs, value) => `<input id="${id}" class="settings-input" ${attrs}${lock} value="${value}">`;
+    const actions = editing
+      ? `<button type="button" class="settings-save-inline-btn" id="airport-save-btn">保存</button>
+         <button type="button" class="settings-cancel-inline-btn" id="airport-cancel-btn">取消</button>`
+      : `<button type="button" class="settings-edit-btn" onclick="SettingsModal.editAirport('${escHtml(code)}')">编辑</button>
+         <button type="button" class="settings-del-btn" onclick="SettingsModal.deleteAirport('${escHtml(code)}')">删除</button>`;
     area.innerHTML = `
-      <table class="settings-table settings-table-auto loc-result-table">
-        <thead><tr><th>四字代码</th><th>名称</th><th>类别</th><th>区域</th><th>纬度</th><th>经度</th><th>三字代码</th><th>操作</th></tr></thead>
-        <tbody><tr>
-          <td>${escHtml(a.airport_4code)}</td>
-          <td>${escHtml(a.airport_name || '')}</td>
-          <td>${escHtml(a.classification || '')}</td>
-          <td>${escHtml(a.area || '')}</td>
-          <td>${a.latitude == null ? '' : a.latitude}</td>
-          <td>${a.longitude == null ? '' : a.longitude}</td>
-          <td>${escHtml(a.airport_3code || '')}</td>
-          <td>
-            <button class="settings-edit-btn" onclick="SettingsModal.editAirport('${escHtml(a.airport_4code)}')">编辑</button>
-            <button class="settings-del-btn" onclick="SettingsModal.deleteAirport('${escHtml(a.airport_4code)}')">删除</button>
-          </td>
-        </tr></tbody>
-      </table>`;
+      <div class="airport-record${editing ? ' is-editing' : ''}">
+        ${airportRecordRow('四字代码', `<input id="af-4code" class="settings-input" maxlength="4" style="text-transform:uppercase;" value="${val(code)}"${codeLocked ? ' disabled' : ''}>`)}
+        ${airportRecordRow('名称', input('af-name', 'maxlength="100" placeholder="可留空"', val(data && data.airport_name)))}
+        ${airportRecordRow('类别', airportClassToggle(classification === '国际', !editing))}
+        ${airportRecordRow('区域', `<select id="af-area" class="settings-input settings-select"${lock}></select>`)}
+        ${airportRecordRow('纬度', input('af-lat', 'type="number" step="any" placeholder="十进制度"', data && data.latitude != null ? data.latitude : ''))}
+        ${airportRecordRow('经度', input('af-lon', 'type="number" step="any" placeholder="十进制度"', data && data.longitude != null ? data.longitude : ''))}
+        ${airportRecordRow('三字代码', input('af-3code', 'maxlength="3" style="text-transform:uppercase;" placeholder="选填"', val(data && data.airport_3code)))}
+        ${airportRecordRow('区号', input('af-area-code', 'maxlength="10" placeholder="选填"', val(data && data.area_code)))}
+        ${airportRecordRow('预报电话', input('af-forecast-phone', 'maxlength="100" placeholder="选填"', val(data && data.forecast_phone)))}
+        ${airportRecordRow('观测电话', input('af-obs-phone', 'maxlength="100" placeholder="选填"', val(data && data.observation_phone)))}
+        ${airportRecordRow('其他联系方式', input('af-other-phone', 'maxlength="100" placeholder="选填"', val(data && data.other_phone)))}
+        <div class="airport-record-actions">${actions}</div>
+      </div>`;
+    updateAreaSelect(classification, data ? data.area : '');
+    const codeEl = document.getElementById('af-4code');
+    if (codeEl && !codeEl.disabled) codeEl.focus();
+  }
+
+  function renderAirportResult(a) {
+    renderAirportCard(a, false);
   }
 
   function renderAirportNotFound(code) {
@@ -207,19 +253,22 @@
       return;
     }
     airportCurrentCode = code;
-    hideAirportForm();
+    airportEditCode = null;
     const res = await apiFetch(apiUrl(`settings/airport-info/${code}/`));
     if (res.success && res.data) {
+      airportViewData = res.data;
       renderAirportResult(res.data);
       if (openForm) {
         airportEditCode = code;
         showAirportForm(res.data);
       }
     } else if (res && res.error && String(res.error).indexOf('未找到') !== 0) {
+      airportViewData = null;
       const area = document.getElementById('airport-result-area');
       if (area) area.innerHTML = '';
       showMsg('airport-msg', res.error, 'error');
     } else {
+      airportViewData = null;
       renderAirportNotFound(code);
       if (openForm) {
         airportEditCode = null;
@@ -244,38 +293,24 @@
 
   function updateAreaSelect(classification, current) {
     const sel = document.getElementById('af-area');
+    if (!sel) return;
     const areas = areaOptions[classification] || [];
     sel.innerHTML = '<option value="">请选择</option>' + areas.map(a => `<option value="${escHtml(a)}">${escHtml(a)}</option>`).join('');
     if (current) sel.value = current;
   }
 
   function showAirportForm(data, presetCode) {
-    const panel = document.getElementById('airport-form-panel');
-    panel.style.display = 'block';
-    document.getElementById('airport-form-title').textContent = data ? '编辑机场' : '新增机场';
-
-    const isEdit = !!data;
-    const codeEl = document.getElementById('af-4code');
-    codeEl.disabled = isEdit || !!presetCode;
-    codeEl.value = data ? data.airport_4code : (presetCode || '');
-    document.getElementById('af-3code').value = data ? (data.airport_3code || '') : '';
-    document.getElementById('af-name').value = data ? (data.airport_name || '') : '';
-    document.getElementById('af-lat').value = data && data.latitude != null ? data.latitude : '';
-    document.getElementById('af-lon').value = data && data.longitude != null ? data.longitude : '';
-    document.getElementById('af-area-code').value = data ? (data.area_code || '') : '';
-    document.getElementById('af-forecast-phone').value = data ? (data.forecast_phone || '') : '';
-    document.getElementById('af-obs-phone').value = data ? (data.observation_phone || '') : '';
-    document.getElementById('af-other-phone').value = data ? (data.other_phone || '') : '';
-
-    const classification = data ? (data.classification || '国内') : '国内';
-    const chk = document.getElementById('af-classification-chk');
-    chk.checked = classification === '国际';
-    updateAreaSelect(classification, data ? data.area : '');
+    renderAirportCard(data, true, presetCode);
   }
 
   function hideAirportForm() {
-    document.getElementById('airport-form-panel').style.display = 'none';
     airportEditCode = null;
+    if (airportViewData) renderAirportResult(airportViewData);
+    else if (airportCurrentCode) renderAirportNotFound(airportCurrentCode);
+    else {
+      const area = document.getElementById('airport-result-area');
+      if (area) area.innerHTML = '';
+    }
   }
 
   async function saveAirport() {
@@ -332,40 +367,94 @@
   }
 
   // ========== Tab3: 数据自动更新 ==========
+  let timerEditing = false;
+
+  function paintTimerMode() {
+    const pane = document.getElementById('settings-pane-data-refresh-timer');
+    const modeBtn = document.getElementById('timer-mode-btn');
+    const cancelBtn = document.getElementById('timer-cancel-btn');
+    if (pane) pane.classList.toggle('is-editing', timerEditing);
+    if (modeBtn) modeBtn.textContent = timerEditing ? '确定' : '编辑';
+    if (cancelBtn) cancelBtn.disabled = !timerEditing;
+    document.querySelectorAll('#timer-tbody .settings-timer-input').forEach((input) => {
+      input.disabled = !timerEditing;
+    });
+  }
+
   async function loadTimers() {
     const res = await apiFetch(apiUrl('settings/data-refresh-timer/'));
     applyScope(res);
     if (!res.success) { showMsg('timer-msg', res.error, 'error'); return; }
+    timerEditing = false;
     const tbody = document.getElementById('timer-tbody');
     tbody.innerHTML = res.data.map(t => `
-      <tr id="timer-row-${t.id}">
+      <tr id="timer-row-${t.id}" data-timer-id="${escHtml(t.id)}">
         <td>${escHtml(t.data_name)}</td>
-        <td><input type="number" class="settings-timer-input" id="timer-init-${t.id}" value="${t.init_time}" min="0" max="50" step="0.5"></td>
-        <td><input type="number" class="settings-timer-input" id="timer-interval-${t.id}" value="${t.interval}" min="0.5" max="30" step="0.5"></td>
-        <td><button class="settings-save-inline-btn" onclick="SettingsModal.saveTimer(${t.id})">保存</button></td>
+        <td><input type="number" class="settings-timer-input" id="timer-init-${t.id}" value="${t.init_time ?? ''}" min="0" max="50" step="0.5" disabled></td>
+        <td><input type="number" class="settings-timer-input" id="timer-interval-${t.id}" value="${t.interval ?? ''}" min="0.5" max="30" step="0.5" disabled></td>
       </tr>`).join('');
+    paintTimerMode();
+  }
+
+  function readTimerRow(id) {
+    const initVal = parseFloat(document.getElementById(`timer-init-${id}`).value);
+    const intervalVal = parseFloat(document.getElementById(`timer-interval-${id}`).value);
+    if (isNaN(initVal) || initVal < 0 || initVal > 50 || (initVal * 2) % 1 !== 0) {
+      return { error: '初始时间需为0–50之间0.5的倍数' };
+    }
+    if (isNaN(intervalVal) || intervalVal < 0.5 || intervalVal > 30 || (intervalVal * 2) % 1 !== 0) {
+      return { error: '更新间隔需为0.5–30之间0.5的倍数' };
+    }
+    return { init_time: initVal, interval: intervalVal };
   }
 
   async function saveTimer(id) {
-    const initVal = parseFloat(document.getElementById(`timer-init-${id}`).value);
-    const intervalVal = parseFloat(document.getElementById(`timer-interval-${id}`).value);
-
-    if (isNaN(initVal) || initVal < 0 || initVal > 50 || (initVal * 2) % 1 !== 0) {
-      showMsg('timer-msg', 'init_time 需为0–50之间0.5的倍数', 'error'); return;
-    }
-    if (isNaN(intervalVal) || intervalVal < 0.5 || intervalVal > 30 || (intervalVal * 2) % 1 !== 0) {
-      showMsg('timer-msg', 'interval 需为0.5–30之间0.5的倍数', 'error'); return;
-    }
-
-    const res = await apiFetch(apiUrl(`settings/data-refresh-timer/${id}/`), {
+    const row = readTimerRow(id);
+    if (row.error) return { success: false, error: row.error };
+    return apiFetch(apiUrl(`settings/data-refresh-timer/${id}/`), {
       method: 'PUT',
-      body: JSON.stringify({ init_time: initVal, interval: intervalVal })
+      body: JSON.stringify({ init_time: row.init_time, interval: row.interval })
     });
-    showMsg('timer-msg', res.success ? res.message : res.error, res.success ? 'success' : 'error');
+  }
+
+  async function saveAllTimers() {
+    const rows = [...document.querySelectorAll('#timer-tbody tr')];
+    for (const tr of rows) {
+      const res = await saveTimer(tr.dataset.timerId);
+      if (!res || !res.success) {
+        showMsg('timer-msg', (res && res.error) || '保存失败', 'error');
+        return;
+      }
+    }
+    timerEditing = false;
+    paintTimerMode();
+    showMsg('timer-msg', '保存成功', 'success');
+  }
+
+  function cancelTimerEdit() {
+    timerEditing = false;
+    loadTimers();
   }
 
   // ========== Tab4: 弹窗设置 ==========
   let opLevelTrack, parkLevelTrack;
+  let popupEditing = false;
+
+  function paintPopupMode() {
+    const pane = document.getElementById('settings-pane-popup');
+    const modeBtn = document.getElementById('popup-mode-btn');
+    const cancelBtn = document.getElementById('popup-cancel-btn');
+    if (pane) pane.classList.toggle('is-editing', popupEditing);
+    if (modeBtn) modeBtn.textContent = popupEditing ? '确定' : '编辑';
+    if (cancelBtn) cancelBtn.disabled = !popupEditing;
+    ['pf-leeway', 'pf-trace-time'].forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) el.disabled = !popupEditing;
+    });
+    document.querySelectorAll('#settings-pane-popup .settings-track').forEach((track) => {
+      track.classList.toggle('is-locked', !popupEditing);
+    });
+  }
 
   async function loadPopupSettings() {
     opLevelTrack = opLevelTrack || initTrack(document.getElementById('pf-op-level-track'));
@@ -374,11 +463,13 @@
     const res = await apiFetch(apiUrl('settings/popup/'));
     applyScope(res);
     if (!res.success) { showMsg('popup-msg', res.error, 'error'); return; }
+    popupEditing = false;
     const d = res.data;
     document.getElementById('pf-leeway').value = d.operation_metar_popup_leeway ?? 0;
     document.getElementById('pf-trace-time').value = d.trace_time ?? 6;
     opLevelTrack.setVal(d.operation_metar_popup_level || 'Y');
     parkLevelTrack.setVal(d.parking_metar_popup_level || 'Y');
+    paintPopupMode();
   }
 
   async function savePopupSettings() {
@@ -404,6 +495,8 @@
     });
 
     if (res.success) {
+      popupEditing = false;
+      paintPopupMode();
       showMsg('popup-msg', '保存成功', 'success');
       window.__popupTraceHours = traceTime;
     } else {
@@ -412,148 +505,315 @@
   }
 
   // ========== Tab6: 机场告警阈值 ==========
-  const TF_MAP = [
-    ['visibility_m_red','tf-vis-r'],['visibility_m_yellow','tf-vis-y'],['visibility_m_green','tf-vis-g'],
-    ['cloud_min_red','tf-cld-r'],['cloud_min_yellow','tf-cld-y'],['cloud_min_green','tf-cld-g'],
-    ['average_wind_speed_mps_red','tf-ws-r'],['average_wind_speed_mps_yellow','tf-ws-y'],['average_wind_speed_mps_green','tf-ws-g'],
-    ['gust_mps_red','tf-gs-r'],['gust_mps_yellow','tf-gs-y'],['gust_mps_green','tf-gs-g'],
-    ['temperature_cold_red','tf-tc-r'],['temperature_cold_yellow','tf-tc-y'],['temperature_cold_green','tf-tc-g'],
-    ['temperature_hot_red','tf-th-r'],['temperature_hot_yellow','tf-th-y'],['temperature_hot_green','tf-th-g'],
-    ['rvr_m_red','tf-rvr-r'],['rvr_m_yellow','tf-rvr-y'],['rvr_m_green','tf-rvr-g'],
+  const TF_FIELDS = [
+    ['能见度（米）', 'visibility_m_red', 'visibility_m_yellow', 'visibility_m_green', '0'],
+    ['云底高（百英尺）', 'cloud_min_red', 'cloud_min_yellow', 'cloud_min_green', '0'],
+    ['平均风速（米/秒）', 'average_wind_speed_mps_red', 'average_wind_speed_mps_yellow', 'average_wind_speed_mps_green', '0'],
+    ['阵风（米/秒）', 'gust_mps_red', 'gust_mps_yellow', 'gust_mps_green', '0'],
+    ['低温（℃）', 'temperature_cold_red', 'temperature_cold_yellow', 'temperature_cold_green', ''],
+    ['高温（℃）', 'temperature_hot_red', 'temperature_hot_yellow', 'temperature_hot_green', '0'],
+    ['跑道视程（米）', 'rvr_m_red', 'rvr_m_yellow', 'rvr_m_green', '0'],
   ];
-  let thresholdEditCode = null;
-  let thresholdReadonly = false;
+  let thresholdRecords = [];
+  let thresholdRemoved = [];
+  let thresholdEditing = false;
+  let thresholdUid = 1;
+
+  function paintThresholdMode() {
+    const pane = document.getElementById('settings-pane-alert-thresholds');
+    const modeBtn = document.getElementById('threshold-mode-btn');
+    const cancelBtn = document.getElementById('threshold-cancel-btn');
+    if (pane) pane.classList.toggle('is-editing', thresholdEditing);
+    if (modeBtn) modeBtn.textContent = thresholdEditing ? '保存' : '编辑';
+    if (cancelBtn) cancelBtn.disabled = !thresholdEditing;
+    document.querySelectorAll('#threshold-list .settings-threshold-input').forEach((el) => {
+      el.disabled = !thresholdEditing;
+    });
+    document.querySelectorAll('#threshold-list .threshold-code').forEach((el) => {
+      const card = el.closest('.threshold-card');
+      const isNew = card && card.dataset.thresholdNew === '1';
+      el.disabled = !thresholdEditing || !isNew;
+    });
+  }
+
+  function thresholdNum(value) {
+    return value == null || value === '' ? '' : value;
+  }
+
+  function renderThresholdBoard() {
+    const list = document.getElementById('threshold-list');
+    if (!list) return;
+    const lock = thresholdEditing ? '' : ' disabled';
+    const cell = (row, field, min) => `<input type="number" class="settings-threshold-input" data-threshold-field="${field}" ${min} step="1" value="${prefixAttr(thresholdNum(row[field]))}"${lock}>`;
+    const cloud = (row) => {
+      const current = row.min_cloud_amt || 'SCT';
+      return ['FEW', 'SCT', 'BKN', 'OVC'].map((item) => `<option value="${item}"${item === current ? ' selected' : ''}>${item}</option>`).join('');
+    };
+    list.innerHTML = thresholdRecords.map((row) => {
+      const generic = row.airport_4code === 'default';
+      const lines = [];
+      TF_FIELDS.forEach(([name, red, yellow, green, min], index) => {
+        const minAttr = min === '' ? '' : `min="${min}"`;
+        lines.push(`<tr><td>${name}</td><td>${cell(row, red, minAttr)}</td><td>${cell(row, yellow, minAttr)}</td><td>${cell(row, green, minAttr)}</td></tr>`);
+        if (index === 1) {
+          lines.push(`<tr class="threshold-note"><td colspan="4">云量下限 <select class="settings-threshold-input" data-threshold-field="min_cloud_amt"${lock}>${cloud(row)}</select></td></tr>`);
+        }
+      });
+      const codeValue = generic ? '通用' : (row.airport_4code || '');
+      const codeLock = (!thresholdEditing || !row.isNew) ? ' disabled' : '';
+      const del = generic ? '' : `<button class="settings-del-btn" type="button" data-threshold-delete="${prefixAttr(row.isNew ? row._local : row.airport_4code)}">删除</button>`;
+      return `<article class="threshold-card" data-threshold-code="${prefixAttr(row.isNew ? '' : row.airport_4code)}" data-threshold-new="${row.isNew ? '1' : '0'}" data-threshold-local="${prefixAttr(row._local || '')}">
+        <div class="threshold-card-head">
+          <input class="settings-input threshold-code" maxlength="4" value="${prefixAttr(codeValue)}"${codeLock}${row.isNew && prefixFocus === row._local ? ' data-prefix-focus="1"' : ''}>
+          <span>${del}</span>
+        </div>
+        <table class="settings-table threshold-vert">
+          <thead><tr><th>要素</th><th class="th-r">红</th><th class="th-y">黄</th><th class="th-g">绿</th></tr></thead>
+          <tbody>${lines.join('')}</tbody>
+        </table>
+      </article>`;
+    }).join('');
+    paintThresholdMode();
+    const focusEl = list.querySelector('[data-prefix-focus]');
+    if (focusEl) focusEl.focus();
+  }
 
   async function loadAlertThresholds() {
     const res = await apiFetch(apiUrl('settings/alert-thresholds/'));
     applyScope(res);
     if (!res.success) { showMsg('threshold-msg', res.error, 'error'); return; }
-    const tbody = document.getElementById('threshold-tbody');
-    tbody.innerHTML = res.data.map(r => {
-      const isGeneric = r.airport_4code === 'default';
-      const ops = isGeneric
-        ? `<button class="settings-edit-btn" onclick="SettingsModal.editThreshold('default')">编辑</button>`
-        : `<button class="settings-edit-btn" onclick="SettingsModal.editThreshold('${r.airport_4code}')">编辑</button>
-           <button class="settings-del-btn" onclick="SettingsModal.deleteThreshold('${r.airport_4code}')">删除</button>`;
-      const fmt = (a,b,c) => `${a??'–'}/${b??'–'}/${c??'–'}`;
-      return `<tr>
-        <td>${escHtml(r.label || r.airport_4code)}</td>
-        <td>${fmt(r.visibility_m_red,r.visibility_m_yellow,r.visibility_m_green)}</td>
-        <td>${fmt(r.cloud_min_red,r.cloud_min_yellow,r.cloud_min_green)}</td>
-        <td>${escHtml(r.min_cloud_amt || 'SCT')}</td>
-        <td>${fmt(r.average_wind_speed_mps_red,r.average_wind_speed_mps_yellow,r.average_wind_speed_mps_green)}</td>
-        <td>${fmt(r.gust_mps_red,r.gust_mps_yellow,r.gust_mps_green)}</td>
-        <td>${fmt(r.temperature_cold_red,r.temperature_cold_yellow,r.temperature_cold_green)}</td>
-        <td>${fmt(r.temperature_hot_red,r.temperature_hot_yellow,r.temperature_hot_green)}</td>
-        <td>${fmt(r.rvr_m_red,r.rvr_m_yellow,r.rvr_m_green)}</td>
-        <td>${ops}</td>
-      </tr>`;
-    }).join('');
-    hideThresholdForm();
+    thresholdEditing = false;
+    thresholdRemoved = [];
+    thresholdRecords = (res.data || []).map((row) => Object.assign({ isNew: false }, row));
+    renderThresholdBoard();
   }
 
-  function showThresholdForm(data, readonly) {
-    thresholdReadonly = !!readonly;
-    const panel = document.getElementById('threshold-form-panel');
-    panel.style.display = 'flex'; panel.style.flexDirection = 'column';
-    const generic = !!(data && data.airport_4code === 'default');
-    document.getElementById('threshold-form-title').textContent =
-      thresholdReadonly ? '查看告警阈值（只读）' : (generic ? '编辑通用告警阈值' : (data ? '编辑告警阈值' : '新增告警阈值'));
-    const codeEl = document.getElementById('tf-4code');
-    codeEl.disabled = thresholdReadonly || !!data;
-    codeEl.value = generic ? '通用' : (data ? data.airport_4code : '');
-    TF_MAP.forEach(([field, id]) => {
-      const el = document.getElementById(id);
-      if (el) { el.value = data ? (data[field] ?? '') : ''; el.disabled = thresholdReadonly; }
+  function readThresholdDom() {
+    return [...document.querySelectorAll('#threshold-list .threshold-card')].map((card) => {
+      const isNew = card.dataset.thresholdNew === '1';
+      const codeInput = card.querySelector('.threshold-code');
+      const item = {
+        isNew,
+        original: card.dataset.thresholdCode || '',
+        _local: card.dataset.thresholdLocal || '',
+        airport_4code: isNew ? (codeInput ? codeInput.value.trim().toUpperCase() : '') : (card.dataset.thresholdCode || ''),
+        min_cloud_amt: 'SCT',
+      };
+      card.querySelectorAll('[data-threshold-field]').forEach((el) => {
+        item[el.dataset.thresholdField] = el.value;
+      });
+      return item;
     });
-    const amtEl = document.getElementById('tf-min-cloud-amt');
-    if (amtEl) {
-      amtEl.value = (data && data.min_cloud_amt) ? data.min_cloud_amt : 'SCT';
-      amtEl.disabled = thresholdReadonly;
-    }
-    document.getElementById('threshold-save-btn').style.display = thresholdReadonly ? 'none' : '';
-    document.getElementById('threshold-cancel-btn').textContent = thresholdReadonly ? '关闭' : '取消';
-  }
-  function hideThresholdForm() {
-    document.getElementById('threshold-form-panel').style.display = 'none';
-    thresholdEditCode = null;
-    thresholdReadonly = false;
-    TF_MAP.forEach(([, id]) => { const el = document.getElementById(id); if (el) el.disabled = false; });
-    const amtEl = document.getElementById('tf-min-cloud-amt');
-    if (amtEl) amtEl.disabled = false;
-    document.getElementById('threshold-save-btn').style.display = '';
-    document.getElementById('threshold-cancel-btn').textContent = '取消';
   }
 
-  async function saveThreshold() {
-    const code = document.getElementById('tf-4code').value.trim().toUpperCase();
-    if (!thresholdEditCode && (code.length !== 4 || !/^[A-Z]{4}$/.test(code))) {
-      showMsg('threshold-msg', '机场四字代码必须为4位英文大写字母', 'error'); return;
+  function addThresholdCard() {
+    if (thresholdEditing) thresholdRecords = readThresholdDom();
+    thresholdEditing = true;
+    const generic = thresholdRecords.find((row) => (row.original || row.airport_4code) === 'default') || {};
+    thresholdUid += 1;
+    const row = Object.assign({}, generic, {
+      airport_4code: '',
+      isNew: true,
+      original: '',
+      label: '',
+      _local: 'th' + thresholdUid,
+      min_cloud_amt: generic.min_cloud_amt || 'SCT',
+    });
+    thresholdRecords.push(row);
+    prefixFocus = row._local;
+    renderThresholdBoard();
+    prefixFocus = '';
+  }
+
+  async function deleteThresholdCard(key) {
+    if (!thresholdEditing) {
+      if (!key || key === 'default') return;
+      if (!confirm(`确定删除 ${key} 的告警阈值？`)) return;
+      const res = await apiFetch(apiUrl(`settings/alert-thresholds/${key}/`), { method: 'DELETE' });
+      showMsg('threshold-msg', res.success ? (res.message || '已删除') : (res.error || '删除失败'), res.success ? 'success' : 'error');
+      if (res.success) await loadAlertThresholds();
+      return;
     }
-    const payload = { airport_4code: code };
-    for (const [field, id] of TF_MAP) {
-      const val = document.getElementById(id).value;
-      if (val === '' || isNaN(val)) { showMsg('threshold-msg', `${field} 为必填数字`, 'error'); return; }
-      payload[field] = parseInt(val);
+    thresholdRecords = readThresholdDom();
+    const index = thresholdRecords.findIndex((row) => (row.isNew ? row._local : row.airport_4code) === key);
+    if (index < 0) return;
+    const row = thresholdRecords[index];
+    if (row.airport_4code === 'default' || row.original === 'default') return;
+    const label = row.isNew ? '这条新增阈值' : row.airport_4code;
+    if (!confirm(`确定删除 ${label}？`)) return;
+    if (!row.isNew && row.original) thresholdRemoved.push(row.original);
+    thresholdRecords.splice(index, 1);
+    renderThresholdBoard();
+  }
+
+  async function saveAllThresholds() {
+    const rows = readThresholdDom();
+    for (const row of rows) {
+      if (row.isNew && (row.airport_4code.length !== 4 || !/^[A-Z]{4}$/.test(row.airport_4code))) {
+        showMsg('threshold-msg', '机场四字代码必须为4位英文大写字母', 'error');
+        return;
+      }
+      if (!['FEW', 'SCT', 'BKN', 'OVC'].includes(row.min_cloud_amt)) {
+        showMsg('threshold-msg', '云量下限只能是 FEW、SCT、BKN、OVC', 'error');
+        return;
+      }
+      for (const [, red, yellow, green] of TF_FIELDS) {
+        for (const field of [red, yellow, green]) {
+          if (row[field] === '' || Number.isNaN(Number(row[field]))) {
+            showMsg('threshold-msg', '阈值须为数字', 'error');
+            return;
+          }
+        }
+      }
     }
-    const minCloudAmt = document.getElementById('tf-min-cloud-amt').value;
-    if (!['FEW', 'SCT', 'BKN', 'OVC'].includes(minCloudAmt)) {
-      showMsg('threshold-msg', '云量下限只能是 FEW、SCT、BKN、OVC', 'error'); return;
+    const modeBtn = document.getElementById('threshold-mode-btn');
+    if (modeBtn) modeBtn.disabled = true;
+    for (const code of thresholdRemoved) {
+      const res = await apiFetch(apiUrl(`settings/alert-thresholds/${code}/`), { method: 'DELETE' });
+      if (!res.success) {
+        if (modeBtn) modeBtn.disabled = false;
+        showMsg('threshold-msg', res.error || '删除失败', 'error');
+        return;
+      }
     }
-    payload.min_cloud_amt = minCloudAmt;
-    const isEdit = !!thresholdEditCode;
-    const url = isEdit ? apiUrl(`settings/alert-thresholds/${thresholdEditCode}/`) : apiUrl('settings/alert-thresholds/');
-    const res = await apiFetch(url, { method: isEdit ? 'PUT' : 'POST', body: JSON.stringify(payload) });
-    if (res.success) { showMsg('threshold-msg', res.message, 'success'); await loadAlertThresholds(); }
-    else showMsg('threshold-msg', res.error, 'error');
+    for (const row of rows) {
+      const payload = { airport_4code: row.original === 'default' ? 'default' : row.airport_4code, min_cloud_amt: row.min_cloud_amt };
+      TF_FIELDS.forEach(([, red, yellow, green]) => {
+        [red, yellow, green].forEach((field) => { payload[field] = parseInt(row[field], 10); });
+      });
+      const url = row.isNew
+        ? apiUrl('settings/alert-thresholds/')
+        : apiUrl(`settings/alert-thresholds/${row.original}/`);
+      const res = await apiFetch(url, { method: row.isNew ? 'POST' : 'PUT', body: JSON.stringify(payload) });
+      if (!res.success) {
+        if (modeBtn) modeBtn.disabled = false;
+        showMsg('threshold-msg', res.error || '保存失败', 'error');
+        return;
+      }
+    }
+    if (modeBtn) modeBtn.disabled = false;
+    showMsg('threshold-msg', '保存成功', 'success');
+    await loadAlertThresholds();
   }
 
   // ========== Tab7: 天气类型信息 ==========
-  let wtypeEditId = null;
+  let wtypeRows = [];
+  let wtypeRemoved = [];
+  let wtypeEditing = false;
+  let wtypeUid = 1;
+
+  function paintWTypeMode() {
+    const pane = document.getElementById('settings-pane-weather-type');
+    const modeBtn = document.getElementById('wtype-mode-btn');
+    const cancelBtn = document.getElementById('wtype-cancel-btn');
+    if (pane) pane.classList.toggle('is-editing', wtypeEditing);
+    if (modeBtn) modeBtn.textContent = wtypeEditing ? '保存' : '编辑';
+    if (cancelBtn) cancelBtn.disabled = !wtypeEditing;
+    document.querySelectorAll('#wtype-tbody .wtype-input').forEach((el) => {
+      el.disabled = !wtypeEditing;
+    });
+  }
+
+  function renderWeatherType() {
+    const tbody = document.getElementById('wtype-tbody');
+    if (!tbody) return;
+    const lock = wtypeEditing ? '' : ' disabled';
+    tbody.innerHTML = wtypeRows.map((row) => {
+      const key = row.id != null ? String(row.id) : (row._local || '');
+      const idAttr = row.id != null
+        ? ` data-wtype-id="${row.id}"`
+        : ` data-wtype-local="${prefixAttr(row._local || '')}"`;
+      return `<tr${idAttr}>
+        <td><input class="settings-input wtype-input wtype-code" maxlength="1" value="${prefixAttr(row.weather_type_code || '')}"${lock}></td>
+        <td><input class="settings-input wtype-input wtype-cn" maxlength="10" value="${prefixAttr(row.description_cn || '')}"${lock}></td>
+        <td><input class="settings-input wtype-input wtype-en" maxlength="20" value="${prefixAttr(row.description_en || '')}"${lock}></td>
+        <td><button class="settings-del-btn wtype-del" type="button" data-wtype-delete="${prefixAttr(key)}">删除</button></td>
+      </tr>`;
+    }).join('');
+    paintWTypeMode();
+    const focusEl = tbody.querySelector('[data-prefix-focus]');
+    if (focusEl) focusEl.focus();
+  }
 
   async function loadWeatherType() {
     const res = await apiFetch(apiUrl('settings/weather-type/'));
     if (!res.success) { showMsg('wtype-msg', res.error, 'error'); return; }
-    const tbody = document.getElementById('wtype-tbody');
-    tbody.innerHTML = res.data.map(r => `
-      <tr>
-        <td>${escHtml(r.weather_type_code)}</td>
-        <td>${escHtml(r.description_cn)}</td>
-        <td>${escHtml(r.description_en)}</td>
-        <td>
-          <button class="settings-edit-btn" onclick="SettingsModal.editWeatherType(${r.id})">编辑</button>
-          <button class="settings-del-btn" onclick="SettingsModal.deleteWeatherType(${r.id})">删除</button>
-        </td>
-      </tr>`).join('');
-    hideWTypeForm();
+    wtypeEditing = false;
+    wtypeRemoved = [];
+    wtypeRows = res.data || [];
+    renderWeatherType();
   }
 
-  function showWTypeForm(data) {
-    const panel = document.getElementById('wtype-form-panel');
-    panel.style.display = 'flex'; panel.style.flexDirection = 'column';
-    document.getElementById('wtype-form-title').textContent = data ? '编辑天气类型' : '新增天气类型';
-    document.getElementById('wtf-code').value = data ? (data.weather_type_code || '') : '';
-    document.getElementById('wtf-cn').value = data ? (data.description_cn || '') : '';
-    document.getElementById('wtf-en').value = data ? (data.description_en || '') : '';
-  }
-  function hideWTypeForm() {
-    document.getElementById('wtype-form-panel').style.display = 'none';
-    wtypeEditId = null;
+  function readWTypeDom() {
+    return [...document.querySelectorAll('#wtype-tbody tr')].map((tr) => ({
+      id: tr.dataset.wtypeId ? Number(tr.dataset.wtypeId) : null,
+      _local: tr.dataset.wtypeLocal || '',
+      weather_type_code: tr.querySelector('.wtype-code').value.trim(),
+      description_cn: tr.querySelector('.wtype-cn').value.trim(),
+      description_en: tr.querySelector('.wtype-en').value.trim(),
+    }));
   }
 
-  async function saveWeatherType() {
-    const code = document.getElementById('wtf-code').value.trim();
-    const cn = document.getElementById('wtf-cn').value.trim();
-    const en = document.getElementById('wtf-en').value.trim();
-    if (!code || code.length !== 1) { showMsg('wtype-msg', '天气类型代码必须为1位字符', 'error'); return; }
-    if (!cn) { showMsg('wtype-msg', '中文说明为必填项', 'error'); return; }
-    if (!en) { showMsg('wtype-msg', '英文说明为必填项', 'error'); return; }
-    const payload = { weather_type_code: code, description_cn: cn, description_en: en };
-    const isEdit = wtypeEditId !== null;
-    const url = isEdit ? apiUrl(`settings/weather-type/${wtypeEditId}/`) : apiUrl('settings/weather-type/');
-    const res = await apiFetch(url, { method: isEdit ? 'PUT' : 'POST', body: JSON.stringify(payload) });
-    if (res.success) { showMsg('wtype-msg', res.message, 'success'); await loadWeatherType(); }
-    else showMsg('wtype-msg', res.error, 'error');
+  function addWeatherTypeRow() {
+    if (wtypeEditing) wtypeRows = readWTypeDom();
+    wtypeEditing = true;
+    wtypeUid += 1;
+    const row = { _local: 'wt' + wtypeUid, weather_type_code: '', description_cn: '', description_en: '' };
+    wtypeRows.push(row);
+    renderWeatherType();
+    const last = document.querySelector('#wtype-tbody tr:last-child .wtype-code');
+    if (last) last.focus();
+  }
+
+  function deleteWeatherTypeRow(key) {
+    if (!wtypeEditing) return;
+    wtypeRows = readWTypeDom();
+    const index = wtypeRows.findIndex((row) => String(row.id != null ? row.id : row._local) === String(key));
+    if (index < 0) return;
+    if (!confirm('确定删除该天气类型？')) return;
+    const row = wtypeRows[index];
+    if (row.id != null) wtypeRemoved.push(row.id);
+    wtypeRows.splice(index, 1);
+    renderWeatherType();
+  }
+
+  async function saveAllWeatherTypes() {
+    const rows = readWTypeDom();
+    for (const row of rows) {
+      if (!row.weather_type_code || row.weather_type_code.length !== 1) {
+        showMsg('wtype-msg', '天气类型代码必须为1位字符', 'error');
+        return;
+      }
+      if (!row.description_cn) { showMsg('wtype-msg', '中文说明为必填项', 'error'); return; }
+      if (!row.description_en) { showMsg('wtype-msg', '英文说明为必填项', 'error'); return; }
+    }
+    const modeBtn = document.getElementById('wtype-mode-btn');
+    if (modeBtn) modeBtn.disabled = true;
+    for (const id of wtypeRemoved) {
+      const res = await apiFetch(apiUrl(`settings/weather-type/${id}/`), { method: 'DELETE' });
+      if (!res.success) {
+        if (modeBtn) modeBtn.disabled = false;
+        showMsg('wtype-msg', res.error || '删除失败', 'error');
+        return;
+      }
+    }
+    for (const row of rows) {
+      const payload = {
+        weather_type_code: row.weather_type_code,
+        description_cn: row.description_cn,
+        description_en: row.description_en,
+      };
+      const url = row.id != null ? apiUrl(`settings/weather-type/${row.id}/`) : apiUrl('settings/weather-type/');
+      const res = await apiFetch(url, { method: row.id != null ? 'PUT' : 'POST', body: JSON.stringify(payload) });
+      if (!res.success) {
+        if (modeBtn) modeBtn.disabled = false;
+        showMsg('wtype-msg', res.error || '保存失败', 'error');
+        return;
+      }
+    }
+    if (modeBtn) modeBtn.disabled = false;
+    showMsg('wtype-msg', '保存成功', 'success');
+    await loadWeatherType();
   }
 
   // ========== Tab8: 天气现象告警等级 ==========
@@ -594,7 +854,7 @@
   function showWAlertForm(data) {
     const panel = document.getElementById('walert-form-panel');
     panel.style.display = 'flex'; panel.style.flexDirection = 'column';
-    document.getElementById('walert-form-title').textContent = data ? '编辑天气告警等级' : '新增天气告警等级';
+    document.getElementById('walert-form-title').textContent = data ? '编辑天气现象' : '新增天气现象';
     document.getElementById('waf-weather').value = data ? (data.weather || '') : '';
     if (walertLevelTrack) walertLevelTrack.setVal(data ? (data.alert_level || 'R') : 'R');
     ['waf-type1','waf-type2','waf-type3'].forEach((id, i) => {
@@ -628,13 +888,37 @@
 
   // ========== 雷达告警 ==========
   let _radarCfg = null;
+  let radarEditing = false;
+
+  function paintRadarMode() {
+    const pane = document.getElementById('settings-pane-radar-alert');
+    const modeBtn = document.getElementById('radar-save-btn');
+    const cancelBtn = document.getElementById('radar-cancel-btn');
+    if (pane) pane.classList.toggle('is-editing', radarEditing);
+    if (modeBtn) modeBtn.textContent = radarEditing ? '保存' : '编辑';
+    if (cancelBtn) cancelBtn.disabled = !radarEditing;
+    document.querySelectorAll('#settings-pane-radar-alert input, #settings-pane-radar-alert select').forEach((el) => {
+      if (el.id === 'radar-save-btn' || el.id === 'radar-cancel-btn' || el.id === 'radar-rebuild-btn') return;
+      if (el.closest('.settings-restore-btn')) return;
+      el.disabled = !radarEditing;
+    });
+    document.querySelectorAll('.radar-add-bin-btn, #radar-add-ring-btn').forEach((b) => { b.disabled = !radarEditing; });
+  }
+
+  function cancelRadarEdit() {
+    radarEditing = false;
+    if (_radarCfg) fillRadarForm(_radarCfg);
+    paintRadarMode();
+  }
 
   async function loadRadarAlertSettings() {
     const res = await apiFetch(apiUrl('radar/config/'));
     applyScope(res);
     if (!res.success) { showMsg('radar-msg', res.error || '加载失败', 'error'); return; }
     _radarCfg = res.config;
+    radarEditing = false;
     fillRadarForm(_radarCfg);
+    paintRadarMode();
     pollRadarStatusOnce();
   }
 
@@ -1110,7 +1394,9 @@
       });
       if (!res.success) { showMsg('radar-msg', res.error || '保存失败', 'error'); return; }
       _radarCfg = res.config;
+      radarEditing = false;
       fillRadarForm(res.config);
+      paintRadarMode();
       showMsg('radar-msg', '已保存', 'success');
     } catch (e) {
       showMsg('radar-msg', e.message, 'error');
@@ -1251,6 +1537,11 @@
     document.querySelectorAll('.settings-tab').forEach(btn => {
       btn.addEventListener('click', () => switchTab(btn.dataset.tab));
     });
+    document.querySelectorAll('.settings-group-tab').forEach(btn => {
+      btn.addEventListener('click', () => {
+        selectSettingsGroup(btn.dataset.group, true);
+      });
+    });
 
     // 关闭按钮
     document.getElementById('settings-modal-close').addEventListener('click', () => {
@@ -1306,6 +1597,7 @@
         settingsScope = settingsScope === 'default' ? '' : 'default';
         window.__settingsScope = settingsScope;
         scopeToggle.textContent = settingsScope === 'default' ? '返回我的设置' : '编辑默认模板';
+        paintDefaultBanner();
         await loadTab(currentSettingsTab);
       });
     }
@@ -1327,11 +1619,16 @@
       });
     });
 
-    // classification联动 area select (机场信息Tab)
-    const afClassChk = document.getElementById('af-classification-chk');
-    if (afClassChk) {
-      afClassChk.addEventListener('change', () => {
-        updateAreaSelect(afClassChk.checked ? '国际' : '国内', document.getElementById('af-area').value);
+    const airportResult = document.getElementById('airport-result-area');
+    if (airportResult) {
+      airportResult.addEventListener('change', (event) => {
+        if (event.target.id !== 'af-classification-chk') return;
+        const areaSel = document.getElementById('af-area');
+        updateAreaSelect(event.target.checked ? '国际' : '国内', areaSel ? areaSel.value : '');
+      });
+      airportResult.addEventListener('click', (event) => {
+        if (event.target.closest('#airport-save-btn')) saveAirport();
+        if (event.target.closest('#airport-cancel-btn')) hideAirportForm();
       });
     }
 
@@ -1342,16 +1639,38 @@
     }
     const airportSearchBtn = document.getElementById('airport-search-btn');
     if (airportSearchBtn) airportSearchBtn.addEventListener('click', () => searchAirport());
-    document.getElementById('airport-save-btn').addEventListener('click', saveAirport);
-    const prefixEditBtn = document.getElementById('prefix-edit-btn');
-    if (prefixEditBtn) prefixEditBtn.addEventListener('click', beginPrefixEdit);
-    const prefixSave = document.getElementById('prefix-save-btn');
-    if (prefixSave) prefixSave.addEventListener('click', savePrefixSheet);
-    const prefixCancel = document.getElementById('prefix-cancel-btn');
-    if (prefixCancel) prefixCancel.addEventListener('click', cancelPrefixEdit);
-    const prefixBody = document.getElementById('prefix-tbody');
-    if (prefixBody) {
-      prefixBody.addEventListener('click', (event) => {
+    const airportAddBtn = document.getElementById('airport-add-btn');
+    if (airportAddBtn) airportAddBtn.addEventListener('click', () => {
+      airportEditCode = null; airportViewData = null; airportCurrentCode = null;
+      showAirportForm(null, '');
+    });
+    const prefixExpandAll = document.getElementById('prefix-expand-all');
+    if (prefixExpandAll) prefixExpandAll.addEventListener('click', () => setAllPrefixRegions(false));
+    const prefixCollapseAll = document.getElementById('prefix-collapse-all');
+    if (prefixCollapseAll) prefixCollapseAll.addEventListener('click', () => setAllPrefixRegions(true));
+    const prefixBoard = document.getElementById('prefix-board');
+    if (prefixBoard) {
+      prefixBoard.addEventListener('click', (event) => {
+        const fold = event.target.closest('[data-prefix-fold]');
+        if (fold) {
+          const id = fold.dataset.prefixFold;
+          if (prefixCollapsed.has(id)) prefixCollapsed.delete(id);
+          else prefixCollapsed.add(id);
+          renderPrefixTable();
+          return;
+        }
+        const mode = event.target.closest('[data-prefix-mode]');
+        if (mode) {
+          const id = mode.dataset.prefixMode;
+          if (prefixEditingId === id) savePrefixRegion(id);
+          else beginPrefixEdit(id);
+          return;
+        }
+        const cancel = event.target.closest('[data-prefix-cancel]');
+        if (cancel) {
+          cancelPrefixRegion(cancel.dataset.prefixCancel);
+          return;
+        }
         const del = event.target.closest('[data-prefix-delete]');
         if (del) {
           deletePrefixLine(del.dataset.region, del.dataset.prefixDelete);
@@ -1370,20 +1689,76 @@
     if (tafAdd) tafAdd.addEventListener('click', () => showTafForm(null));
     const tafSave = document.getElementById('taf-save-btn');
     if (tafSave) tafSave.addEventListener('click', saveTafImport);
-    document.getElementById('airport-cancel-btn').addEventListener('click', hideAirportForm);
+    const tafCancel = document.getElementById('taf-cancel-btn');
+    if (tafCancel) tafCancel.addEventListener('click', () => {
+      document.getElementById('taf-form-panel').style.display = 'none';
+      tafEditCode = null;
+    });
 
-    // 弹窗设置保存
-    document.getElementById('popup-save-btn').addEventListener('click', savePopupSettings);
+    const timerMode = document.getElementById('timer-mode-btn');
+    if (timerMode) {
+      timerMode.addEventListener('click', () => {
+        if (!timerEditing) {
+          timerEditing = true;
+          paintTimerMode();
+          return;
+        }
+        saveAllTimers();
+      });
+    }
+    const timerCancel = document.getElementById('timer-cancel-btn');
+    if (timerCancel) timerCancel.addEventListener('click', cancelTimerEdit);
+    const popupMode = document.getElementById('popup-mode-btn');
+    if (popupMode) {
+      popupMode.addEventListener('click', () => {
+        if (!popupEditing) {
+          popupEditing = true;
+          paintPopupMode();
+          return;
+        }
+        savePopupSettings();
+      });
+    }
+    const popupCancel = document.getElementById('popup-cancel-btn');
+    if (popupCancel) popupCancel.addEventListener('click', () => loadPopupSettings());
 
     // 告警阈值
-    document.getElementById('threshold-add-btn').addEventListener('click', () => { thresholdEditCode = null; showThresholdForm(null); });
-    document.getElementById('threshold-save-btn').addEventListener('click', saveThreshold);
-    document.getElementById('threshold-cancel-btn').addEventListener('click', hideThresholdForm);
+    document.getElementById('threshold-add-btn').addEventListener('click', addThresholdCard);
+    document.getElementById('threshold-mode-btn').addEventListener('click', () => {
+      if (!thresholdEditing) {
+        thresholdEditing = true;
+        paintThresholdMode();
+        return;
+      }
+      saveAllThresholds();
+    });
+    document.getElementById('threshold-cancel-btn').addEventListener('click', () => loadAlertThresholds());
+    const thresholdList = document.getElementById('threshold-list');
+    if (thresholdList) {
+      thresholdList.addEventListener('click', (event) => {
+        const del = event.target.closest('[data-threshold-delete]');
+        if (del) deleteThresholdCard(del.dataset.thresholdDelete);
+      });
+    }
 
     // 天气类型
-    document.getElementById('wtype-add-btn').addEventListener('click', () => { wtypeEditId = null; showWTypeForm(null); });
-    document.getElementById('wtype-save-btn').addEventListener('click', saveWeatherType);
-    document.getElementById('wtype-cancel-btn').addEventListener('click', hideWTypeForm);
+    document.getElementById('wtype-add-btn').addEventListener('click', addWeatherTypeRow);
+    document.getElementById('wtype-mode-btn').addEventListener('click', () => {
+      if (!wtypeEditing) {
+        wtypeEditing = true;
+        paintWTypeMode();
+        return;
+      }
+      saveAllWeatherTypes();
+    });
+    document.getElementById('wtype-cancel-btn').addEventListener('click', () => loadWeatherType());
+    const wtypeBody = document.getElementById('wtype-tbody');
+    if (wtypeBody) {
+      wtypeBody.addEventListener('click', (event) => {
+        const del = event.target.closest('[data-wtype-delete]');
+        if (del) deleteWeatherTypeRow(del.dataset.wtypeDelete);
+      });
+    }
 
     // 天气告警等级
     document.getElementById('walert-add-btn').addEventListener('click', () => { walertEditId = null; showWAlertForm(null); });
@@ -1393,7 +1768,10 @@
     // 雷达告警
     const radarSave = document.getElementById('radar-save-btn');
     if (radarSave) {
-      radarSave.addEventListener('click', saveRadarAlertSettings);
+      radarSave.addEventListener('click', () => {
+        if (!radarEditing) { radarEditing = true; paintRadarMode(); return; }
+        saveRadarAlertSettings();
+      });
       document.getElementById('radar-rebuild-btn').addEventListener('click', rebuildRadarIndex);
       document.querySelectorAll('#radar-alarm-colors .radar-alarm-switch').forEach((label) => {
         label.addEventListener('click', () => {
@@ -1409,9 +1787,19 @@
       const addRing = document.getElementById('radar-add-ring-btn');
       if (addRing) addRing.addEventListener('click', addRadarRingCol);
     }
+    const radarCancel = document.getElementById('radar-cancel-btn');
+    if (radarCancel) radarCancel.addEventListener('click', cancelRadarEdit);
     const mapStyleSave = document.getElementById('map-style-save-btn');
     if (mapStyleSave) {
       mapStyleSave.addEventListener('click', saveMapStyleSettings);
+    }
+  }
+
+  function selectSettingsGroup(name, switchToFirst) {
+    if (switchToFirst) {
+      const groupCls = name === 'global' ? '.settings-tab-group-global' : '.settings-tab-group-personal';
+      const first = document.querySelector(groupCls + ' .settings-tab:not([style*="display: none"])');
+      if (first) switchTab(first.getAttribute('data-tab'));
     }
   }
 
@@ -1437,10 +1825,12 @@
     });
   }
 
-  // ========== 机场区域：查看只读，编辑时整表修改，保存时一次写入 ==========
+  // ========== 机场区域：单列，按区域编辑 ==========
   let prefixRows = [];
-  let prefixEditing = false;
+  let prefixEditingId = null;
+  let prefixSnapshot = null;
   let prefixDraft = { '国内': [], '国际': [] };
+  let prefixCollapsed = new Set();
   let prefixUid = 1;
   let prefixFocus = '';
 
@@ -1453,11 +1843,23 @@
     return 'pf' + prefixUid;
   }
 
+  function cloneRegion(region) {
+    return JSON.parse(JSON.stringify(region));
+  }
+
+  function prefixHasPending() {
+    if (prefixEditingId) return true;
+    return ['国内', '国际'].some((kind) => prefixDraft[kind].some((region) => region.isNew));
+  }
+
   function confirmLeavePrefixEdit() {
-    if (!prefixEditing) return true;
-    if (!confirm('当前修改尚未保存，确定离开吗？')) return false;
-    prefixEditing = false;
-    prefixDraft = { '国内': [], '国际': [] };
+    if (!prefixHasPending()) return true;
+    if (!confirm('当前区域修改尚未保存，确定离开吗？')) return false;
+    prefixEditingId = null;
+    prefixSnapshot = null;
+    ['国内', '国际'].forEach((kind) => {
+      prefixDraft[kind] = prefixDraft[kind].filter((region) => !region.isNew);
+    });
     return true;
   }
 
@@ -1473,6 +1875,7 @@
           area: row.area || '',
           sequence: row.sequence,
           prefixes: [],
+          isNew: false,
         };
         index.set(key, region);
         draft[kind].push(region);
@@ -1489,6 +1892,12 @@
     return draft;
   }
 
+  function eachPrefixRegion(fn) {
+    ['国内', '国际'].forEach((kind) => {
+      prefixDraft[kind].forEach((region) => fn(kind, region));
+    });
+  }
+
   function findPrefixRegion(regionId) {
     for (const kind of ['国内', '国际']) {
       const region = prefixDraft[kind].find((item) => item.id === regionId);
@@ -1498,7 +1907,6 @@
   }
 
   function syncPrefixDraft() {
-    if (!prefixEditing) return;
     document.querySelectorAll('[data-prefix-region][data-field]').forEach((el) => {
       const found = findPrefixRegion(el.dataset.prefixRegion);
       if (!found) return;
@@ -1506,107 +1914,140 @@
       if (el.dataset.field === 'sequence') found.region.sequence = el.value;
     });
     document.querySelectorAll('[data-prefix-row][data-field]').forEach((el) => {
-      for (const kind of ['国内', '国际']) {
-        for (const region of prefixDraft[kind]) {
-          const row = region.prefixes.find((item) => item.id === el.dataset.prefixRow);
-          if (!row) continue;
-          if (el.dataset.field === 'prefix') row.prefix = el.value;
-          if (el.dataset.field === 'remark') row.remark = el.value;
-        }
-      }
+      eachPrefixRegion((kind, region) => {
+        const row = region.prefixes.find((item) => item.id === el.dataset.prefixRow);
+        if (!row) return;
+        if (el.dataset.field === 'prefix') row.prefix = el.value;
+        if (el.dataset.field === 'remark') row.remark = el.value;
+      });
     });
   }
 
-  function paintPrefixChrome() {
-    const editBtn = document.getElementById('prefix-edit-btn');
-    const saveBtn = document.getElementById('prefix-save-btn');
-    const cancelBtn = document.getElementById('prefix-cancel-btn');
-    const opHead = document.getElementById('prefix-op-head');
-    if (editBtn) editBtn.hidden = prefixEditing;
-    if (saveBtn) saveBtn.hidden = !prefixEditing;
-    if (cancelBtn) cancelBtn.hidden = !prefixEditing;
-    if (opHead) opHead.hidden = !prefixEditing;
+  function prefixInput(region, className, attrs, value) {
+    const lock = region.id === prefixEditingId ? '' : ' disabled';
+    return `<input class="settings-input prefix-inline-input ${className}" ${attrs}${lock} value="${prefixAttr(value)}">`;
+  }
+
+  function paintPrefixFoldAll() {
+    const ids = [];
+    eachPrefixRegion((kind, region) => ids.push(region.id));
+    const allClosed = ids.length > 0 && ids.every((id) => prefixCollapsed.has(id));
+    const allOpen = ids.length > 0 && ids.every((id) => !prefixCollapsed.has(id));
+    const expandBtn = document.getElementById('prefix-expand-all');
+    const collapseBtn = document.getElementById('prefix-collapse-all');
+    if (expandBtn) {
+      expandBtn.disabled = allOpen;
+      expandBtn.classList.toggle('is-current', allOpen);
+    }
+    if (collapseBtn) {
+      collapseBtn.disabled = allClosed;
+      collapseBtn.classList.toggle('is-current', allClosed);
+    }
+  }
+
+  function renderPrefixSection(kind, block) {
+    const regions = block.map((region) => {
+      const editing = region.id === prefixEditingId;
+      const collapsed = prefixCollapsed.has(region.id);
+      const lines = region.prefixes.map((row) => `<tr>
+        <td>${prefixInput(region, 'prefix-code-input', `maxlength="4" data-prefix-row="${row.id}" data-field="prefix" style="text-transform:uppercase;"${prefixFocus === row.id ? ' data-prefix-focus="1"' : ''}`, row.prefix)}</td>
+        <td>${prefixInput(region, 'prefix-remark-input', `data-prefix-row="${row.id}" data-field="remark"`, row.remark || '')}</td>
+        <td><button class="settings-del-btn prefix-edit-only" type="button" data-prefix-delete="${row.id}" data-region="${region.id}">删除</button></td>
+      </tr>`).join('');
+      return `<article class="prefix-region${editing ? ' is-editing' : ''}${collapsed ? ' is-collapsed' : ''}" data-region-id="${region.id}">
+        <div class="prefix-region-title">
+          <div class="prefix-region-fields">
+            <span class="prefix-region-label">区域</span>
+            ${prefixInput(region, 'prefix-area-input', `data-prefix-region="${region.id}" data-field="area" maxlength="20"${prefixFocus === region.id ? ' data-prefix-focus="1"' : ''}`, region.area)}
+            <span class="prefix-region-label">序号</span>
+            ${prefixInput(region, 'prefix-seq-input', `type="number" min="1" step="1" data-prefix-region="${region.id}" data-field="sequence"`, region.sequence)}
+          </div>
+          <div class="prefix-region-actions">
+            <button class="settings-edit-btn prefix-edit-only" type="button" data-prefix-add-line="${region.id}">新增前缀</button>
+            <button class="settings-save-inline-btn" type="button" data-prefix-mode="${region.id}">${editing ? '保存' : '编辑'}</button>
+            <button class="settings-cancel-inline-btn" type="button" data-prefix-cancel="${region.id}"${editing ? '' : ' disabled'}>取消</button>
+            <button class="prefix-fold-btn" type="button" data-prefix-fold="${region.id}">${collapsed ? '展开' : '收起'}</button>
+          </div>
+        </div>
+        <table class="settings-table prefix-line-table">
+          <thead><tr><th>前缀</th><th>备注</th><th>操作</th></tr></thead>
+          <tbody>${lines}</tbody>
+        </table>
+      </article>`;
+    }).join('');
+    return `<section class="prefix-kind-block">
+      <div class="prefix-kind-head">
+        <h4>${kind}</h4>
+        <button class="settings-add-btn" type="button" data-prefix-add-region="${kind}">新增区域</button>
+      </div>
+      <div class="prefix-region-list">${regions || '<p class="prefix-empty">暂无区域</p>'}</div>
+    </section>`;
   }
 
   function renderPrefixTable() {
-    const tbody = document.getElementById('prefix-tbody');
-    if (!tbody) return;
-    paintPrefixChrome();
-    const source = prefixEditing ? prefixDraft : draftFromPrefixRows(prefixRows);
-    const html = [];
-    ['国内', '国际'].forEach((kind) => {
-      const block = source[kind] || [];
-      if (!block.length && !prefixEditing) return;
-      const span = Math.max(1, block.reduce((sum, region) => sum + region.prefixes.length, 0));
-      let placedKind = false;
-      const kindCell = (rowspan) => {
-        if (placedKind) return '';
-        placedKind = true;
-        const add = prefixEditing
-          ? `<div class="prefix-cell-action"><button class="settings-edit-btn" type="button" data-prefix-add-region="${kind}">新增区域</button></div>`
-          : '';
-        return `<td class="settings-merge-cell${prefixEditing ? ' is-edit-block' : ''}" rowspan="${rowspan}">${kind}${add}</td>`;
-      };
-      if (!block.length) {
-        html.push(`<tr>${kindCell(1)}<td></td><td></td><td></td><td></td>${prefixEditing ? '<td></td>' : ''}</tr>`);
-        return;
-      }
-      block.forEach((region) => {
-        region.prefixes.forEach((row, index) => {
-          const regionCells = index === 0 ? `
-            <td class="settings-merge-cell${prefixEditing ? ' is-edit-region' : ''}" rowspan="${region.prefixes.length}">
-              ${prefixEditing
-                ? `<input class="settings-input prefix-inline-input" data-prefix-region="${region.id}" data-field="area" maxlength="20" value="${prefixAttr(region.area)}"${prefixFocus === region.id ? ' data-prefix-focus="1"' : ''}>
-                   <div class="prefix-cell-action"><button class="settings-edit-btn" type="button" data-prefix-add-line="${region.id}">新增前缀</button></div>`
-                : escHtml(region.area)}
-            </td>
-            <td class="settings-merge-cell" rowspan="${region.prefixes.length}">
-              ${prefixEditing
-                ? `<input class="settings-input prefix-inline-input" type="number" min="1" step="1" data-prefix-region="${region.id}" data-field="sequence" value="${prefixAttr(region.sequence)}">`
-                : escHtml(region.sequence)}
-            </td>` : '';
-          const prefixCell = prefixEditing
-            ? `<input class="settings-input prefix-inline-input" maxlength="4" data-prefix-row="${row.id}" data-field="prefix" value="${prefixAttr(row.prefix)}" style="text-transform:uppercase;"${prefixFocus === row.id ? ' data-prefix-focus="1"' : ''}>`
-            : escHtml(row.prefix);
-          const remarkCell = prefixEditing
-            ? `<input class="settings-input prefix-inline-input prefix-remark-input" data-prefix-row="${row.id}" data-field="remark" value="${prefixAttr(row.remark)}">`
-            : escHtml(row.remark || '');
-          const deleteCell = prefixEditing
-            ? `<td><button class="settings-del-btn" type="button" data-prefix-delete="${row.id}" data-region="${region.id}">删除</button></td>`
-            : '';
-          html.push(`<tr>${kindCell(span)}${regionCells}<td>${prefixCell}</td><td>${remarkCell}</td>${deleteCell}</tr>`);
-        });
-      });
-    });
-    tbody.innerHTML = html.join('');
+    const board = document.getElementById('prefix-board');
+    if (!board) return;
+    board.innerHTML = ['国内', '国际'].map((kind) => renderPrefixSection(kind, prefixDraft[kind] || [])).join('');
+    paintPrefixFoldAll();
+    const focusEl = board.querySelector('[data-prefix-focus]');
     prefixFocus = '';
-    const focusEl = tbody.querySelector('[data-prefix-focus]');
-    if (focusEl) focusEl.focus();
+    if (focusEl && prefixEditingId) focusEl.focus();
   }
 
-  async function loadPrefixAreas() {
-    if (prefixEditing) return;
-    const res = await apiFetch(apiUrl('settings/prefix-area/'));
-    if (!res.success) { showMsg('prefix-msg', res.error, 'error'); return; }
-    prefixRows = res.data || [];
+  function setAllPrefixRegions(collapsed) {
+    if (collapsed) {
+      const ids = [];
+      eachPrefixRegion((kind, region) => ids.push(region.id));
+      prefixCollapsed = new Set(ids);
+    } else {
+      prefixCollapsed = new Set();
+    }
     renderPrefixTable();
   }
 
-  function beginPrefixEdit() {
+  async function loadPrefixAreas() {
+    if (prefixEditingId) return;
+    const res = await apiFetch(apiUrl('settings/prefix-area/'));
+    if (!res.success) { showMsg('prefix-msg', res.error, 'error'); return; }
+    prefixRows = res.data || [];
     prefixDraft = draftFromPrefixRows(prefixRows);
-    prefixEditing = true;
+    const alive = new Set();
+    eachPrefixRegion((kind, region) => alive.add(region.id));
+    prefixCollapsed = new Set([...prefixCollapsed].filter((id) => alive.has(id)));
+    renderPrefixTable();
+  }
+
+  function beginPrefixEdit(regionId) {
+    if (prefixEditingId && prefixEditingId !== regionId) {
+      showMsg('prefix-msg', '请先保存或取消正在编辑的区域', 'error');
+      return;
+    }
+    const found = findPrefixRegion(regionId);
+    if (!found) return;
+    prefixSnapshot = cloneRegion(found.region);
+    prefixEditingId = regionId;
+    prefixCollapsed.delete(regionId);
     showMsg('prefix-msg', '', '');
     renderPrefixTable();
   }
 
-  function cancelPrefixEdit() {
-    prefixEditing = false;
-    prefixDraft = { '国内': [], '国际': [] };
+  function cancelPrefixRegion(regionId) {
+    if (prefixEditingId !== regionId || !prefixSnapshot) return;
+    const found = findPrefixRegion(regionId);
+    if (!found) return;
+    const index = prefixDraft[found.kind].findIndex((region) => region.id === regionId);
+    if (index >= 0) prefixDraft[found.kind][index] = cloneRegion(prefixSnapshot);
+    prefixEditingId = null;
+    prefixSnapshot = null;
     showMsg('prefix-msg', '', '');
     renderPrefixTable();
   }
 
   function addPrefixRegion(kind) {
+    if (prefixEditingId) {
+      showMsg('prefix-msg', '请先保存或取消正在编辑的区域', 'error');
+      return;
+    }
     syncPrefixDraft();
     const max = prefixDraft[kind].reduce((highest, region) => Math.max(highest, Number(region.sequence) || 0), 0);
     const region = {
@@ -1614,51 +2055,91 @@
       area: '',
       sequence: max + 1,
       prefixes: [{ id: nextPrefixId(), prefix: '', remark: '' }],
+      isNew: true,
     };
     prefixDraft[kind].push(region);
+    prefixSnapshot = cloneRegion(region);
+    prefixEditingId = region.id;
+    prefixCollapsed.delete(region.id);
     prefixFocus = region.id;
+    showMsg('prefix-msg', '', '');
     renderPrefixTable();
   }
 
   function addPrefixLine(regionId) {
+    if (prefixEditingId !== regionId) return;
     syncPrefixDraft();
     const found = findPrefixRegion(regionId);
     if (!found) return;
     const row = { id: nextPrefixId(), prefix: '', remark: '' };
     found.region.prefixes.push(row);
+    prefixCollapsed.delete(regionId);
     prefixFocus = row.id;
     renderPrefixTable();
   }
 
   function deletePrefixLine(regionId, rowId) {
+    if (prefixEditingId !== regionId) return;
     syncPrefixDraft();
     const found = findPrefixRegion(regionId);
     if (!found) return;
     const { kind, region } = found;
     const row = region.prefixes.find((item) => item.id === rowId);
     if (!row) return;
+    const label = (row.prefix || '').trim() || '这条前缀';
+    if (region.prefixes.length === 1 && region.isNew) {
+      if (!confirm('删除后该新增区域会去掉。确定删除吗？')) return;
+      prefixDraft[kind] = prefixDraft[kind].filter((item) => item.id !== region.id);
+      prefixEditingId = null;
+      prefixSnapshot = null;
+      renderPrefixTable();
+      return;
+    }
     if (region.prefixes.length === 1 && prefixDraft[kind].length === 1) {
       alert(`${kind}至少要保留一个区域`);
       return;
     }
-    const label = (row.prefix || '').trim() || '这条前缀';
-    const message = region.prefixes.length === 1
-      ? `这是区域「${(region.area || '').trim() || '未命名'}」的最后一条前缀，删除后该区域会一并去掉。确定删除吗？`
+    const removingRegion = region.prefixes.length === 1;
+    const message = removingRegion
+      ? `这是区域「${(region.area || '').trim() || '未命名'}」的最后一条前缀，删除后该区域会去掉并保存。确定删除吗？`
       : `确定删除前缀 ${label}？`;
     if (!confirm(message)) return;
-    region.prefixes = region.prefixes.filter((item) => item.id !== rowId);
-    if (!region.prefixes.length) {
+    if (removingRegion) {
+      const backup = cloneRegion(region);
       prefixDraft[kind] = prefixDraft[kind].filter((item) => item.id !== region.id);
+      prefixEditingId = null;
+      prefixSnapshot = null;
+      persistPrefixDraft(null).then((ok) => {
+        if (ok) return;
+        prefixDraft[kind].push(backup);
+        prefixDraft[kind].sort((a, b) => Number(a.sequence) - Number(b.sequence));
+        prefixEditingId = backup.id;
+        prefixSnapshot = cloneRegion(backup);
+        renderPrefixTable();
+      });
+      return;
     }
+    region.prefixes = region.prefixes.filter((item) => item.id !== rowId);
     renderPrefixTable();
   }
 
-  function validatePrefixDraft() {
+  function draftForSave(savingId) {
+    const draft = { '国内': [], '国际': [] };
+    ['国内', '国际'].forEach((kind) => {
+      prefixDraft[kind].forEach((region) => {
+        if (region.isNew && region.id !== savingId) return;
+        draft[kind].push(region);
+      });
+    });
+    return draft;
+  }
+
+  function validatePrefixDraft(draft) {
     const prefixes = new Set();
     const sequences = new Set();
     const names = new Set();
     for (const kind of ['国内', '国际']) {
-      const regions = prefixDraft[kind];
+      const regions = draft[kind];
       if (!regions.length) return `${kind}至少要有一个区域`;
       for (const region of regions) {
         const area = (region.area || '').trim();
@@ -1684,13 +2165,20 @@
     return '';
   }
 
-  async function savePrefixSheet() {
+  async function persistPrefixDraft(savingId) {
     syncPrefixDraft();
-    const error = validatePrefixDraft();
-    if (error) { showMsg('prefix-msg', error, 'error'); return; }
-    const rows = [];
+    const draft = draftForSave(savingId);
+    const error = validatePrefixDraft(draft);
+    if (error) { showMsg('prefix-msg', error, 'error'); return false; }
+    const extras = [];
     ['国内', '国际'].forEach((kind) => {
       prefixDraft[kind].forEach((region) => {
+        if (region.isNew && region.id !== savingId) extras.push({ kind, region: cloneRegion(region) });
+      });
+    });
+    const rows = [];
+    ['国内', '国际'].forEach((kind) => {
+      draft[kind].forEach((region) => {
         region.prefixes.forEach((row) => {
           rows.push({
             classification: kind,
@@ -1702,18 +2190,28 @@
         });
       });
     });
-    const saveBtn = document.getElementById('prefix-save-btn');
+    const saveBtn = savingId ? document.querySelector(`[data-prefix-mode="${savingId}"]`) : null;
     if (saveBtn) saveBtn.disabled = true;
     const res = await apiFetch(apiUrl('settings/prefix-area/'), {
       method: 'PUT',
       body: JSON.stringify({ rows }),
     });
     if (saveBtn) saveBtn.disabled = false;
-    showMsg('prefix-msg', res.success ? res.message : res.error, res.success ? 'success' : 'error');
-    if (!res.success) return;
-    prefixEditing = false;
+    showMsg('prefix-msg', res.success ? (res.message || '保存成功') : res.error, res.success ? 'success' : 'error');
+    if (!res.success) return false;
+    prefixEditingId = null;
+    prefixSnapshot = null;
     await loadPrefixAreas();
+    if (extras.length) {
+      extras.forEach(({ kind, region }) => prefixDraft[kind].push(region));
+      renderPrefixTable();
+    }
     await refreshAreaOptionsCache();
+    return true;
+  }
+
+  function savePrefixRegion(regionId) {
+    return persistPrefixDraft(regionId);
   }
 
   // ========== 预报入库告警 ==========
@@ -1832,11 +2330,10 @@
     saveTimer,
 
     // 告警阈值
-    editThreshold(code) {
-      thresholdEditCode = code;
-      apiFetch(apiUrl('settings/alert-thresholds/')).then(res => {
-        const r = res.data && res.data.find(x => x.airport_4code === code);
-        if (r) showThresholdForm(r);
+    editThreshold() {
+      switchTab('alert-thresholds').then(() => {
+        thresholdEditing = true;
+        paintThresholdMode();
       });
     },
     async deleteThreshold(code) {
@@ -1847,11 +2344,10 @@
     },
 
     // 天气类型
-    editWeatherType(id) {
-      wtypeEditId = id;
-      apiFetch(apiUrl('settings/weather-type/')).then(res => {
-        const r = res.data && res.data.find(x => x.id === id);
-        if (r) showWTypeForm(r);
+    editWeatherType() {
+      switchTab('weather-type').then(() => {
+        wtypeEditing = true;
+        paintWTypeMode();
       });
     },
     async deleteWeatherType(id) {
@@ -1877,11 +2373,8 @@
     },
 
     // 告警阈值 — 查看(只读)
-    viewThreshold(code) {
-      apiFetch(apiUrl('settings/alert-thresholds/')).then(res => {
-        const r = res.data && res.data.find(x => x.airport_4code === code);
-        if (r) { thresholdEditCode = null; showThresholdForm(r, true); }
-      });
+    viewThreshold() {
+      switchTab('alert-thresholds');
     },
 
   };
