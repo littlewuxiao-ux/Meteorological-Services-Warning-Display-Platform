@@ -69,3 +69,10 @@ IWBP/airports.csv
 IWBP/deploy-workbench.zip
 IWBP/.cursor/
 
+
+# SQLite temp files
+*.db-shm
+*.db-wal
+*.sqlite-shm
+*.sqlite-wal
+*.db-journal
