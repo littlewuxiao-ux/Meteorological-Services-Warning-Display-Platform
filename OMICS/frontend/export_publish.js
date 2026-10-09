@@ -1105,6 +1105,7 @@
 
     async function importPublishWorkbook() {
         window.showPublishLoadingStatus?.('正在读取并解析导入表格，请稍候...');
+        try {
         const formData = new FormData();
         const file = document.getElementById('import-publish-excel-file')?.files?.[0];
         if (file) formData.append('file', file);
@@ -1118,9 +1119,9 @@
 
         const detectedDate = data.forecast_date || data.publish_date;
         const detectedHour = Number(data.start_hour_bjt);
-        if (detectedDate && Number.isFinite(detectedHour)) {
+        if (detectedDate) {
             const parts = String(detectedDate).slice(0, 10).split(/[-/]/).map(Number);
-            const utc = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2], detectedHour - 8));
+            const utc = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2], (Number.isFinite(detectedHour) ? detectedHour : 15) - 8));
             window.pbState.startDate = utc.toISOString().slice(0, 10);
             window.pbState.startHour = utc.getUTCHours();
             window.pbState.validityHours = Number(data.validity_hours) || 24;
@@ -1130,6 +1131,7 @@
             const footer = document.getElementById('pb-special-airports');
             if (footer) footer.value = data.special_condition_text;
             localStorage.setItem('pb_special_condition_text', data.special_condition_text);
+            window.pbState.specialConditionManual = true;
             window.saveConfirmedDataToLocal?.();
         }
 
@@ -1157,9 +1159,10 @@
         });
         window.registerPublishSourceAirports?.('table', importedIcaos);
         if (unresolved.length) alert('以下机场未能匹配机场字典，已跳过：\n' + unresolved.join('、'));
-        const loader = document.getElementById('publish-loading-indicator');
-        if (loader) loader.style.display = 'none';
         return { count: importedIcaos.length, icaos: importedIcaos };
+        } finally {
+            window.hidePublishLoadingStatus?.();
+        }
     }
 
     function importTextToForecast(text, deferRefresh = false) {
