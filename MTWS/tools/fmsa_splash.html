@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FMSA · 启动中</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{background:#0a0e1a;color:#e8edf5;font-family:"Microsoft YaHei",system-ui,"Segoe UI",sans-serif;display:flex;align-items:center;justify-content:center;overflow:hidden}
+body::before{content:"";position:fixed;inset:-15%;background:radial-gradient(circle at 50% 0%,rgba(56,130,246,.22),transparent 55%),radial-gradient(circle at 50% 100%,rgba(34,211,238,.10),transparent 60%)}
+.ps{position:relative;z-index:1;width:min(640px,94vw);background:#101828;border:1px solid rgba(148,163,184,.14);border-radius:14px;overflow:hidden;box-shadow:0 30px 80px rgba(0,0,0,.6)}
+.banner{position:relative;height:150px;background:linear-gradient(120deg,#0b2a5b,#0e4a8a 45%,#0e7490);overflow:hidden}
+.banner svg{position:absolute;inset:0;width:100%;height:100%;opacity:.5}
+.banner .mask{position:absolute;inset:0;background:linear-gradient(180deg,transparent 40%,rgba(16,24,40,.85))}
+.banner .tag{position:absolute;left:22px;bottom:12px;font-size:11px;letter-spacing:4px;color:#9fc2ee}
+.body{display:flex;gap:22px;padding:22px 24px 18px}
+.left{flex:1.2}
+.left .mark{font-size:44px;font-weight:900;letter-spacing:3px;background:linear-gradient(120deg,#fff,#7dd3fc,#38bdf8);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+.left .en{font-size:11px;color:#8fa3bd;letter-spacing:1px;margin-top:6px;line-height:1.7}
+.left .ver{margin-top:10px;font-size:11px;color:#5b6b83;font-family:Consolas,monospace}
+.right{flex:1;display:flex;flex-direction:column;gap:10px;justify-content:center}
+.step{display:flex;align-items:center;gap:10px;font-size:12px;color:#5b6b83;padding:8px 12px;border:1px solid rgba(148,163,184,.12);border-radius:8px;transition:all .3s}
+.step .d{width:8px;height:8px;border-radius:50%;background:#334155;flex-shrink:0}
+.step.on{color:#dbe7f5;border-color:rgba(56,189,248,.35);background:rgba(56,189,248,.06)}
+.step.on .d{background:#38bdf8;box-shadow:0 0 8px #38bdf8}
+.step.ok{color:#cbd5e1;border-color:rgba(34,197,94,.3);background:rgba(34,197,94,.06)}
+.step.ok .d{background:#22c55e;box-shadow:0 0 8px #22c55e}
+.foot{padding:0 24px 20px}
+.meter-top{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px}
+.meter-top .lbl{font-size:11px;letter-spacing:3px;color:#5b6b83}
+.pct{font-size:34px;font-weight:800;background:linear-gradient(120deg,#fff,#7dd3fc);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+.bar{height:8px;border-radius:99px;background:rgba(255,255,255,.06);overflow:hidden}
+.bar>i{display:block;height:100%;width:0;border-radius:99px;background:linear-gradient(90deg,#1d4ed8,#38bdf8,#22d3ee);box-shadow:0 0 12px rgba(56,189,248,.7);transition:width .4s}
+.tip{margin-top:8px;font-size:12px;color:#8fa3bd;display:flex;justify-content:space-between}
+.err{color:#f87171;font-size:12px;display:none;margin-top:6px}
+.err a{color:#60a5fa}
+</style>
+</head>
+<body>
+<div class="ps" id="ps">
+  <div class="banner">
+    <svg viewBox="0 0 680 150" preserveAspectRatio="none">
+      <g stroke="#7dd3fc" stroke-width="1" fill="none" opacity=".7">
+        <path d="M0,110 Q120,90 240,100 T480,85 T680,95"/>
+        <path d="M0,125 Q140,105 300,112 T680,105"/>
+        <circle cx="120" cy="60" r="2" fill="#7dd3fc"/><circle cx="330" cy="40" r="2" fill="#7dd3fc"/>
+        <circle cx="520" cy="55" r="2" fill="#7dd3fc"/><circle cx="430" cy="95" r="1.5" fill="#bae6fd"/>
+        <path d="M120,60 L330,40 L520,55 L430,95 Z"/>
+      </g>
+    </svg>
+    <div class="mask"></div>
+    <div class="tag">FLIGHT-SCHEDULE METEOROLOGICAL SURVEILLANCE</div>
+  </div>
+  <div class="body">
+    <div class="left">
+      <div class="mark" id="mark">FMSA</div>
+      <div class="en">Flight-Schedule-Based<br>Meteorological Surveillance<br>Alert System</div>
+      <div class="ver" id="ver">基于航班计划的气象监视告警系统 · v1.0</div>
+    </div>
+    <div class="right" style="display:none">
+      <div class="step" id="st-splash"><span class="d"></span><span>启动页服务</span></div>
+      <div class="step" id="st-django"><span class="d"></span><span>Django 后端服务</span></div>
+      <div class="step" id="st-home"><span class="d"></span><span>系统主页 /current/</span></div>
+      <div class="step" id="st-static"><span class="d"></span><span>静态资源</span></div>
+    </div>
+  </div>
+  <div class="foot">
+    <div class="meter-top"><span class="lbl">SYSTEM BOOT</span><span class="pct"><span id="num">0</span>%</span></div>
+    <div class="bar"><i id="bar"></i></div>
+    <div class="tip"><span id="status">正在初始化…</span><span id="elapsed">0s</span></div>
+    <div class="err" id="err">启动超时，<a href="http://127.0.0.1:8000/current/">点此手动进入主页</a></div>
+  </div>
+</div>
+<script>
+(function(){
+  var hasGsap = (typeof gsap !== "undefined");
+  if (hasGsap) {
+    gsap.from("#ps", {y:26, opacity:0, duration:.7, ease:"power3.out"});
+    gsap.from("#mark", {y:34, opacity:0, scale:.85, duration:.8, delay:.15, ease:"back.out(1.6)"});
+    gsap.from(".step", {x:26, opacity:0, duration:.5, stagger:.09, delay:.35, ease:"power2.out"});
+  }
+  var HOME = "http://127.0.0.1:8000/current/";
+  var start = Date.now(), redirected = false, okCount = 0, need = 2;
+  function setBar(p){ document.getElementById("num").textContent = p;
+    document.getElementById("bar").style.width = p + "%"; }
+  function setTip(t){ document.getElementById("status").textContent = t; }
+  function light(id, cls){ var el = document.getElementById(id);
+    if (el) { el.classList.remove("on"); el.classList.add(cls || "ok"); } }
+  function prog(id){ var el = document.getElementById(id);
+    if (el && !el.classList.contains("ok")) el.classList.add("on"); }
+  function get(url){ return fetch(url, {cache:"no-store"}).then(function(r){
+    if (!r.ok) throw 0; return r.json(); }).catch(function(){ return null; }); }
+  function finish(){
+    if (redirected) return; redirected = true;
+    setBar(100); setTip("已就绪，正在进入…");
+    try { if (typeof confetti !== "undefined")
+      confetti({particleCount:90, spread:70, origin:{y:.6},
+        colors:["#38bdf8","#22d3ee","#ffffff"]}); } catch(e){}
+    var ps = document.getElementById("ps");
+    function go(){
+      fetch("/exit", {mode:"no-cors"}).catch(function(){});
+      try {
+        var w = 1600, h = 900;
+        try { w = window.screen.availWidth; h = window.screen.availHeight; } catch(e){}
+        window.moveTo(0, 0);
+        window.resizeTo(w, h);
+      } catch(e){}
+      setTimeout(function(){ window.location.href = HOME; }, 120);
+    }
+    if (hasGsap && ps) {
+      gsap.to(ps, {scale:1.04, opacity:0, duration:.35, ease:"power2.in", onComplete:go});
+    } else { setTimeout(go, 400); }
+  }
+  async function tick(){
+    var el = Math.round((Date.now()-start)/1000);
+    document.getElementById("elapsed").textContent = el + "s";
+    if (redirected) return;
+    light("st-splash"); prog("st-django"); setTip("正在等待后端服务…");
+    var r = await get("/__ready");
+    if (r) {
+      if (r.home || r.static) { prog("st-home"); prog("st-static"); }
+      if (r.home) light("st-home");
+      if (r.static) light("st-static");
+      if (r.ready) { light("st-django"); okCount++; setTip("后端就绪确认 " + okCount + "/" + need);
+        setBar(Math.min(60 + okCount*20, 96));
+        if (okCount >= need) { finish(); return; }
+      } else { okCount = 0; setBar(Math.min(15 + el*2, 55)); }
+    } else { setBar(Math.min(10 + el*2, 50)); }
+    if (el > 60) document.getElementById("err").style.display = "block";
+  }
+  setBar(5); setInterval(tick, 1000); tick();
+})();
+</script>
+</body>
+</html>
