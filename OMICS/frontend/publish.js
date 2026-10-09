@@ -146,6 +146,11 @@ const pbState = {
   cfgIceTemp: 10, cfgIceDewPointDiff: 0, cfgIceVis: 1500, cfgIcePrecipHours: 12, cfgExtColdTemp: -30,
   specialConditionAirports: new Map(),
   specialConditionManual: false,
+  noFlightAirports: new Set(),
+  pendingSpecialConditions: new Map(),
+  flightAirports: {},
+  flightStatus: 'loading',
+  specialConditionDecisions: new Map(),
   loadGeneration: 0
 };
 
@@ -1157,7 +1162,7 @@ function buildPublishExportText(timezone = 'auto') {
         // A selected cell may contain several elements (for example
         // "中阵雨 弱雷雨"). Split them before aggregating so the export does
         // not treat the complete cell as one indivisible weather value.
-        const weatherTokenPattern = /(?:短时)?(?:弱|小|中|大|强|暴)?(?:阵)?雷雨|(?:短时)?雷暴|干雷|雨夹雪|(?:弱|小|中|大|强|暴)?(?:阵)?冻雨|(?:弱|小|中|大|强|暴)?(?:阵)?雨|(?:弱|小|中|大|强|暴)?(?:阵)?雪|雾|霾|浮尘|沙暴|扬沙|烟/g;
+        const weatherTokenPattern = /(?:短时)?(?:弱|小|中|大|强|暴)?(?:阵)?雷雨|(?:短时)?雷暴|干雷|雨夹雪|(?:弱|小|中|大|强|暴)?(?:阵)?冻雨|(?:弱|小|中|大|强|暴)?(?:阵)?雨|(?:弱|小|中|大|强|暴)?(?:阵)?雪|冻雾|轻雾|雾|霾|浮尘|沙暴|扬沙|烟/g;
         const weatherForHour = values => values.flatMap(value => String(value).match(weatherTokenPattern) || []);
         const windPattern = /((?:(?:偏?[东南西北]{1,3})|(?:[东南西北]{2}偏[东南西北])|风向不定)风)\s*(\d+(?:\.\d+)?)(?:\s*[-至]\s*(\d+(?:\.\d+)?))?\s*米\/秒/g;
         const windForHour = values => values.flatMap(value => Array.from(String(value).matchAll(windPattern), match => ({
@@ -1175,6 +1180,7 @@ function buildPublishExportText(timezone = 'auto') {
         const weatherIntensityRank = { '弱': 1, '小': 1, '中': 2, '大': 3, '强': 3, '暴': 4 };
         const weatherIntensityName = ['小', '中', '大', '暴'];
         const summarizeWeather = weatherItems => {
+            if (weatherItems.some(value => /终端区|本场|伴短时雷暴/.test(value))) return Array.from(new Set(weatherItems)).join('、');
             const thunder = weatherItems.some(value => /雷雨|雷暴/.test(value));
             const rain = weatherItems.some(value => /(?:阵)?雨/.test(value) && !/雷雨/.test(value));
             if (!thunder || !rain) return Array.from(new Set(weatherItems)).join('、');
@@ -1186,13 +1192,25 @@ function buildPublishExportText(timezone = 'auto') {
             const hi = levels.length ? Math.max(...levels) : lo;
             return `${lo === hi ? weatherIntensityName[lo - 1] : `${weatherIntensityName[lo - 1]}到${weatherIntensityName[hi - 1]}`}阵雨，伴雷暴`;
         };
-        const weatherPhrases = hourlyValues.map(values => {
-            const weather = weatherForHour(values);
+        const frontPhenomena = Array.from(new Set(notes.flatMap(note => String(note || '').match(/冻雾|轻雾|高温/g) || [])));
+        const scopedWeatherForHour = index => rows.flatMap((row, rowIndex) => {
+            const weather = weatherForHour([formatCellValue(row?.[index])]).filter(value => !frontPhenomena.includes(value));
+            const note = String(notes[rowIndex] || '');
+            const scope = note.match(/机场终端区|终端区\/本场|终端区|本场/)?.[0] || '';
+            const accompany = /伴(?:短时)?雷暴/.test(note);
+            return weather.map(value => {
+                const precipitation = /雨|雪|冰雹|霰|雷暴/.test(value);
+                const phrase = accompany && /雨/.test(value) && !/雷雨/.test(value) ? `${value}，伴短时雷暴` : value;
+                return scope && precipitation ? `${scope}有${phrase}` : phrase;
+            });
+        });
+        const weatherPhrases = hourlyValues.map((values, index) => {
+            const weather = scopedWeatherForHour(index);
             if (!weather.length) return '';
             return summarizeWeather(weather);
         });
         const mergedWeatherRanges = [];
-        let weatherStart = null, weatherItems = [];
+        let weatherStart = null, weatherItems = [], previousWeatherPhrase = '';
         const flushWeather = end => {
             if (weatherStart === null || !weatherItems.length) return;
             const phrase = summarizeWeather(weatherItems);
@@ -1201,8 +1219,10 @@ function buildPublishExportText(timezone = 'auto') {
         };
         weatherPhrases.forEach((phrase, index) => {
             if (!phrase) { flushWeather(index - 1); return; }
+            if (previousWeatherPhrase !== phrase && (/(终端区|本场|伴短时雷暴)/.test(previousWeatherPhrase) || /(终端区|本场|伴短时雷暴)/.test(phrase))) flushWeather(index - 1);
             if (weatherStart === null) weatherStart = index;
-            weatherItems.push(...weatherForHour(hourlyValues[index]));
+            weatherItems.push(...scopedWeatherForHour(index));
+            previousWeatherPhrase = phrase;
         });
         flushWeather(weatherPhrases.length - 1);
         const visibilityValues = hourlyValues.map(values => {
@@ -1276,20 +1296,19 @@ function buildPublishExportText(timezone = 'auto') {
             const min = Math.min(...tempValues), max = Math.max(...tempValues);
             mergedTemperatureRanges.push(`${formatRange(tempStart, temperatureValues.length - 1)}温度${min === max ? min : `${min}-${max}`}℃`);
         }
-        const scopedNotes = notes.map(note => String(note || '').trim())
-            .filter(note => note && note !== '/' && note !== '适航' && /(终端区|本场)/.test(note));
-        const scopedNoteText = Array.from(new Set(scopedNotes)).join('，');
-        const weatherRangesWithScopedNote = scopedNoteText
-            ? mergedWeatherRanges.map(value => value.replace(/^(.+?(?:时|Z))/, `$1${scopedNoteText}有`))
-            : mergedWeatherRanges;
-        const noteText = notes.map(note => String(note || '').trim())
-            .filter(note => note && note !== '/' && note !== '适航' && !/风|能见度/.test(note) && !/(终端区|本场)/.test(note)).join('，');
-        const highTempNote = notes.some(note => /高温/.test(String(note || '')));
-        const windNoteFirst = notes.map(note => String(note || '').trim()).find(note => note && /风/.test(note) && !/间歇|短时|偶有|局地|阶段性|阵性/.test(note));
-        const leadingNotes = [windNoteFirst, highTempNote ? '高温' : ''].filter(Boolean);
-        const rowTexts = [...leadingNotes, ...weatherRangesWithScopedNote, ...mergedVisibilityRanges, ...mergedWindRanges, ...mergedTemperatureRanges, noteText].filter(Boolean);
-
-        const timeText = rowTexts.length ? rowTexts.join('；') : '预计天气适航';
+        const windNotes = [];
+        const remainingNotes = notes.map(note => {
+            let value = String(note || '').trim();
+            value = value.replace(/((?:[东南西北]{2}偏[东南西北]|偏?[东南西北]{1,3})风)\s*[，,]?\s*(?:风速\s*)?(\d+(?:\.\d+)?)(?:\s*[-至]\s*(\d+(?:\.\d+)?))?\s*(?:米\/秒|m\/s)/g,
+                (_, direction, min, max) => { windNotes.push(`${direction}${min}${max ? `-${max}` : ''}米/秒`); return ''; });
+            return value.replace(/冻雾|轻雾|高温|机场终端区|终端区\/本场|终端区|本场|伴(?:短时)?雷暴|适航/g, '')
+                .replace(/^[\s，,；;\/]+|[\s，,；;\/]+$/g, '');
+        }).filter(Boolean);
+        const leadingNotes = [...new Set(windNotes), frontPhenomena.length ? `有${frontPhenomena.join('、')}` : ''].filter(Boolean);
+        const noteText = Array.from(new Set(remainingNotes)).join('，');
+        const rowTexts = [...mergedWeatherRanges, ...mergedVisibilityRanges, ...mergedWindRanges, ...mergedTemperatureRanges, noteText].filter(Boolean);
+        const forecastText = rowTexts.join('；');
+        const timeText = [...leadingNotes, forecastText].filter(Boolean).join('，') || '预计天气适航';
         const nameMode = document.querySelector('input[name="export-text-name"]:checked')?.value || 'chinese';
         const displayName = nameMode === 'icao' ? icao : (window.GLOBAL_AIRPORT_NAME_MAP[icao] || icao);
         return `${displayName}：${timeText}。`;
@@ -1972,43 +1991,22 @@ if (dictSearch) dictSearch.addEventListener('input', (e) => renderDictTable(e.ta
 // 🌟 航班与气象数据拉取核心
 // ==========================================
 async function fetchActiveFlightAirports(startMs, endMs, setProgress) {
-    if(setProgress) setProgress("正在向后端请求真实运行航班机场...");
-    const token = (localStorage.getItem('sf_weather_token') || localStorage.getItem('mtws_token'));
-    if (!token) {
-        setProgress?.('内网 TAF/航班接口暂不可用，继续使用可用数据...', false);
+    setProgress?.('正在获取航班并后台分解起降时段...');
+    await refreshPublishFlightEvents();
+    if (pbState.flightStatus !== 'ready') {
+        setProgress?.('航班数据暂不可用，继续处理其他数据...', false);
         return [];
     }
-    const d = new Date(startMs);
-    const dateStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-
-    try {
-        const res = await fetch((window.OMICS_API_URL || (path => `/api/${path}`))('fetch_flights'), {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ token: token, flight_date: dateStr })
-        });
-        const result = await res.json();
-        if (result.success && result.data) {
-            const aps = new Set();
-            result.data.forEach(flight => {
-                const carrier = String(flight.carrier || '').trim().toUpperCase();
-                if (!pbState.allowOtherCarriers && !pbState.carrierFilter.includes(carrier)) return;
-                const flightTimes = ['ptd','pta','std','sta','etd','eta','atd'].map(k => Number(flight[k])).filter(Number.isFinite);
-                const windowStart = startMs - 3600000;
-                const windowEnd = endMs + 3 * 3600000;
-                if (flightTimes.length && !flightTimes.some(t => t >= windowStart && t <= windowEnd)) return;
-                ['departureAirport','arrivalAirport','depApt','arrApt','airportCode'].forEach(k => {
-                    if (flight[k]) aps.add(flight[k].toUpperCase());
-                });
-            });
-            const finalAps = Array.from(aps);
-            if(setProgress) setProgress(`匹配: 从 ${result.data.length} 条航班中成功提取到 ${finalAps.length} 个运行机场`);
-            return finalAps;
-        }
-        return [];
-    } catch (e) {
-        if(setProgress) setProgress(`航班接口暂不可用，继续处理其他数据...`, false);
-        return [];
-    }
+    const airports = [], periodAirports = new Set();
+    Object.keys(pbState.flightAirports).forEach(icao => {
+        const { buckets, before, after } = getPublishFlightEvents(icao);
+        if (buckets.some(events => events.length)) periodAirports.add(icao);
+        if (periodAirports.has(icao) || before.length || after.length) airports.push(icao);
+    });
+    pbState.noFlightAirports = new Set(pbState.airportGroups.flatMap((group, index) =>
+        pbState.selectedResidentGroups.has(String(index)) ? group.airports.filter(icao => !periodAirports.has(icao)) : []));
+    setProgress?.(`匹配: 识别到 ${airports.length} 个运行机场`);
+    return airports;
 }
 
 async function fetchTafDataForAirports(airports, startMs, endMs, setProgress) {
@@ -2167,11 +2165,15 @@ function translateMETARtoCN(code) {
         "FG": "雾", "BR": "轻雾", "HZ": "霾", "SA": "扬沙", "SS": "沙尘暴", "SQ": "飑", "FC": "龙卷", "DU": "浮尘", "FU": "烟"
     };
     let res = [];
-    code.split(' ').forEach(c => {
+    String(code).trim().toUpperCase().split(/\s+/).forEach(c => {
         let core = c.replace(/VC|MI|PR|BC|BL|DR/g, ''); 
         if (map[core]) res.push(map[core]);
         else if (core.includes('TS')) res.push("雷暴");
-        else if (core.includes('RA')) res.push("雨");
+        else if (core.includes('RA')) {
+            const intensity = core.startsWith('+') ? '+' : core.startsWith('-') ? '-' : '';
+            res.push(map[`${intensity}${core.includes('SH') ? 'SHRA' : 'RA'}`]);
+            if (core.includes('SN')) res.push('雨夹雪');
+        }
         else if (core.includes('SN')) res.push("雪");
         else res.push(core);
     });
@@ -2397,6 +2399,89 @@ function updateSpecialConditionFooter() {
   localStorage.setItem('pb_special_condition_text', input.value);
 }
 
+let specialConditionCheckTimer;
+function schedulePublishedConditionCheck() {
+  clearTimeout(specialConditionCheckTimer);
+  specialConditionCheckTimer = setTimeout(checkPublishedSpecialConditions, 0);
+}
+
+function checkPublishedSpecialConditions() {
+  const pending = new Map();
+  (window.currentApAnalysis || []).forEach(ap => {
+    const data = pbState.confirmedData[ap.icao];
+    if (!data || !isAirportRegionEnabled(ap.icao)) return;
+    const rows = data.rows || [data.cells || []];
+    const reasons = new Set();
+    for (let i = 0; i <= pbState.validityHours; i++) {
+      const text = rows.map(row => row[i]?.text || '').join(' ');
+      const noteText = (data.notes || [data.note || '']).join(' ');
+      const temperatures = [...text.matchAll(/(-?\d+(?:\.\d+)?)\s*(?:℃|°C|度)/gi)].map(m => Number(m[1]));
+      const temperature = temperatures.length ? Math.min(...temperatures) : ap.nwp?.temperature_2m?.[i];
+      if (temperature == null || !Number.isFinite(Number(temperature))) continue;
+      if (Number(temperature) < pbState.cfgExtColdTemp) reasons.add('极寒');
+      const visibility = text.match(/(?:能见度\s*)?(\d+)\s*(?:米|m)(?!\/)/i)
+        || text.match(/(?:^|\s)(\d{2,4})(?=\s|$)/);
+      const dew = ap.nwp?.dew_point_2m?.[i];
+      const wet = /雨|雪|冰雹|霰|冻雾|轻雾|雾/.test(`${text} ${noteText}`)
+        || (visibility && Number(visibility[1]) < pbState.cfgIceVis)
+        || (dew != null && Math.abs(Number(temperature) - Number(dew)) <= pbState.cfgIceDewPointDiff + 0.0001)
+        || (ap.nwp && hasRecentPrecipitation(ap.nwp, i));
+      if (Number(temperature) < pbState.cfgIceTemp && wet) reasons.add('地面结冰');
+    }
+    const signature = JSON.stringify([rows, data.notes, pbState.startDate, pbState.startHour, pbState.validityHours]);
+    reasons.forEach(reason => {
+      const key = `${ap.icao}:${reason}`;
+      if (!pbState.specialConditionAirports.get(ap.icao)?.has(reason)
+          && pbState.specialConditionDecisions.get(key) !== signature) pending.set(key, { icao: ap.icao, reason, signature });
+    });
+  });
+  pbState.pendingSpecialConditions = pending;
+  const input = document.getElementById('pb-special-airports');
+  if (!input) return;
+  let dot = document.getElementById('pb-special-condition-alert');
+  if (!dot) {
+    dot = document.createElement('button');
+    dot.id = 'pb-special-condition-alert';
+    dot.type = 'button';
+    dot.style.cssText = 'flex:0 0 12px;width:12px;height:12px;border:0;border-radius:50%;background:#dc2626;padding:0;cursor:pointer;margin-left:8px';
+    input.parentElement.style.display = 'flex';
+    input.parentElement.style.alignItems = 'center';
+    input.style.minWidth = '0';
+    input.parentElement.appendChild(dot);
+    dot.onclick = () => {
+      let accepted = false;
+      ['地面结冰', '极寒'].forEach(reason => {
+        const entries = [...pbState.pendingSpecialConditions.values()].filter(item => item.reason === reason);
+        if (!entries.length) return;
+        const names = entries.map(item => window.GLOBAL_AIRPORT_NAME_MAP[item.icao] || item.icao).join('、');
+        const accept = confirm(`编发机场天气改变，新增${names}机场为${reason}机场。\n确定：新增；取消：放弃本次提示。`);
+        accepted ||= accept;
+        entries.forEach(item => {
+          pbState.specialConditionDecisions.set(`${item.icao}:${reason}`, item.signature);
+          if (accept) {
+            if (!pbState.specialConditionAirports.has(item.icao)) pbState.specialConditionAirports.set(item.icao, new Set());
+            pbState.specialConditionAirports.get(item.icao).add(reason);
+          }
+        });
+        if (accept && pbState.specialConditionManual) {
+          const addition = `${names}（${reason === '极寒' ? '极寒条件' : '地面积冰条件'}）`;
+          input.value = input.value.trim() === '无' ? addition : `${input.value}；${addition}`;
+        }
+      });
+      updateSpecialConditionFooter();
+      if (accepted) pbState.specialConditionManual = true;
+      window.saveConfirmedDataToLocal?.();
+      schedulePublishedConditionCheck();
+    };
+  }
+  dot.hidden = !pending.size;
+  dot.title = ['地面结冰', '极寒'].map(reason => {
+    const names = [...pending.values()].filter(item => item.reason === reason).map(item => window.GLOBAL_AIRPORT_NAME_MAP[item.icao] || item.icao);
+    return names.length ? `编发机场天气改变，新增${names.join('、')}机场为${reason}机场` : '';
+  }).filter(Boolean).join('\n');
+  dot.setAttribute('aria-label', dot.title || '无新增条件机场');
+}
+
 // 汇总说明允许人工调整（例如补充机场、修改条件文字），并随当前发布草稿保存。
 document.getElementById('pb-special-airports')?.addEventListener('input', event => {
   pbState.specialConditionManual = true;
@@ -2488,7 +2573,7 @@ function confirmAirportFromDom(icao) {
         return !value || value === '—' || value === '适航';
     }));
     if (allClear) {
-        serialized.notes = serialized.notes.map((_, index) => index === 0 ? '适航' : '');
+        serialized.notes = serialized.notes.map((_, index) => index === 0 ? (pbState.noFlightAirports.has(icao) ? '适航，无航班' : '适航') : '');
         serialized.rows.forEach(row => row.forEach(cell => {
             cell.text = '';
             cell.bg = 'transparent';
@@ -2509,6 +2594,7 @@ function confirmAirportFromDom(icao) {
         rowSources: serialized.rows.map(() => null)
     };
     delete pbState.draftData[icao];
+    schedulePublishedConditionCheck();
 }
 
 function persistDraftAirportFromDom(icao) {
@@ -2605,11 +2691,13 @@ async function loadForecastData(retainOrder = false, onlyAirports = null) {
         const flightEndMs = baseEndMs + (3 * 3600000); 
         
         let flightAps = [];
-        if (pbState.runningImportMode && !onlyAirports) {
+        if (!onlyAirports) pbState.noFlightAirports.clear();
+        if ((pbState.runningImportMode || pbState.selectedResidentGroups.size) && !onlyAirports) {
             setProgress('查询: 正在获取当前运行航班机场列表...');
-            flightAps = await fetchActiveFlightAirports(startMs, flightEndMs, setProgress);
-            registerSourceAirports('running', flightAps, { replace: true });
+            flightAps = await fetchActiveFlightAirports(startMs, baseEndMs, setProgress);
+            registerSourceAirports('running', pbState.runningImportMode ? flightAps : [], { replace: true });
             pbState.runningAllAirports = new Set(flightAps);
+            if (!pbState.runningImportMode) flightAps = [];
         } else if (!onlyAirports) {
             pbState.sourceAirports.running.clear();
             pbState.runningAllAirports.clear();
@@ -2788,6 +2876,7 @@ async function loadForecastData(retainOrder = false, onlyAirports = null) {
         window.currentApAnalysis = sortedAnalysis;
         renderPublishTableTriRow(window.currentApAnalysis);
         updateSpecialConditionFooter();
+        schedulePublishedConditionCheck();
         PBLOG(`数据加载完成，共渲染 ${apAnalysis.length} 个机场`);
 
         setPublishLoadingVisible(false);
@@ -2804,6 +2893,125 @@ async function loadForecastData(retainOrder = false, onlyAirports = null) {
 }
 
 // 🌟 终极 DOM 渲染引擎 (多行完美合并版)
+function getPublishFlightEvents(icao) {
+    const start = Date.parse(`${pbState.startDate}T${String(pbState.startHour).padStart(2, '0')}:00:00Z`);
+    const end = start + pbState.validityHours * 3600000;
+    const buckets = Array.from({ length: pbState.validityHours + 1 }, () => []);
+    const before = [], after = [];
+    const seen = new Set();
+    (pbState.flightAirports[icao]?.events || []).forEach(event => {
+        const at = Number(event.at);
+        const role = ['dep', 'odp', 'off', 'dst'].includes(event.kind) ? '起飞'
+            : ['arr', 'enr', 'oar', 'oen', 'lnd'].includes(event.kind) ? '落地' : '';
+        if (!role || event.at == null || !Number.isFinite(at)) return;
+        const identity = `${event.flightId || event.other?.flightNo || ''}:${role}:${at}`;
+        if (seen.has(identity)) return;
+        seen.add(identity);
+        const item = { ...event, at, role };
+        if (at >= start && at <= end) buckets[Math.floor((at - start) / 3600000)].push(item);
+        else if (at >= start - 3600000 && at < start) before.push(item);
+        else if (at > end && at <= end + 3 * 3600000) after.push(item);
+    });
+    return { buckets, before, after };
+}
+
+function fillPublishFlightRow(row) {
+    row.replaceChildren();
+    const { buckets, before, after } = getPublishFlightEvents(row.dataset.icao);
+    const tip = events => events.slice().sort((a, b) => a.at - b.at).map(event => {
+        const flight = event.other || {};
+        const time = new Date(event.at).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });
+        return `${time} 北京时 ${event.role} ${flight.flightNo || event.flightId || '航班'} ${flight.departureAirport || ''}→${flight.arrivalAirport || ''}`;
+    }).join('\n');
+    const updated = pbState.flightAirports[row.dataset.icao]?.updated_at;
+    const label = document.createElement('td');
+    label.colSpan = 2;
+    label.className = 'pb-flight-label';
+    label.textContent = pbState.flightStatus === 'loading' ? '航班加载中' : pbState.flightStatus === 'unavailable' ? '航班暂不可用' : '航班起降';
+    if (pbState.flightStatus === 'ready' && !buckets.some(items => items.length)) label.textContent = '时段内无航班';
+    label.title = updated ? `航班更新时间：${new Date(updated).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}` : '航班起降时段';
+    const warning = (parent, events, text) => {
+        if (!events.length) return;
+        const square = document.createElement('span');
+        square.className = 'pb-flight-margin';
+        square.tabIndex = 0;
+        square.title = `${text}\n${tip(events)}`;
+        square.setAttribute('aria-label', square.title);
+        parent.appendChild(square);
+    };
+    warning(label, before, '预报开始前1小时内');
+    row.appendChild(label);
+    buckets.forEach(events => {
+        const cell = document.createElement('td');
+        cell.className = 'col-time pb-flight-cell';
+        ['落地', '起飞'].forEach(role => {
+            const items = events.filter(event => event.role === role);
+            if (!items.length) return;
+            const mark = document.createElement('span');
+            mark.className = role === '起飞' ? 'pb-flight-departure' : 'pb-flight-arrival';
+            mark.textContent = `${role === '起飞' ? '↑' : '↓'}${items.length}`;
+            mark.title = tip(items);
+            mark.tabIndex = 0;
+            cell.appendChild(mark);
+        });
+        row.appendChild(cell);
+    });
+    warning(row.lastElementChild, after, '预报结束后3小时内');
+}
+
+const publishFlightWorkerUrl = new URL('publish_flights_worker.js', document.currentScript?.src || document.baseURI).href;
+function decomposePublishFlights(flights) {
+    return new Promise((resolve, reject) => {
+        const worker = new Worker(publishFlightWorkerUrl);
+        const timeout = setTimeout(() => { worker.terminate(); reject(new Error('航班时段分解超时')); }, 20000);
+        const finish = () => { clearTimeout(timeout); worker.terminate(); };
+        worker.onmessage = ({ data }) => {
+            finish();
+            if (data.error) reject(new Error(data.error));
+            else resolve(data.airports);
+        };
+        worker.onerror = () => { finish(); reject(new Error('航班后台分解失败')); };
+        worker.postMessage({ flights, carriers: pbState.carrierFilter, allowOtherCarriers: pbState.allowOtherCarriers, updatedAt: new Date().toISOString() });
+    });
+}
+
+let publishFlightFetchInProgress = false, publishFlightLastFetch = 0, publishFlightFetchPromise, publishFlightFetchKey = '';
+async function refreshPublishFlightEvents() {
+    if (publishFlightFetchInProgress) return publishFlightFetchPromise;
+    const key = JSON.stringify([localStorage.getItem('sf_weather_token') || localStorage.getItem('mtws_token'), pbState.carrierFilter, pbState.allowOtherCarriers]);
+    if (key === publishFlightFetchKey && Date.now() - publishFlightLastFetch < 60000) return;
+    publishFlightFetchKey = key;
+    publishFlightFetchInProgress = true;
+    publishFlightLastFetch = Date.now();
+    publishFlightFetchPromise = (async () => {
+    try {
+        const token = localStorage.getItem('sf_weather_token') || localStorage.getItem('mtws_token');
+        if (!token) throw new Error('尚未登录');
+        const response = await fetch((window.OMICS_API_URL || (path => `/api/${path}`))('fetch_flights'), {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ token, flight_date: pbState.startDate }),
+            signal: AbortSignal.timeout(35000), cache: 'no-store'
+        });
+        const result = await response.json();
+        if (!response.ok || !result.success || !Array.isArray(result.data)) throw new Error('航班数据不可用');
+        pbState.flightAirports = await decomposePublishFlights(result.data);
+        pbState.flightStatus = 'ready';
+    } catch (error) {
+        pbState.flightStatus = 'unavailable';
+        pbState.flightAirports = {};
+        PBLOG(`航班起降时段更新失败: ${error.message}`, 'WARN');
+    } finally {
+        publishFlightFetchInProgress = false;
+        document.querySelectorAll('#forecast-table .tr-flight').forEach(fillPublishFlightRow);
+    }
+    })();
+    return publishFlightFetchPromise;
+}
+setInterval(() => {
+    const row = document.querySelector('#forecast-table .tr-flight');
+    if (!document.hidden && row?.getClientRects().length) refreshPublishFlightEvents();
+}, 60000);
+
 function renderPublishTableTriRow(apAnalysis, preserveDrafts = true) {
     const table = document.getElementById('forecast-table');
     if(!table) return;
@@ -2901,7 +3109,10 @@ function renderPublishTableTriRow(apAnalysis, preserveDrafts = true) {
             trEdit.innerHTML += `<td class="col-time td-data edit-cell ${cls}" data-c="${i}" style="${cellStyle} font-weight:bold; background:${bg}; color:${fg}; text-shadow:${ts};">${val}</td>`;
         }
         const mainNoteInput = trEdit.querySelector('.edit-note-input');
-        if (mainNoteInput) mainNoteInput.value = notesToRender[0] || '';
+        if (mainNoteInput) {
+            const note = String(notesToRender[0] || '').replace(/(?:[，,；;\s]*无航班)/g, '').trim();
+            mainNoteInput.value = pbState.noFlightAirports.has(icao) ? [note === '/' ? '' : note, '无航班'].filter(Boolean).join('，') : note;
+        }
         tbody.appendChild(trEdit);
         const natureCell = trEdit.querySelector('.col-airport-type');
         natureCell?.addEventListener('blur', () => {
@@ -2941,6 +3152,12 @@ function renderPublishTableTriRow(apAnalysis, preserveDrafts = true) {
         } else if (isConfirmed) {
             return;
         }
+
+        const flightRow = document.createElement('tr');
+        flightRow.className = `${gClass} tr-flight`;
+        flightRow.dataset.icao = icao;
+        fillPublishFlightRow(flightRow);
+        tbody.appendChild(flightRow);
 
         // --- 生成未确认状态下的 TAF 与 EC 行 ---
         let allTafNotes = new Set(), allEcNotes = new Set();
@@ -3160,6 +3377,7 @@ function renderPublishTableTriRow(apAnalysis, preserveDrafts = true) {
     });
     
     table.appendChild(tbody);
+    if (tbody.querySelector('.tr-flight')) refreshPublishFlightEvents();
     if(window.updateAllRowspans) window.updateAllRowspans();
     updateTopCountersFromTable(); 
     updateSpecialConditionFooter();
@@ -3350,6 +3568,7 @@ function persistConfirmedAirportFromDom(icao, persistNow = true) {
     data.rows = serialized.rows;
     data.notes = serialized.notes;
     data.rowSources = serialized.rowSources;
+    schedulePublishedConditionCheck();
     if (persistNow) window.saveConfirmedDataToLocal?.();
 }
 

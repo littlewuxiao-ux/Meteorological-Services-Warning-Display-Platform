@@ -1010,3 +1010,13 @@ input:not([type="radio"]):not([type="checkbox"]):focus, select:focus, textarea:f
 #table-wrapper::before { content:none !important; display:none !important; }
 .stats-mode .input-area .card { min-height:0; }
 .stats-mode .results-wrapper:has(#results-stats:empty) { margin-top:0 !important; }
+
+#forecast-table .tr-flight td { height:30px; padding:2px !important; background:#f0f7f4 !important; border-bottom:1px solid #d2e4dc; vertical-align:middle; }
+#forecast-table .pb-flight-label { font-size:11px; color:#426457; white-space:normal; }
+#forecast-table .pb-flight-cell { font-size:11px; text-align:center; white-space:nowrap; }
+.pb-flight-arrival, .pb-flight-departure { display:block; line-height:14px; font-size:10px; cursor:help; }
+.pb-flight-arrival { color:#087857; }
+.pb-flight-departure { color:#9d4d12; }
+.pb-flight-margin { display:inline-block; width:9px; height:9px; margin-left:4px; background:#dc2626; vertical-align:middle; cursor:help; }
+.pb-flight-cell:has(.pb-flight-margin) { white-space:normal !important; }
+.pb-flight-arrival:focus-visible, .pb-flight-departure:focus-visible, .pb-flight-margin:focus-visible { outline:2px solid #2563eb; outline-offset:2px; }
