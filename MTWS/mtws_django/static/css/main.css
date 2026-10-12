@@ -700,7 +700,7 @@ body.trend-alert-locked .filter-btn[data-group="international"]:hover {
   height: 32px;       /* 与 .filter-btn 高度一致 */
   border-radius: 4px;
   border: 1px solid white;
-  background-color: #34495e;
+  background-color: transparent;
   display: flex;
   align-items: center;
   overflow: hidden;
@@ -769,7 +769,7 @@ body.trend-alert-locked .filter-btn[data-group="international"]:hover {
   height: 32px;
   border-radius: 4px;
   border: 1px solid white;
-  background-color: #34495e;
+  background-color: transparent;
   display: flex;
   flex-direction: row;
   overflow: hidden;
@@ -922,7 +922,7 @@ body.display-timezone-utc .title-row.main-title-row .timeline-row {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  border-right: 1px solid #95a5a6;
+  border-right: none;
   font-weight: bold;
   height: 30px;
   font-size: 14px;
