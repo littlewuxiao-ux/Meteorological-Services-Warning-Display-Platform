@@ -12,7 +12,7 @@
 
   const HOME_COLOR = { red: 'R', yellow: 'Y', green: 'G', none: 'N' };
   const BAR_COLOR = { R: '#d64545', Y: '#e6b325', G: '#2e9e5b' };
-  const SHOWN_KEYS = new Set(['temperature', 'dewpoint', 'rh', 'pressure', 'wind', 'visibility', 'height']);
+  const SHOWN_KEYS = new Set(['temperature', 'dewpoint', 'rh', 'pressure', 'wind', 'visibility', 'weather', 'cover', 'height']);
 
   function apiUrl(path) {
     const mode = (typeof currentTimeMode !== 'undefined' ? currentTimeMode : null) || window.currentTimeMode || 'current';
@@ -100,13 +100,19 @@
   function cellsFor(row, fullSlots, visible) {
     const at = new Map();
     fullSlots.forEach((ms, index) => at.set(ms, index));
+    const phenom = row.key === 'weather' || row.key === 'cover';
+    const half = showHalf();
     const cells = visible.map((ms) => {
       const index = at.get(ms);
       const cell = index == null ? null : (row.cells || [])[index];
-      return cell || { text: '', speci: false };
+      const raw = cell || { text: '', speci: false };
+      if (phenom && !half && ms % 3600000 === 0) {
+        return { text: raw.text_hour || '', speci: !!raw.speci_hour };
+      }
+      return { text: raw.text || '', speci: !!raw.speci };
     });
     const latest = row.latest;
-    if (cells.length && latest && latest.text) {
+    if (!phenom && cells.length && latest && latest.text) {
       cells[cells.length - 1] = { text: latest.text, speci: !!latest.speci };
     }
     return cells;
@@ -294,7 +300,8 @@
           : '';
         const cells = cellsFor(row, fullSlots, slots).map((cell) => {
           const cls = cell.speci ? ' class="trend-speci"' : '';
-          const title = cell.speci ? ' title="最新特殊报"' : '';
+          const speciTitle = (row.key === 'weather' || row.key === 'cover') ? '特殊报' : '最新特殊报';
+          const title = cell.speci ? ` title="${speciTitle}"` : '';
           return `<td${cls}${title}>${esc(cell.text || '')}</td>`;
         }).join('');
         const handleCell = index === 0

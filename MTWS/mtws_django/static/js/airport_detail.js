@@ -9,18 +9,18 @@ window.searchAirportCache = searchAirportCache;
 
 // 当前详情弹窗展示中的机场代码（用于温度辅助覆盖层随数据刷新重绘）
 let currentDetailAirportCode = null;
-// 头部信息权限上下文：点四字码进详情为 'detail'；搜索打开（含单机场详情弹窗）为 'search'
+// 联系方式权限上下文：点四字码进详情为 'detail'；搜索打开（含单机场详情弹窗）为 'search'
 let headerInfoContext = 'detail';
 
 function headerInfoMode() {
   return window._viewMode === 'plain' ? 'plain' : 'home';
 }
 
-function canShowHeaderInfo(kind) {
+function canShowContactInfo() {
   if (typeof hasAccess !== 'function') return true;
   if (!window.__accessIdentity) return true;
   const page = headerInfoContext === 'search' ? 'search' : 'detail';
-  return hasAccess(`${page}_${kind}_${headerInfoMode()}`, 'display');
+  return hasAccess(`${page}_contact_${headerInfoMode()}`, 'display');
 }
 
 function airportDetailTimelineCornerLabel() {
@@ -107,19 +107,10 @@ function showAirportDetailModal(airportData, source) {
   document.getElementById('airport-title-name').textContent = airport.airport_name || '机场名称未配置';
 
   // 联系方式（使用主页已有的字段）
-  const showContact = canShowHeaderInfo('contact');
-  const showSun = canShowHeaderInfo('sun');
-  const showRunway = canShowHeaderInfo('runway');
+  const showContact = canShowContactInfo();
   const contactsEl = document.querySelector('#airport-detail-modal .airport-info-contacts');
-  const sunLeftEl = document.querySelector('#airport-detail-modal .airport-info-left');
   const dividerEl = document.querySelector('#airport-detail-modal .airport-info-divider');
   const infoRow = document.querySelector('#airport-detail-modal .airport-info-row');
-  const runwayItem = sunLeftEl
-    ? Array.from(sunLeftEl.querySelectorAll('.info-item')).find((item) => {
-        const label = item.querySelector('.info-label');
-        return label && (label.textContent || '').indexOf('跑道') >= 0;
-      })
-    : null;
 
   if (contactsEl) {
     contactsEl.style.display = showContact ? '' : 'none';
@@ -130,30 +121,13 @@ function showAirportDetailModal(airportData, source) {
       document.getElementById('other-phone').textContent = airport.other_phone || 'N/A';
     }
   }
-  if (sunLeftEl) {
-    const sunItems = sunLeftEl.querySelectorAll('.info-item');
-    sunItems.forEach((item) => {
-      const label = item.querySelector('.info-label');
-      if (!label) return;
-      const t = label.textContent || '';
-      if (t.indexOf('日出') >= 0 || t.indexOf('日落') >= 0) {
-        item.style.display = showSun ? '' : 'none';
-      }
-    });
-    if (runwayItem) runwayItem.style.display = showRunway ? '' : 'none';
-    sunLeftEl.style.display = (showSun || showRunway) ? '' : 'none';
-  }
-  const showLeft = showSun || showRunway;
-  if (dividerEl) dividerEl.style.display = (showLeft && showContact) ? '' : 'none';
+  if (dividerEl) dividerEl.style.display = showContact ? '' : 'none';
   if (infoRow) {
-    infoRow.classList.toggle('header-info-only', !(showLeft && showContact));
-    infoRow.style.display = (showLeft || showContact) ? '' : 'none';
+    infoRow.classList.toggle('header-info-only', !showContact);
     infoRow.style.justifyContent = '';
   }
 
-  if (showSun || showRunway) {
-    loadAirportExtraInfo(airport.airport_4code);
-  }
+  loadAirportExtraInfo(airport.airport_4code);
 
   const chartSection = document.getElementById('airport-chart-section');
   if (chartSection) {
@@ -1101,11 +1075,10 @@ function _buildSearchAirportHeader(airport) {
   const forecastPhone = airport.forecast_phone || 'N/A';
   const obsPhone = airport.observation_phone || 'N/A';
   const otherPhone = airport.other_phone || 'N/A';
-  const showSun = canShowHeaderInfo('sun');
-  const showRunway = canShowHeaderInfo('runway');
-  const showContact = canShowHeaderInfo('contact');
+  const showContact = canShowContactInfo();
 
-  const sunHtml = showSun ? `
+  const leftHtml = `
+        <div class="airport-info-left">
           <div class="info-item">
             <span class="info-label">日出:</span>
             <span class="info-value" id="search-sunrise-${code}">--:--</span>
@@ -1113,15 +1086,12 @@ function _buildSearchAirportHeader(airport) {
           <div class="info-item">
             <span class="info-label">日落:</span>
             <span class="info-value" id="search-sunset-${code}">--:--</span>
-          </div>` : '';
-  const runwayHtml = showRunway ? `
+          </div>
           <div class="info-item">
             <span class="info-label">跑道:</span>
             <span class="info-value" id="search-runway-${code}">--</span>
-          </div>` : '';
-  const leftHtml = (showSun || showRunway)
-    ? `<div class="airport-info-left">${sunHtml}${runwayHtml}</div>`
-    : '';
+          </div>
+        </div>`;
   const contactHtml = showContact ? `
         <div class="airport-info-contacts">
           <div class="contact-item">

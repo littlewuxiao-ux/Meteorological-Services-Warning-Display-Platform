@@ -236,13 +236,16 @@ class AircraftParkingInfo(models.Model):
 
 
 class PopupSettings(models.Model):
-    """弹窗全站规则（等级/余量）。席位开关不落此表。"""
+    """弹窗规则与开关。按用户分存，没有个人行时用 default。"""
 
     user_code = models.CharField(max_length=12, unique=True, verbose_name='用户代码')
     operation_metar_popup_leeway = models.IntegerField(blank=True, null=True, verbose_name='运行区METAR弹窗余量')
     operation_metar_popup_level = models.CharField(max_length=1, blank=True, null=True, verbose_name='运行区METAR弹窗级别')
     parking_metar_popup_level = models.CharField(max_length=1, blank=True, null=True, verbose_name='停场METAR弹窗级别')
     trace_time = models.PositiveSmallIntegerField(default=6, verbose_name='弹窗追溯时间（小时）')
+    operation_enabled = models.BooleanField(default=True, verbose_name='运行类弹窗')
+    parking_enabled = models.BooleanField(default=True, verbose_name='停场类弹窗')
+    intercept_enabled = models.BooleanField(default=True, verbose_name='降级免打扰')
 
     class Meta:
         db_table = 'popup_settings'
@@ -349,14 +352,13 @@ class AccessGroup(models.Model):
 
 
 class AccessGroupPermission(models.Model):
-    """用户组模块权限（显示/激活/写入）"""
+    """用户组模块权限（显示/写入）"""
 
     group = models.ForeignKey(
         AccessGroup, on_delete=models.CASCADE, related_name='permissions', verbose_name='用户组'
     )
     module_code = models.CharField(max_length=64, verbose_name='模块代码')
     can_display = models.BooleanField(default=False, verbose_name='显示')
-    can_activate = models.BooleanField(default=False, verbose_name='激活后台')
     can_write = models.BooleanField(default=False, verbose_name='写入')
 
     class Meta:
@@ -367,6 +369,22 @@ class AccessGroupPermission(models.Model):
 
     def __str__(self):
         return f'{self.group_id}:{self.module_code}'
+
+
+class AccessSetting(models.Model):
+    """用户组库的键值配置（超管口令哈希等）"""
+
+    key = models.CharField(max_length=64, unique=True, verbose_name='键')
+    value = models.TextField(verbose_name='值')
+    updated_at = models.DateTimeField(auto_now=True, verbose_name='更新时间')
+
+    class Meta:
+        db_table = 'access_setting'
+        verbose_name = '用户组库配置'
+        verbose_name_plural = '用户组库配置'
+
+    def __str__(self):
+        return self.key
 
 
 class NonLocalQrBlacklist(models.Model):

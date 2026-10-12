@@ -31,7 +31,7 @@ from utils.flight_selection import (
     visible_airport_codes,
 )
 from utils.marks_alert_calculator import computed_alerts_from_flight
-from utils.popup_utils import PopupManager, get_seat_identity, get_popup_trace_hours
+from utils.popup_utils import PopupManager, get_seat_identity, get_popup_trace_hours, list_popup_history
 from data_adapters.adapter_factory import AdapterFactory
 from utils.cas_api_log import cas_user_context, log_cas_api_request
 
@@ -71,6 +71,18 @@ def get_overview_auth_status(time_mode):
         return {'reachable': False, 'logged_in': False, 'expired': False}
 
 
+def _hidden_prefix_areas():
+    try:
+        import json
+        from core.models import SystemConfig
+        row = SystemConfig.objects.filter(config_type='default_template', config_key='hidden_prefix_regions').first()
+        if row and row.config_value:
+            return set(str(x) for x in json.loads(row.config_value))
+    except Exception:
+        pass
+    return set()
+
+
 def get_cached_area_options():
     """主页筛选用的区域。来自前缀行上的序号、性质和区域名称。"""
     try:
@@ -86,6 +98,8 @@ def get_cached_area_options():
             if key in seen:
                 continue
             seen.add(key)
+            if row['area'] in _hidden_prefix_areas():
+                continue
             item = {'area': row['area'], 'sequence': row['sequence']}
             if row['classification'] == '国内':
                 domestic.append(item)
@@ -137,6 +151,7 @@ def airports_overview(request, time_mode='current'):
                     'carriers': sort_carrier_codes(chosen_carriers),
                     'timestamp': datetime.now().isoformat(),
                     'auth_status': get_overview_auth_status(time_mode),
+                    'hidden_regions': sorted(_hidden_prefix_areas()),
                     'seat_identity': get_seat_identity(request),
                 }
             })
@@ -384,6 +399,7 @@ def airports_overview(request, time_mode='current'):
                 },
                 'parsing_status': backend_parsing_status,
                 'auth_status': get_overview_auth_status(time_mode),
+                    'hidden_regions': sorted(_hidden_prefix_areas()),
                 'seat_identity': get_seat_identity(request),
             }
         }
@@ -525,19 +541,20 @@ def trigger_parsing(request, time_mode='current'):
         update_types = data.get('updateTypes', None)
         only_nwp = isinstance(update_types, list) and set(update_types) == {'nwp'}
         if only_nwp:
-            if not has_perm(identity, 'nwp', 'activate'):
-                return JsonResponse({'success': False, 'error': '无温度辅助激活权限'}, status=403)
+            if not has_perm(identity, 'nwp', 'display'):
+                return JsonResponse({'success': False, 'error': '无温度辅助权限'}, status=403)
         else:
-            # 刷新/综合解析：需要刷新激活；搜索触发的解析也走此接口
+            # 刷新、搜索、详情页实况趋势触发的解析都走此接口
             if not (
-                has_perm(identity, 'refresh_btn', 'activate')
-                or has_perm(identity, 'search', 'activate')
-                or has_perm(identity, 'detail_metar_trend', 'activate')
+                has_perm(identity, 'refresh_btn', 'display')
+                or has_perm(identity, 'search', 'display')
+                or has_perm(identity, 'detail_metar_trend', 'display')
             ):
-                return JsonResponse({'success': False, 'error': '无激活解析权限'}, status=403)
-        
-        # 获取要更新的数据类型
-        # update_types already parsed
+                return JsonResponse({'success': False, 'error': '无触发解析权限'}, status=403)
+            if not has_perm(identity, 'nwp', 'display'):
+                if isinstance(update_types, list):
+                    update_types = [t for t in update_types if t != 'nwp']
+                data.pop('nwpEnabled', None)
 
         # 同步 NWP 开关状态到调度器缓存
         nwp_enabled = data.get('nwpEnabled', None)
@@ -819,6 +836,10 @@ def logout(request, time_mode='current'):
             'error': '此接口仅用于current模式'
         }, status=400)
     
+    from utils.access_control import has_perm, resolve_access_identity
+    if not has_perm(resolve_access_identity(request), 'login_user', 'display'):
+        return JsonResponse({'success': False, 'error': '无登出权限'}, status=403)
+
     try:
         from .cas_login import logout as cas_logout
         
@@ -967,9 +988,14 @@ def get_metar_popups(request, time_mode='current'):
         - user_code: 用户代码
     """
     try:
+        from utils.access_control import has_perm, resolve_access_identity
         from utils.time_manager import TimeManager
         
-        user_code = request.GET.get('user_code', 'default')
+        if not has_perm(resolve_access_identity(request), 'metar_popup', 'display'):
+            return JsonResponse({'success': True, 'data': [], 'current_time': None, 'trace_time': None})
+
+        from utils.user_settings import request_settings_user
+        user_code = request_settings_user(request, time_mode)
         
         # 创建弹窗管理器
         popup_manager = PopupManager(user_code=user_code, time_mode=time_mode)
@@ -985,7 +1011,7 @@ def get_metar_popups(request, time_mode='current'):
             'success': True,
             'data': popup_list,
             'current_time': current_time_ms,
-            'trace_time': get_popup_trace_hours(),
+            'trace_time': get_popup_trace_hours(user_code),
         })
         
     except Exception as e:
@@ -994,6 +1020,32 @@ def get_metar_popups(request, time_mode='current'):
             'success': False,
             'error': '获取实况弹窗数据失败',
             'message': str(e)
+        }, status=500)
+
+
+@require_http_methods(["GET"])
+def get_popup_history(request, time_mode='current'):
+    """实况弹窗处理记录。打开时读取一页，不随实况轮询更新。"""
+    try:
+        from utils.access_control import has_perm, resolve_access_identity
+        from utils.user_settings import request_settings_user
+
+        identity = resolve_access_identity(request)
+        if not has_perm(identity, 'metar_popup', 'display'):
+            return JsonResponse({'success': False, 'error': '无权查看处理记录'}, status=403)
+        try:
+            page = int(request.GET.get('page') or 1)
+        except (TypeError, ValueError):
+            page = 1
+        user_code = request_settings_user(request, time_mode)
+        payload = list_popup_history(user_code, time_mode, page)
+        return JsonResponse({'success': True, **payload})
+    except Exception as e:
+        logger.error(f"获取弹窗处理记录失败: {e}")
+        return JsonResponse({
+            'success': False,
+            'error': '获取弹窗处理记录失败',
+            'message': str(e),
         }, status=500)
 
 
@@ -1212,7 +1264,7 @@ def get_import_alerts(request, time_mode):
     排序：未处理在前，已处理在后，均按 import_alert_time 降序。
     """
     from utils.access_control import resolve_access_identity, has_perm
-    if not has_perm(resolve_access_identity(request), 'import_alert', 'activate'):
+    if not has_perm(resolve_access_identity(request), 'import_alert', 'display'):
         return JsonResponse({'success': False, 'error': '无报文入库告警权限'}, status=403)
     try:
         PAGE_SIZE = 10
@@ -1327,7 +1379,7 @@ def get_taf_import_alerts(request, time_mode):
     taf_type 由预报发布间隔决定：6→FT，3→FC，其他→TAF。配置不完整时不算应发时间。
     """
     from utils.access_control import resolve_access_identity, has_perm
-    if not has_perm(resolve_access_identity(request), 'import_alert', 'activate'):
+    if not has_perm(resolve_access_identity(request), 'import_alert', 'display'):
         return JsonResponse({'success': False, 'error': '无报文入库告警权限'}, status=403)
     try:
         PAGE_SIZE = 10

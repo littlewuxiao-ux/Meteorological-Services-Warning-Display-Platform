@@ -904,6 +904,7 @@ let _wxTimeMs = 0;
 let _wxTimeLayer = '';
 let _wxRefreshTimer = null;
 let _wxBusy = false;
+let _wxForcePending = false;
 const _WX_SRC = 'wx-overlay';
 const _WX_LAYER = 'wx-overlay';
 
@@ -1042,21 +1043,26 @@ function _ensureWxLayer() {
 
 let _wxTileUrl = '';
 
-function _setWxTiles(tileUrl, maxzoom, visible) {
-    if (!_mlMap || !_mlReady) return;
+function _removeWxOverlay() {
+    if (!_mlMap) return;
+    if (_mlMap.getLayer(_WX_LAYER)) _mlMap.removeLayer(_WX_LAYER);
+    if (_mlMap.getSource(_WX_SRC)) _mlMap.removeSource(_WX_SRC);
+}
+
+function _setWxTiles(tileUrl, maxzoom, visible, force) {
+    if (!_mlMap || !_mlReady || !tileUrl) return;
     const zoom = maxzoom != null ? maxzoom : 7;
     const layer = _mlMap.getLayer(_WX_LAYER);
     const src = _mlMap.getSource(_WX_SRC);
-    if (layer && src && _wxTileUrl === tileUrl) {
+    if (layer && src && _wxTileUrl === tileUrl && !force) {
         _mlMap.setLayoutProperty(_WX_LAYER, 'visibility', visible ? 'visible' : 'none');
         return;
     }
-    _ensureWxLayer();
-    // 地址变了才重建。每次拆掉再铺上会让整幅回波闪一下。
+    // 只保留一个气象图层。地址变化或重新加载时先拆掉再铺，避免叠成两层。
     const before = _wxBeforeId();
-    if (_mlMap.getLayer(_WX_LAYER)) _mlMap.removeLayer(_WX_LAYER);
-    if (_mlMap.getSource(_WX_SRC)) _mlMap.removeSource(_WX_SRC);
-    _wxTileUrl = tileUrl || '';
+    _removeWxOverlay();
+    if (_mlMap.getLayer(_WX_LAYER) || _mlMap.getSource(_WX_SRC)) return;
+    _wxTileUrl = tileUrl;
     _mlMap.addSource(_WX_SRC, {
         type: 'raster',
         tiles: [tileUrl],
@@ -1065,6 +1071,7 @@ function _setWxTiles(tileUrl, maxzoom, visible) {
         maxzoom: zoom,
         attribution: 'RainViewer / NASA GIBS Himawari',
     });
+    if (_mlMap.getLayer(_WX_LAYER)) return;
     _mlMap.addLayer({
         id: _WX_LAYER,
         type: 'raster',
@@ -1102,8 +1109,60 @@ async function _probeTile(urlTemplate) {
     return false;
 }
 
-async function _loadRadarWx() {
-    // 优先用告警任务帧，失败则拉 RainViewer 最新 past
+function _paintRadarMeta(meta, force) {
+    const tpl = _wxRadarTileUrl(meta);
+    if (!tpl || _wxLayerId !== 'radar') return false;
+    _setWxTiles(tpl, 7, true, !!force);
+    _radarOverlayMeta = meta;
+    _radarFramePath = `${meta.frame_time}|${meta.path}`;
+    return true;
+}
+
+async function _fetchRainViewerMeta() {
+    const res = await fetch('https://api.rainviewer.com/public/weather-maps.json', { cache: 'no-store' });
+    if (!res.ok) throw new Error('索引 HTTP ' + res.status);
+    const data = await res.json();
+    const past = (data.radar && data.radar.past) || [];
+    if (!past.length) throw new Error('无雷达帧');
+    const frame = past[past.length - 1];
+    return {
+        host: (data.host || 'https://tilecache.rainviewer.com').replace(/\/$/, ''),
+        path: frame.path,
+        frame_time: frame.time,
+        z: 3,
+        tile_size: 256,
+        color: 2,
+        smooth: 0,
+        snow: 0,
+    };
+}
+
+async function _loadRadarWx(force) {
+    // 已有告警帧就直接铺上。没有这一帧时再向外部接口取最新帧。
+    const show = (meta) => {
+        if (_wxLayerId !== 'radar') return;
+        _wxTip('');
+        _setWxTime('radar', (meta.frame_time || 0) * 1000);
+    };
+    if (force) {
+        if (_radarOverlayMeta && _paintRadarMeta(_radarOverlayMeta, true)) {
+            show(_radarOverlayMeta);
+            return;
+        }
+        if (_wxLayerId !== 'radar') return;
+        try {
+            const meta = await _fetchRainViewerMeta();
+            if (_wxLayerId !== 'radar') return;
+            if (!_paintRadarMeta(meta, true)) throw new Error('雷达瓦片不可用');
+            show(meta);
+        } catch (e) {
+            if (_wxLayerId !== 'radar') return;
+            _hideWxOverlay();
+            _setWxTime('radar', 0);
+            _wxTip('雷达数据异常：' + (e.message || '加载失败'));
+        }
+        return;
+    }
     let meta = _radarOverlayMeta;
     const tryMeta = async (m) => {
         const tpl = _wxRadarTileUrl(m);
@@ -1111,40 +1170,18 @@ async function _loadRadarWx() {
         const ok = await _probeTile(tpl);
         if (!ok) return false;
         if (_wxLayerId !== 'radar') return false;
-        _setWxTiles(tpl, 7, true);
-        _radarOverlayMeta = m;
-        _radarFramePath = `${m.frame_time}|${m.path}`;
-        return true;
+        return _paintRadarMeta(m, false);
     };
     if (meta && await tryMeta(meta)) {
-        if (_wxLayerId !== 'radar') return;
-        _wxTip('');
-        _setWxTime('radar', (meta.frame_time || 0) * 1000);
+        show(meta);
         return;
     }
     if (_wxLayerId !== 'radar') return;
     try {
-        const res = await fetch('https://api.rainviewer.com/public/weather-maps.json', { cache: 'no-store' });
-        if (!res.ok) throw new Error('索引 HTTP ' + res.status);
-        const data = await res.json();
-        const past = (data.radar && data.radar.past) || [];
-        if (!past.length) throw new Error('无雷达帧');
-        const frame = past[past.length - 1];
-        meta = {
-            host: (data.host || 'https://tilecache.rainviewer.com').replace(/\/$/, ''),
-            path: frame.path,
-            frame_time: frame.time,
-            z: 3,
-            tile_size: 256,
-            color: 2,
-            smooth: 0,
-            snow: 0,
-        };
+        meta = await _fetchRainViewerMeta();
         if (_wxLayerId !== 'radar') return;
         if (!(await tryMeta(meta))) throw new Error('雷达瓦片不可用');
-        if (_wxLayerId !== 'radar') return;
-        _wxTip('');
-        _setWxTime('radar', frame.time * 1000);
+        show(meta);
     } catch (e) {
         if (_wxLayerId !== 'radar') return;
         _hideWxOverlay();
@@ -1153,7 +1190,7 @@ async function _loadRadarWx() {
     }
 }
 
-async function _loadSatWx(kind) {
+async function _loadSatWx(kind, force) {
     const cfg = _WX_GIBS[kind];
     if (!cfg) {
         _wxTip('未知卫星通道');
@@ -1166,7 +1203,7 @@ async function _loadSatWx(kind) {
         const ok = await _probeTile(tpl);
         if (ok) {
             if (_wxLayerId !== kind) return;
-            _setWxTiles(tpl, cfg.maxzoom, true);
+            _setWxTiles(tpl, cfg.maxzoom, true, !!force);
             _wxTip('');
             _setWxTime(kind, Date.parse(`${day}T00:00:00Z`));
             return;
@@ -1179,9 +1216,11 @@ async function _loadSatWx(kind) {
     _wxTip('卫星数据异常：近几日瓦片不可用（试过 ' + lastErr + '）');
 }
 
-async function _applyWxLayer(id) {
+async function _applyWxLayer(id, opts) {
+    const force = !!(opts && opts.force);
     const next = id || 'none';
     _wxLayerId = next;
+    _syncWxReload();
     if (next === 'none') {
         _wxTip('');
         _setWxTime('', 0);
@@ -1190,20 +1229,30 @@ async function _applyWxLayer(id) {
     }
     if (_wxTimeLayer !== next) _setWxTime(next, 0);
     if (!_mlMap || !_mlReady) return;
-    if (_wxBusy) return;
+    if (_wxBusy) {
+        if (force) _wxForcePending = true;
+        return;
+    }
     _wxBusy = true;
     const requested = next;
+    const reloadBtn = document.getElementById('map-wx-reload');
+    if (reloadBtn) reloadBtn.disabled = true;
     try {
         _wxTip('');
-        if (requested === 'radar') await _loadRadarWx();
-        else await _loadSatWx(requested);
+        if (requested === 'radar') await _loadRadarWx(force);
+        else await _loadSatWx(requested, force);
     } finally {
         _wxBusy = false;
+        if (reloadBtn) reloadBtn.disabled = false;
+        const pending = _wxForcePending;
+        _wxForcePending = false;
         if (_wxLayerId === 'none') {
             _hideWxOverlay();
             _setWxTime('', 0);
         } else if (_wxLayerId !== requested) {
             _applyWxLayer(_wxLayerId);
+        } else if (pending) {
+            _applyWxLayer(requested, { force: true });
         }
     }
 }
@@ -1232,6 +1281,21 @@ function _applyWxPermission() {
     panel.style.display = (radarOn || satOn) ? '' : 'none';
     if (_wxLayerId === 'radar' && !radarOn) _wxLayerId = 'none';
     if (_wxLayerId && String(_wxLayerId).indexOf('sat_') === 0 && !satOn) _wxLayerId = 'none';
+    _syncWxReload();
+}
+
+function _syncWxReload() {
+    const btn = document.getElementById('map-wx-reload');
+    const panel = document.getElementById('map-wx-layer-panel');
+    if (!btn || !panel) return;
+    const radarOn = _wxLayerId === 'radar' && _accessAllows('map_radar', 'display');
+    const satOn = !!(_wxLayerId && String(_wxLayerId).indexOf('sat_') === 0) && _accessAllows('map_satellite', 'display');
+    const show = radarOn || satOn;
+    btn.classList.toggle('is-show', show);
+    btn.hidden = !show;
+    if (!show) return;
+    const time = panel.querySelector(radarOn ? '[data-wx-time="radar"]' : '[data-wx-time="sat"]');
+    if (time && btn.nextElementSibling !== time) time.parentNode.insertBefore(btn, time);
 }
 
 function _syncWxPanelUI(layerId) {
@@ -1247,6 +1311,7 @@ function _syncWxPanelUI(layerId) {
     panel.querySelectorAll('[data-wx="sat_ir"], [data-wx="sat_wv"], [data-wx="sat_vis"]').forEach(btn => {
         btn.classList.toggle('is-on', btn.getAttribute('data-wx') === layerId);
     });
+    _syncWxReload();
 }
 
 function _initWxLayerPanel() {
@@ -1263,6 +1328,14 @@ function _initWxLayerPanel() {
         _syncWxPanelUI(id);
         _applyWxLayer(id);
     };
+
+    const reloadBtn = document.getElementById('map-wx-reload');
+    if (reloadBtn) {
+        reloadBtn.addEventListener('click', () => {
+            if (!_wxLayerId || _wxLayerId === 'none') return;
+            _applyWxLayer(_wxLayerId, { force: true });
+        });
+    }
 
     const radarBtn = panel.querySelector('input[data-wx="radar"]');
     if (radarBtn) {
@@ -1513,7 +1586,7 @@ function _runRadarForCurrentScope(hideStale) {
     _syncMapHoursVisibility();
     const trendHours = document.getElementById('trend-future-hours');
     if (trendHours) trendHours.value = String(hours);
-    if (!_accessAllows('map_radar', 'activate')) return;
+    if (!_accessAllows('map_radar', 'display')) return;
     return fetch(`/${currentTimeMode}/api/radar/run/`, {
         method: 'POST',
         headers: {

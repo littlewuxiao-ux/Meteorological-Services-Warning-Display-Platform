@@ -69,9 +69,13 @@ body.map-mode .view-nav {
 
 .view-nav-item.active {
   background-color: #2c3e50;
-  color: #fff;
+  color: #6ea8fe;
   border-left-color: #6ea8fe;
   font-weight: bold;
+}
+
+.view-nav-item.active .view-nav-icon {
+  color: #6ea8fe;
 }
 
 .view-nav-icon {
@@ -202,7 +206,7 @@ body.map-mode .view-nav {
   box-sizing: border-box;
 }
 
-.plain-line + .plain-line {
+.plain-line+.plain-line {
   border-top: 1px dashed #d5dbdb;
 }
 
@@ -258,15 +262,34 @@ body.map-mode .view-nav {
   background-color: var(--alert-n);
 }
 
-.plain-dot-R { background-color: var(--alert-r); }
-.plain-dot-Y { background-color: var(--alert-y); }
-.plain-dot-G { background-color: var(--alert-g); }
-.plain-dot-N { background-color: var(--alert-n); }
+.plain-dot-R {
+  background-color: var(--alert-r);
+}
+
+.plain-dot-Y {
+  background-color: var(--alert-y);
+}
+
+.plain-dot-G {
+  background-color: var(--alert-g);
+}
+
+.plain-dot-N {
+  background-color: var(--alert-n);
+}
 
 /* 告警只作用在要素值本身，用字体色而非底色 */
-.plain-val-R { color: var(--alert-r); }
-.plain-val-Y { color: var(--alert-y); }
-.plain-val-G { color: var(--alert-g); }
+.plain-val-R {
+  color: var(--alert-r);
+}
+
+.plain-val-Y {
+  color: var(--alert-y);
+}
+
+.plain-val-G {
+  color: var(--alert-g);
+}
 
 /* 中文详情/搜索：不要历史报文区，时间轴标题不再给左侧实况格留位 */
 body.plain-mode .airport-reports-section {
@@ -275,7 +298,7 @@ body.plain-mode .airport-reports-section {
 
 /* 中文详情：时间轴左侧与三行说明同宽（固定像素，不随「北京时」三字缩窄） */
 body.plain-mode {
-  --plain-row-label-width: 72px;
+  --plain-row-label-width: 100px;
 }
 
 body.plain-mode .airport-detail-title-row {
@@ -306,6 +329,43 @@ body.plain-mode .airport-detail-title-row .title-weather {
   background: rgba(255, 255, 255, 0.04);
 }
 
+.plain-label-group {
+  display: flex;
+  flex: 4 1 0;
+  min-height: 128px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.plain-label-group:last-child,
+.plain-label-flight {
+  flex: 1 1 0;
+  min-height: 32px;
+  border-bottom: none;
+}
+
+.plain-label-parent {
+  flex: 0 0 68px;
+  width: 68px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.25;
+  color: rgba(255, 255, 255, 0.92);
+  padding: 0 4px;
+  box-sizing: border-box;
+  border-right: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.plain-label-children {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
 .plain-row-label {
   flex: 1;
   display: flex;
@@ -321,14 +381,33 @@ body.plain-mode .airport-detail-title-row .title-weather {
   border-bottom: 1px solid rgba(255, 255, 255, 0.3);
 }
 
-.plain-row-label:last-child {
+.plain-label-children .plain-row-label:last-child {
   border-bottom: none;
+}
+
+.plain-row-label-placeholder {
+  color: rgba(255, 255, 255, 0.35);
+  font-weight: 400;
 }
 
 .airport-row-plain .forecast-timeline {
   flex: 1;
   min-width: 0;
-  min-height: 90px;
+  min-height: 288px;
+}
+
+.airport-row-plain .forecast-row,
+.airport-row-plain .main-forecast,
+.airport-row-plain .change-forecast,
+.airport-row-plain .flight-row {
+  height: auto;
+  flex: 1 0 32px;
+  min-height: 32px;
+}
+
+.airport-row-plain .gantt-bar {
+  height: 22px;
+  font-size: 12px;
 }
 
 .plain-detail-metar-wrap {
@@ -388,13 +467,11 @@ body.plain-mode .airport-detail-title-row .title-weather {
   content: '';
   position: absolute;
   inset: 0;
-  background: repeating-linear-gradient(
-    135deg,
-    transparent 0px,
-    transparent 8px,
-    rgba(255, 0, 0, 0.28) 8px,
-    rgba(255, 0, 0, 0.28) 16px
-  );
+  background: repeating-linear-gradient(135deg,
+      transparent 0px,
+      transparent 8px,
+      rgba(255, 0, 0, 0.28) 8px,
+      rgba(255, 0, 0, 0.28) 16px);
   pointer-events: none;
   z-index: 0;
 }

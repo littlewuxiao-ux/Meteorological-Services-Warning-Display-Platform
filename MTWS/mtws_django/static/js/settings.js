@@ -38,6 +38,8 @@
     const toggle = document.getElementById('settings-default-toggle');
     if (toggle) toggle.textContent = '编辑默认模板';
     paintDefaultBanner();
+    prefixEditingId = null;
+    prefixSnapshot = null;
     const modal = document.getElementById('settings-modal');
     if (modal && window.getComputedStyle(modal).display !== 'none') loadTab(currentSettingsTab);
   }
@@ -170,7 +172,8 @@
 
   // ========== Tab1: 机场信息（按四字代码查询） ==========
   async function loadAirportInfo() {
-    await refreshAreaOptionsCache();
+    const areaRes = await refreshAreaOptionsCache();
+    if (areaRes) applyScope(areaRes);
     const input = document.getElementById('airport-search-input');
     if (input) input.value = '';
     const area = document.getElementById('airport-result-area');
@@ -279,7 +282,7 @@
 
   async function refreshAreaOptionsCache() {
     const res = await apiFetch(apiUrl('settings/prefix-area/'));
-    if (!res.success) return;
+    if (!res.success) return res;
     areaOptions = {};
     const seen = new Set();
     (res.data || []).forEach(o => {
@@ -289,6 +292,7 @@
       if (!areaOptions[o.classification]) areaOptions[o.classification] = [];
       areaOptions[o.classification].push(o.area);
     });
+    return res;
   }
 
   function updateAreaSelect(classification, current) {
@@ -447,7 +451,7 @@
     if (pane) pane.classList.toggle('is-editing', popupEditing);
     if (modeBtn) modeBtn.textContent = popupEditing ? '确定' : '编辑';
     if (cancelBtn) cancelBtn.disabled = !popupEditing;
-    ['pf-leeway', 'pf-trace-time'].forEach((id) => {
+    ['pf-leeway', 'pf-trace-time', 'pf-operation-enabled', 'pf-parking-enabled', 'pf-intercept-enabled'].forEach((id) => {
       const el = document.getElementById(id);
       if (el) el.disabled = !popupEditing;
     });
@@ -467,9 +471,15 @@
     const d = res.data;
     document.getElementById('pf-leeway').value = d.operation_metar_popup_leeway ?? 0;
     document.getElementById('pf-trace-time').value = d.trace_time ?? 6;
+    document.getElementById('pf-operation-enabled').checked = d.operation_enabled !== false;
+    document.getElementById('pf-parking-enabled').checked = d.parking_enabled !== false;
+    document.getElementById('pf-intercept-enabled').checked = d.intercept_enabled !== false;
     opLevelTrack.setVal(d.operation_metar_popup_level || 'Y');
     parkLevelTrack.setVal(d.parking_metar_popup_level || 'Y');
     paintPopupMode();
+    if (settingsScope !== 'default' && typeof window.applyPopupDisplayPrefs === 'function') {
+      window.applyPopupDisplayPrefs(d, { refresh: true });
+    }
   }
 
   async function savePopupSettings() {
@@ -478,6 +488,9 @@
       operation_metar_popup_level: opLevelTrack ? opLevelTrack.getVal() : 'Y',
       parking_metar_popup_level: parkLevelTrack ? parkLevelTrack.getVal() : 'Y',
       trace_time: parseInt(document.getElementById('pf-trace-time').value, 10),
+      operation_enabled: !!document.getElementById('pf-operation-enabled').checked,
+      parking_enabled: !!document.getElementById('pf-parking-enabled').checked,
+      intercept_enabled: !!document.getElementById('pf-intercept-enabled').checked,
     };
 
     const leeway = payload.operation_metar_popup_leeway;
@@ -499,6 +512,9 @@
       paintPopupMode();
       showMsg('popup-msg', '保存成功', 'success');
       window.__popupTraceHours = traceTime;
+      if (settingsScope !== 'default' && typeof window.applyPopupDisplayPrefs === 'function') {
+        window.applyPopupDisplayPrefs(payload, { refresh: true });
+      }
     } else {
       showMsg('popup-msg', res.error, 'error');
     }
@@ -564,7 +580,7 @@
       const del = generic ? '' : `<button class="settings-del-btn" type="button" data-threshold-delete="${prefixAttr(row.isNew ? row._local : row.airport_4code)}">删除</button>`;
       return `<article class="threshold-card" data-threshold-code="${prefixAttr(row.isNew ? '' : row.airport_4code)}" data-threshold-new="${row.isNew ? '1' : '0'}" data-threshold-local="${prefixAttr(row._local || '')}">
         <div class="threshold-card-head">
-          <input class="settings-input threshold-code" maxlength="4" value="${prefixAttr(codeValue)}"${codeLock}${row.isNew && prefixFocus === row._local ? ' data-prefix-focus="1"' : ''}>
+          <input class="settings-input threshold-code" maxlength="40" placeholder="ICAO" title="ICAO: single ZBBB or multi ZBBB,ZSPD,ZGGG separated by comma" value="${prefixAttr(codeValue)}"${codeLock}${row.isNew && prefixFocus === row._local ? ' data-prefix-focus="1"' : ''}>
           <span>${del}</span>
         </div>
         <table class="settings-table threshold-vert">
@@ -648,9 +664,14 @@
 
   async function saveAllThresholds() {
     const rows = readThresholdDom();
+    var __allSeen = {};
+    for (var __r=0;__r<rows.length;__r++){ var __rc = rows[__r].original==='default'?[]:String(rows[__r].airport_4code||'').toUpperCase().split(/[，,\s]+/).filter(Boolean); for (var __q=0;__q<__rc.length;__q++){ if(__allSeen[__rc[__q]]){ showMsg('threshold-msg','同一机场只能存在一个阈值组中: '+__rc[__q],'error'); return; } __allSeen[__rc[__q]]=1; } }
     for (const row of rows) {
-      if (row.isNew && (row.airport_4code.length !== 4 || !/^[A-Z]{4}$/.test(row.airport_4code))) {
-        showMsg('threshold-msg', '机场四字代码必须为4位英文大写字母', 'error');
+      var __codes = String(row.airport_4code||'').toUpperCase().split(/[，,\s]+/).filter(Boolean);
+      var __seen = {};
+      for (var __k=0;__k<__codes.length;__k++){ if(__seen[__codes[__k]]){ showMsg('threshold-msg','同一阈值组内机场 '+__codes[__k]+' 重复','error'); return; } __seen[__codes[__k]]=1; }
+      if (row.isNew && !/^[A-Z0-9]{4}(\s*[,，]\s*[A-Z0-9]{4})*$/.test((row.airport_4code||'').trim().toUpperCase())) {
+        showMsg('threshold-msg', 'ICAO format: single ZBBB or multi ZBBB,ZSPD separated by comma', 'error');
         return;
       }
       if (!['FEW', 'SCT', 'BKN', 'OVC'].includes(row.min_cloud_amt)) {
@@ -666,7 +687,7 @@
         }
       }
     }
-    const modeBtn = document.getElementById('threshold-mode-btn');
+const modeBtn = document.getElementById('threshold-mode-btn');
     if (modeBtn) modeBtn.disabled = true;
     for (const code of thresholdRemoved) {
       const res = await apiFetch(apiUrl(`settings/alert-thresholds/${code}/`), { method: 'DELETE' });
@@ -677,18 +698,21 @@
       }
     }
     for (const row of rows) {
-      const payload = { airport_4code: row.original === 'default' ? 'default' : row.airport_4code, min_cloud_amt: row.min_cloud_amt };
+      const codes = row.original === 'default' ? ['default'] : String(row.airport_4code||'').toUpperCase().split(/[，,\s]+/).filter(Boolean);
+      for (const code of codes) {
+      const payload = { airport_4code: row.original === 'default' ? 'default' : code, min_cloud_amt: row.min_cloud_amt };
       TF_FIELDS.forEach(([, red, yellow, green]) => {
         [red, yellow, green].forEach((field) => { payload[field] = parseInt(row[field], 10); });
       });
       const url = row.isNew
         ? apiUrl('settings/alert-thresholds/')
-        : apiUrl(`settings/alert-thresholds/${row.original}/`);
+        : apiUrl(`settings/alert-thresholds/${code}/`);
       const res = await apiFetch(url, { method: row.isNew ? 'POST' : 'PUT', body: JSON.stringify(payload) });
       if (!res.success) {
         if (modeBtn) modeBtn.disabled = false;
         showMsg('threshold-msg', res.error || '保存失败', 'error');
         return;
+      }
       }
     }
     if (modeBtn) modeBtn.disabled = false;
@@ -737,6 +761,7 @@
 
   async function loadWeatherType() {
     const res = await apiFetch(apiUrl('settings/weather-type/'));
+    applyScope(res);
     if (!res.success) { showMsg('wtype-msg', res.error, 'error'); return; }
     wtypeEditing = false;
     wtypeRemoved = [];
@@ -1553,6 +1578,51 @@
     const unlockBox = document.getElementById('settings-admin-unlock');
     const unlockInput = document.getElementById('settings-admin-password');
     const unlockBtn = document.getElementById('settings-admin-unlock-btn');
+    const strayLogout = document.getElementById('superuser-logout-btn');
+    if (strayLogout) strayLogout.remove();
+    function paintSuperButtons(){
+      var unlocked = !!window.__adminUnlocked;
+      document.body.classList.toggle('is-superuser', unlocked);
+      if (!suBtn) return;
+      var label = unlocked ? '超级用户登出' : '超级用户';
+      if (suBtn.textContent !== label) suBtn.textContent = label;
+      suBtn.classList.toggle('settings-btn-save', !unlocked);
+      suBtn.classList.toggle('settings-btn-cancel', unlocked);
+    }
+    async function lockSettingsAdmin(){
+      let res;
+      try {
+        res = await apiFetch(apiUrl('access/admin/lock/'), { method: 'POST', body: '{}' });
+      } catch (e) {
+        alert('退出超级用户失败');
+        return;
+      }
+      if (!res || res.success === false) {
+        alert((res && res.error) || '退出超级用户失败');
+        return;
+      }
+      window.__adminUnlocked = false;
+      document.body.classList.remove('is-superuser');
+      if (unlockBox) unlockBox.style.display = 'none';
+      if (unlockInput) unlockInput.value = '';
+      prefixEditingId = null;
+      prefixSnapshot = null;
+      ['国内', '国际'].forEach((kind) => {
+        if (prefixDraft[kind]) prefixDraft[kind] = prefixDraft[kind].filter((region) => !region.isNew);
+      });
+      settingsScope = '';
+      window.__settingsScope = '';
+      applyScope({ can_edit_default: false });
+      const scopeToggle = document.getElementById('settings-default-toggle');
+      if (scopeToggle) scopeToggle.textContent = '编辑默认模板';
+      paintDefaultBanner();
+      paintSuperButtons();
+      if (window.__gateGlobal) window.__gateGlobal();
+      const modal = document.getElementById('settings-modal');
+      if (modal && window.getComputedStyle(modal).display !== 'none') await loadTab(currentSettingsTab);
+    }
+    window.__lockSettingsAdmin = lockSettingsAdmin;
+    window.__paintSuperButtons = paintSuperButtons;
     async function unlockSettingsAdmin() {
       const password = unlockInput ? unlockInput.value : '';
       const res = await apiFetch(apiUrl('access/admin/unlock/'), {
@@ -1567,10 +1637,16 @@
       if (unlockBox) unlockBox.style.display = 'none';
       window.__adminUnlocked = true;
       applyScope({ can_edit_default: true });
+      if(typeof paintSuperButtons === 'function') paintSuperButtons();
+      if(window.__paintSuperButtons) window.__paintSuperButtons();
       await loadTab(currentSettingsTab);
     }
     if (suBtn && unlockBox) {
       suBtn.addEventListener('click', () => {
+        if (window.__adminUnlocked) {
+          lockSettingsAdmin();
+          return;
+        }
         const open = unlockBox.style.display === 'none';
         unlockBox.style.display = open ? 'inline-flex' : 'none';
         if (open && unlockInput) unlockInput.focus();
@@ -1604,9 +1680,16 @@
     document.querySelectorAll('.settings-restore-btn').forEach((btn) => {
       btn.addEventListener('click', async () => {
         const group = btn.dataset.group;
-        const hint = group === 'airport_alert_thresholds'
-          ? '只清除你的通用阈值，已单独设置的机场会保留。确定恢复？'
-          : '清除你在这一组保存的内容，改回默认。确定恢复？';
+        const wholeTable = {
+          airport_info: '将全部机场信息恢复为默认模板，当前改动都会被覆盖。确定恢复？',
+          prefix_area: '将全部机场区域恢复为默认模板，当前改动都会被覆盖。确定恢复？',
+          taf_import: '将全部预报入库告警恢复为默认模板，当前改动都会被覆盖。确定恢复？',
+          weather_type: '将全部天气类型恢复为默认模板，当前改动都会被覆盖。确定恢复？',
+        };
+        const hint = wholeTable[group]
+          || (group === 'airport_alert_thresholds'
+            ? '只清除你的通用阈值，已单独设置的机场会保留。确定恢复？'
+            : '清除你在这一组保存的内容，改回默认。确定恢复？');
         if (!confirm(hint)) return;
         const res = await apiFetch(apiUrl('settings/restore/'), {
           method: 'POST',
@@ -1614,6 +1697,10 @@
         });
         showMsg(btn.dataset.msg, res.success ? (res.message || '已恢复默认') : (res.error || '恢复失败'), res.success ? 'success' : 'error');
         if (!res.success) return;
+        if (group === 'prefix_area') {
+          prefixEditingId = null;
+          prefixSnapshot = null;
+        }
         if (group === 'trend_alert_config' && window.TrendAlertSettings) await window.TrendAlertSettings.load();
         else await loadTab(currentSettingsTab);
       });
@@ -1723,6 +1810,7 @@
     if (popupCancel) popupCancel.addEventListener('click', () => loadPopupSettings());
 
     // 告警阈值
+    var __thHint=document.getElementById('threshold-format-hint'); if(!__thHint){ var __tb=document.getElementById('threshold-add-btn'); if(__tb&&__tb.parentElement){ __thHint=document.createElement('span'); __thHint.id='threshold-format-hint'; __thHint.className='settings-hint'; __thHint.textContent='ICAO 格式:单个如 ZBBB,多个用英文逗号分隔如 ZBBB,ZSPD,ZGGG,同一机场只能在一个阈值组中'; __tb.parentElement.appendChild(__thHint); } }
     document.getElementById('threshold-add-btn').addEventListener('click', addThresholdCard);
     document.getElementById('threshold-mode-btn').addEventListener('click', () => {
       if (!thresholdEditing) {
@@ -1964,8 +2052,9 @@
           </div>
           <div class="prefix-region-actions">
             <button class="settings-edit-btn prefix-edit-only" type="button" data-prefix-add-line="${region.id}">新增前缀</button>
-            <button class="settings-save-inline-btn" type="button" data-prefix-mode="${region.id}">${editing ? '保存' : '编辑'}</button>
             <button class="settings-cancel-inline-btn" type="button" data-prefix-cancel="${region.id}"${editing ? '' : ' disabled'}>取消</button>
+            <button class="settings-save-inline-btn" type="button" data-prefix-mode="${region.id}">${editing ? '保存' : '编辑'}</button>
+            <label class="prefix-vis"><span>隐藏</span><input type="checkbox" class="prefix-vis-check" data-prefix-vis="${prefixAttr(region.area)}"${(window.__hiddenRegions || []).includes(region.area) ? ' checked' : ''}></label>
             <button class="prefix-fold-btn" type="button" data-prefix-fold="${region.id}">${collapsed ? '展开' : '收起'}</button>
           </div>
         </div>
@@ -1988,6 +2077,14 @@
     const board = document.getElementById('prefix-board');
     if (!board) return;
     board.innerHTML = ['国内', '国际'].map((kind) => renderPrefixSection(kind, prefixDraft[kind] || [])).join('');
+    // template ids (pf1, pf2...) are local only: strip any stray text nodes containing them
+    try{
+      board.querySelectorAll('.prefix-kind-block').forEach(function(sec){
+        Array.from(sec.childNodes).forEach(function(n){
+          if(n.nodeType === 3 && /pf\d+/i.test(n.textContent || '')) n.textContent = '';
+        });
+      });
+    }catch(e){}
     paintPrefixFoldAll();
     const focusEl = board.querySelector('[data-prefix-focus]');
     prefixFocus = '';
@@ -2008,7 +2105,9 @@
   async function loadPrefixAreas() {
     if (prefixEditingId) return;
     const res = await apiFetch(apiUrl('settings/prefix-area/'));
+    applyScope(res);
     if (!res.success) { showMsg('prefix-msg', res.error, 'error'); return; }
+    window.__hiddenRegions = res.hidden_regions || window.__hiddenRegions || [];
     prefixRows = res.data || [];
     prefixDraft = draftFromPrefixRows(prefixRows);
     const alive = new Set();
@@ -2199,6 +2298,25 @@
     if (saveBtn) saveBtn.disabled = false;
     showMsg('prefix-msg', res.success ? (res.message || '保存成功') : res.error, res.success ? 'success' : 'error');
     if (!res.success) return false;
+    // persist pending hidden-area state with the same save (default template only)
+    try{
+      if(window.__settingsScope === 'default' && window.__adminUnlocked && window.__pendingHidden !== null){
+        var hiddenList = Array.from(window.__pendingHidden);
+        var cur = window.__hiddenRegions || [];
+        var toHide = hiddenList.filter(function(a){ return cur.indexOf(a) < 0; });
+        var toShow = cur.filter(function(a){ return hiddenList.indexOf(a) < 0; });
+        for(var hi = 0; hi < toHide.length; hi++){
+          await apiFetch(apiUrl('settings/prefix-area/visibility/'), { method: 'POST', body: JSON.stringify({ region_id: toHide[hi], hidden: true }) });
+        }
+        for(var si = 0; si < toShow.length; si++){
+          await apiFetch(apiUrl('settings/prefix-area/visibility/'), { method: 'POST', body: JSON.stringify({ region_id: toShow[si], hidden: false }) });
+        }
+        window.__hiddenRegions = hiddenList;
+        window.__pendingHidden = null;
+        location.reload();
+        return true;
+      }
+    }catch(e){}
     prefixEditingId = null;
     prefixSnapshot = null;
     await loadPrefixAreas();
@@ -2219,6 +2337,7 @@
 
   async function loadTafImport() {
     const res = await apiFetch(apiUrl('settings/taf-import/'));
+    applyScope(res);
     if (!res.success) { showMsg('taf-msg', res.error, 'error'); return; }
     const tbody = document.getElementById('taf-tbody');
     tbody.innerHTML = (res.data || []).map(row => `<tr>
@@ -2386,3 +2505,49 @@
     init();
   }
 })();
+
+// Global readonly retired per request: global panes stay editable.
+
+// region visibility handled by backend template (see below).
+
+// Global panes: edit buttons follow module write permission (enforced by backend), not superuser state.
+(function(){
+  function isSuper(){ return !!window.__adminUnlocked; }
+  function isDefaultTpl(){ return window.__settingsScope==='default'; }
+  function gateGlobal(){
+    try{
+      // threshold toolbar: cancel before save
+      document.querySelectorAll('#settings-pane-alert-thresholds .settings-list-toolbar').forEach(function(bar){
+        var save = bar.querySelector('#threshold-mode-btn');
+        var cancel = bar.querySelector('#threshold-cancel-btn');
+        if(save && cancel && cancel.nextElementSibling !== save){ bar.insertBefore(cancel, save); }
+      });
+      // superuser template: keep [取消][保存/编辑] adjacent, cancel before save
+      document.querySelectorAll('.prefix-region-actions').forEach(function(bar){
+        var save = bar.querySelector('[data-prefix-mode]');
+        var cancel = bar.querySelector('[data-prefix-cancel]');
+        if(save && cancel && cancel.nextElementSibling !== save){ bar.insertBefore(cancel, save); }
+      });
+      // vis checkbox: enabled only in default template (superuser); otherwise readonly display
+      var visLocked = !isSuper() || !isDefaultTpl();
+      document.querySelectorAll('.prefix-vis-check').forEach(function(c){ c.disabled = visLocked; });
+    }catch(e){}
+  }
+  function paintSuperClass(){ document.body.classList.toggle('is-superuser', !!window.__adminUnlocked); if(window.__paintSuperButtons) window.__paintSuperButtons(); }
+  paintSuperClass();
+  setInterval(function(){ paintSuperClass(); gateGlobal(); }, 1200);
+  window.__gateGlobal = gateGlobal;
+  // prefix visibility: checkbox toggles pending set, saved on region save (no instant reload)
+  window.__pendingHidden = null;
+  document.addEventListener('change', function(e){
+    var c = e.target.closest('.prefix-vis-check'); if(!c) return;
+    if(c.disabled) return;
+    var area = c.dataset.prefixVis;
+    if(window.__pendingHidden === null){
+      window.__pendingHidden = new Set(window.__hiddenRegions || []);
+    }
+    if(c.checked) window.__pendingHidden.add(area);
+    else window.__pendingHidden.delete(area);
+  });
+})();
+

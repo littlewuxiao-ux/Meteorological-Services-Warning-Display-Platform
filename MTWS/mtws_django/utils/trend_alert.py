@@ -2,6 +2,7 @@
 
 常规要素的下降与时段内最高值比较，上升与时段内最低值比较。
 云量、云高、天气现象的「由 / 过去出现」看时段内是否有一份满足，含特殊报。
+时序里天气现象和云量在条件命中后单独成行，格子取该窗口内最早一份自身符合条件的报文。
 """
 
 from __future__ import annotations
@@ -13,7 +14,7 @@ import uuid
 from typing import Any, Optional
 
 ELEMENTS = (
-    'temperature', 'dewpoint', 'rh', 'pressure', 'wind', 'visibility',
+    'temperature', 'dewpoint', 'rh', 'pressure', 'wind', 'visibility', 'spread',
 )
 ELEMENT_LABELS = {
     'temperature': '气温',
@@ -22,6 +23,7 @@ ELEMENT_LABELS = {
     'pressure': '气压',
     'wind': '风速',
     'visibility': '能见度',
+    'spread': '温度露点差',
 }
 ELEMENT_UNITS = {
     'temperature': '℃',
@@ -30,12 +32,13 @@ ELEMENT_UNITS = {
     'pressure': 'hPa',
     'wind': 'm/s',
     'visibility': 'm',
+    'spread': '℃',
 }
 COVERS = ('NSC', 'FEW', 'SCT', 'BKN', 'OVC')
 COVER_RANK = {'FEW': 1, 'SCT': 2, 'BKN': 3, 'OVC': 4}
 CLEAR_SKY = {'NSC', 'SKC', 'CLR', 'NCD'}
 ROW_ORDER = (
-    'temperature', 'dewpoint', 'rh', 'pressure', 'wind', 'visibility',
+    'temperature', 'dewpoint', 'rh', 'pressure', 'wind', 'visibility', 'spread',
     'weather', 'cover', 'height',
 )
 ROW_LABELS = {
@@ -179,6 +182,15 @@ def _weather_codes(elements: Optional[dict], raw: Optional[str]) -> list:
     return codes
 
 
+def _cover_marks(layers) -> list:
+    marks = []
+    for layer in layers:
+        cover = str((layer or {}).get('cover') or '').strip().upper()
+        if cover in ('FEW', 'SCT', 'BKN', 'OVC') and cover not in marks:
+            marks.append(cover)
+    return marks
+
+
 def _cloud_state(elements: Optional[dict], cloud_text: Optional[str], min_height) -> dict:
     layers = []
     sky = None
@@ -211,11 +223,12 @@ def _cloud_state(elements: Optional[dict], cloud_text: Optional[str], min_height
         best = max(ranked)
         cover = next(name for name, rank in COVER_RANK.items() if rank == best)
         base = min(heights) if heights else _num(min_height)
-        return {'cover': cover, 'base': base, 'nsc': False}
+        return {'cover': cover, 'base': base, 'nsc': False, 'covers': _cover_marks(layers)}
     base = _num(min_height)
+    marks = _cover_marks(layers) or ['NSC']
     if base is not None:
-        return {'cover': 'NSC', 'base': base, 'nsc': False}
-    return {'cover': 'NSC', 'base': None, 'nsc': True}
+        return {'cover': 'NSC', 'base': base, 'nsc': False, 'covers': marks}
+    return {'cover': 'NSC', 'base': None, 'nsc': True, 'covers': marks}
 
 
 def snapshot_from_row(row: dict) -> Optional[dict]:
@@ -263,12 +276,19 @@ def snapshot_from_row(row: dict) -> Optional[dict]:
         'visibility': visibility,
         'weather': _weather_codes(elements if isinstance(elements, dict) else None, row.get('metar_weather')),
         'cover': cloud['cover'],
+        'covers': cloud.get('covers') or [],
         'base': cloud['base'],
         'nsc': cloud['nsc'],
     }
 
 
 def _element_value(obs: dict, name: str):
+    if name == 'spread':
+        temp = obs.get('temperature')
+        dew = obs.get('dewpoint')
+        if temp is None or dew is None:
+            return None
+        return temp - dew
     return obs.get(name)
 
 
@@ -329,17 +349,20 @@ def _condition_match(cond: dict, obs: list, now_ms: int) -> bool:
             after = _element_value(current, element)
             if not values or after is None:
                 return False
+            change_op = cond.get('change_op') or ('>=' if direction != 'up' else '>=')
             if direction == 'down':
-                ok = (max(values) - after) >= amount
+                diff = max(values) - after
             else:
-                ok = (after - min(values)) >= amount
+                diff = after - min(values)
+            ok = diff >= amount if change_op != '<=' else diff <= amount
         if ok and use_current:
             element = cond.get('current_element')
             limit = _num(cond.get('current_value'))
             value = _element_value(current, element)
             if value is None or limit is None:
                 return False
-            ok = value <= limit if direction == 'down' else value >= limit
+            current_op = cond.get('current_op') or ('<=' if direction != 'up' else '>=')
+            ok = value <= limit if current_op == '<=' else value >= limit
         return ok
 
     if kind == 'weather':
@@ -351,12 +374,21 @@ def _condition_match(cond: dict, obs: list, now_ms: int) -> bool:
                 return False
             if codes:
                 wanted = set(codes)
-                ok = any(wanted.intersection(item['weather']) for item in samples)
+                if cond.get('past_match') == 'all':
+                    seen = set()
+                    for item in samples:
+                        seen.update(wanted.intersection(item['weather']))
+                    ok = wanted.issubset(seen)
+                else:
+                    ok = any(wanted.intersection(item['weather']) for item in samples)
             else:
                 ok = any(not item['weather'] for item in samples)
         if ok and use_current:
-            if cond.get('current_match') == 'none' or not (cond.get('current_codes') or []):
+            cm = cond.get('current_match') or 'any'
+            if not (cond.get('current_codes') or []):
                 ok = not current['weather']
+            elif cm == 'all':
+                ok = set(cond.get('current_codes') or []).issubset(set(current['weather']))
             else:
                 ok = bool(set(cond.get('current_codes') or []).intersection(current['weather']))
         return ok
@@ -393,7 +425,7 @@ def _condition_match(cond: dict, obs: list, now_ms: int) -> bool:
 
 
 def _hit_rows(cond: dict) -> list:
-    """时序表只列已经命中的常规要素和云高。天气现象、云量不占行。同一要素只保留一次。"""
+    """时序表只列已经命中的要素。天气现象、云量在对应条件命中后占行。同一要素只保留一次。"""
     rows = []
     if cond.get('kind') == 'element':
         if cond.get('use_change'):
@@ -402,9 +434,13 @@ def _hit_rows(cond: dict) -> list:
             rows.append(cond.get('current_element'))
     elif cond.get('kind') == 'height':
         rows.append('height')
+    elif cond.get('kind') == 'weather':
+        rows.append('weather')
+    elif cond.get('kind') == 'cover':
+        rows.append('cover')
     seen = []
     for row in rows:
-        if row in (*ELEMENTS, 'height') and row not in seen:
+        if row in (*ELEMENTS, 'height', 'weather', 'cover') and row not in seen:
             seen.append(row)
     return seen
 
@@ -474,22 +510,152 @@ def _latest_observation(obs: list, slots: list, now_ms: Optional[int]) -> Option
     return max(pool, key=lambda item: item['time'])
 
 
-def _series(obs: list, slots: list, keys: list, now_ms: Optional[int] = None) -> tuple:
-    """各时刻格只放本格的整点或半点报。最新一份报文单独记在 latest，由页面放在最右列。"""
+def _weather_text(obs: dict) -> str:
+    codes = []
+    for code in obs.get('weather') or []:
+        token = str(code).strip().upper()
+        if token and token not in codes:
+            codes.append(token)
+    return ','.join(codes)
+
+
+def _cover_text(obs: dict) -> str:
+    marks = []
+    for code in obs.get('covers') or []:
+        token = str(code).strip().upper()
+        if token in ('FEW', 'SCT', 'BKN', 'OVC', 'NSC') and token not in marks:
+            marks.append(token)
+    if not marks:
+        token = str(obs.get('cover') or '').strip().upper()
+        if token in ('FEW', 'SCT', 'BKN', 'OVC', 'NSC'):
+            marks.append(token)
+    return ','.join(marks)
+
+
+def _codes_hit(present: set, codes, mode: str) -> bool:
+    wanted = {str(code).strip().upper() for code in (codes or []) if str(code).strip()}
+    if not wanted:
+        return not present
+    if mode == 'all':
+        return wanted.issubset(present)
+    return bool(wanted.intersection(present))
+
+
+def _report_meets_weather(item: dict, cond: dict) -> bool:
+    """格子里要的是带有告警现象的那份报文。当前条件留空表示无天气，不拿它挡住后面的降水。"""
+    present = set(item.get('weather') or [])
+    hit = False
+    coded = False
+    if cond.get('use_current') and (cond.get('current_codes') or []):
+        coded = True
+        hit = hit or _codes_hit(present, cond.get('current_codes'), cond.get('current_match') or 'any')
+    if cond.get('use_change') and (cond.get('past_codes') or []):
+        coded = True
+        hit = hit or _codes_hit(present, cond.get('past_codes'), cond.get('past_match') or 'any')
+    if coded:
+        return hit
+    if cond.get('use_current') or cond.get('use_change'):
+        return not present
+    return False
+
+
+def _report_meets_cover(item: dict, cond: dict) -> bool:
+    marks = {str(code).strip().upper() for code in (item.get('covers') or [])}
+    cover = str(item.get('cover') or '').strip().upper()
+    if cover:
+        marks.add(cover)
+    targets = set()
+    if cond.get('use_current'):
+        targets.update(cond.get('cover_now') or [])
+    if cond.get('use_change'):
+        targets.update(cond.get('cover_to') or [])
+    if not targets:
+        return False
+    return bool(marks.intersection(targets))
+
+
+def _phenom_ranges(slot: int, hour_only: bool) -> dict:
+    """天气现象、云量的取值窗口。半点格只有一套；整点格按是否勾选半点报分成两套。"""
+    ten = 10 * 60 * 1000
+    if slot % HOUR_MS != 0:
+        return {
+            'sa': [(slot - ten, slot + ten)],
+            'sp': [(slot, slot + 29 * 60 * 1000 + 59 * 1000)],
+        }
+    if hour_only:
+        return {
+            'sa': [(slot - ten, slot + 40 * 60 * 1000)],
+            'sp': [(slot, slot + 59 * 60 * 1000 + 59 * 1000)],
+        }
+    return {
+        'sa': [(slot - ten, slot + ten)],
+        'sp': [(slot, slot + 29 * 60 * 1000 + 50 * 1000)],
+    }
+
+
+def _in_ranges(moment: int, ranges) -> bool:
+    return any(begin <= moment <= end for begin, end in ranges)
+
+
+def _first_phenom(obs: list, slot: int, hour_only: bool, predicate) -> Optional[dict]:
+    ranges = _phenom_ranges(slot, hour_only)
+    found = None
+    for item in obs:
+        if item.get('sa'):
+            ok = _in_ranges(item['time'], ranges['sa'])
+        elif item.get('speci'):
+            ok = _in_ranges(item['time'], ranges['sp'])
+        else:
+            continue
+        if not ok or not predicate(item):
+            continue
+        if found is None or item['time'] < found['time']:
+            found = item
+    return found
+
+
+def _phenom_cell(key: str, item: Optional[dict]) -> dict:
+    if item is None:
+        return {'text': '', 'speci': False}
+    text = _weather_text(item) if key == 'weather' else _cover_text(item)
+    return {'text': text, 'speci': bool(item.get('speci'))}
+
+
+def _series(obs: list, slots: list, keys: list, now_ms: Optional[int] = None, matched: Optional[list] = None) -> tuple:
+    """常规要素和云高仍取该格前后 10 分钟内的例行报。天气现象、云量取窗口内最早一份符合条件的报文。"""
+    weather_conds = [cond for cond in (matched or []) if cond.get('kind') == 'weather']
+    cover_conds = [cond for cond in (matched or []) if cond.get('kind') == 'cover']
     cells = {key: [] for key in keys}
     for slot in slots:
         routine = _routine_for_slot(obs, slot)
         for key in keys:
-            cells[key].append(_format_cell(key, routine, False))
+            if key not in ('weather', 'cover'):
+                cells[key].append(_format_cell(key, routine, False))
+                continue
+            conds = weather_conds if key == 'weather' else cover_conds
+            predicate = (
+                (lambda item, group=conds: any(_report_meets_weather(item, cond) for cond in group))
+                if key == 'weather'
+                else (lambda item, group=conds: any(_report_meets_cover(item, cond) for cond in group))
+            )
+            picked = _phenom_cell(key, _first_phenom(obs, slot, False, predicate))
+            if slot % HOUR_MS == 0:
+                hour_only = _phenom_cell(key, _first_phenom(obs, slot, True, predicate))
+                picked['text_hour'] = hour_only['text']
+                picked['speci_hour'] = hour_only['speci']
+            cells[key].append(picked)
     latest_obs = _latest_observation(obs, slots, now_ms)
     rows = []
     for key in ROW_ORDER:
         if key not in cells:
             continue
-        latest_cell = (
-            _format_cell(key, latest_obs, bool(latest_obs.get('speci')))
-            if latest_obs else {'text': '', 'speci': False}
-        )
+        if key in ('weather', 'cover'):
+            latest_cell = {'text': '', 'speci': False}
+        else:
+            latest_cell = (
+                _format_cell(key, latest_obs, bool(latest_obs.get('speci')))
+                if latest_obs else {'text': '', 'speci': False}
+            )
         rows.append({
             'key': key,
             'name': ROW_LABELS.get(key, key),
@@ -509,6 +675,7 @@ def score_group(group: dict, obs: list, now_ms: int) -> Optional[dict]:
     deduct_score = 0.0
     labels = []
     rows = []
+    matched = []
     for cond in enabled:
         if cond.get('role') == 'veto':
             continue
@@ -521,6 +688,7 @@ def score_group(group: dict, obs: list, now_ms: int) -> Optional[dict]:
             label = f'「{label}」'
         labels.append(label)
         rows.extend(_hit_rows(cond))
+        matched.append(cond)
         score = _num(cond.get('score')) or 0
         if role == 'extra':
             extra_score += min(score, EXTRA_SCORE_CAP)
@@ -554,6 +722,7 @@ def score_group(group: dict, obs: list, now_ms: int) -> Optional[dict]:
         'score': round(total, 4),
         'labels': [label for label in labels if label],
         'rows': rows,
+        'matched': matched,
     }
 
 
@@ -565,6 +734,7 @@ def merge_hits(hits: list) -> Optional[dict]:
     best_score = max(alerting, key=lambda hit: ((hit.get('score') or 0), COLOR_RANK.get(hit['color'], 0)))
     labels = []
     rows = []
+    matched = []
     for hit in alerting:
         for label in hit['labels']:
             if label not in labels:
@@ -572,17 +742,21 @@ def merge_hits(hits: list) -> Optional[dict]:
         for row in hit['rows']:
             if row not in rows:
                 rows.append(row)
+        for cond in hit.get('matched') or []:
+            if cond not in matched:
+                matched.append(cond)
     return {
         'color': best_color['color'],
         'score': best_score['score'],
         'bar_color': best_score['color'],
         'labels': labels,
         'rows': rows,
+        'matched': matched,
     }
 
 
 def evaluate_airport(obs: list, groups: list, now_ms: int, slots: list) -> dict:
-    """时序只保留命中的常规要素和云高。未达阈值的机场不铺全部要素。"""
+    """时序保留命中的常规要素、云高，以及命中的天气现象和云量。未达阈值的机场不铺全部要素。"""
     ordered = sorted(obs, key=lambda item: item['time'])
     hits = []
     for group in groups or []:
@@ -591,7 +765,7 @@ def evaluate_airport(obs: list, groups: list, now_ms: int, slots: list) -> dict:
         hits.append(score_group(group, ordered, now_ms))
     merged = merge_hits(hits)
     keys = merged['rows'] if merged else []
-    rows, _speci = _series(ordered, slots, keys, now_ms)
+    rows, _speci = _series(ordered, slots, keys, now_ms, (merged or {}).get('matched'))
     if not merged:
         return {
             'color': 'N',
@@ -659,6 +833,10 @@ def _clean_condition(raw: dict, index: int, known_weather: set, errors: list) ->
             errors.append(f'{prefix}需要选择下降或上升')
             direction = 'down'
         cond['direction'] = direction
+        change_op = str(raw.get('change_op') or '').strip()
+        cond['change_op'] = change_op if change_op in ('>=', '<=') else '>='
+        current_op = str(raw.get('current_op') or '').strip()
+        cond['current_op'] = current_op if current_op in ('>=', '<=') else ('<=' if direction != 'up' else '>=')
         if use_change:
             element = str(raw.get('change_element') or '').strip()
             amount = _num(raw.get('change_amount'))
@@ -680,7 +858,10 @@ def _clean_condition(raw: dict, index: int, known_weather: set, errors: list) ->
     elif kind == 'weather':
         past_codes = _split_codes(raw.get('past_weather') or '')
         current_codes = _split_codes(raw.get('current_weather') or '')
-        current_match = 'none' if str(raw.get('current_match') or '') == 'none' else 'any'
+        past_match = str(raw.get('past_match') or '').strip()
+        cond['past_match'] = 'all' if past_match == 'all' else 'any'
+        current_match = str(raw.get('current_match') or '').strip()
+        current_match = 'all' if current_match == 'all' else 'any'
         if use_change:
             unknown = [code for code in past_codes if code not in known_weather]
             if unknown:
@@ -900,9 +1081,14 @@ def _pack_series(rows: list, slots: list) -> list:
         points = []
         for slot, cell in zip(slots, row.get('cells') or []):
             text = cell.get('text') or ''
-            if not text:
+            text_hour = cell.get('text_hour') or ''
+            if not text and not text_hour:
                 continue
-            points.append({'t': int(slot), 'text': text, 'speci': bool(cell.get('speci'))})
+            point = {'t': int(slot), 'text': text, 'speci': bool(cell.get('speci'))}
+            if text_hour:
+                point['text_hour'] = text_hour
+                point['speci_hour'] = bool(cell.get('speci_hour'))
+            points.append(point)
         latest = row.get('latest') or {}
         packed.append({
             'key': row.get('key'),
@@ -921,9 +1107,14 @@ def _unpack_series(packed: list, slots: list) -> list:
         for slot in slots:
             hit = next((point for point in points if abs(int(point.get('t') or 0) - slot) <= 60 * 1000), None)
             if hit:
-                cells.append({'text': hit.get('text') or '', 'speci': bool(hit.get('speci'))})
+                cells.append({
+                    'text': hit.get('text') or '',
+                    'speci': bool(hit.get('speci')),
+                    'text_hour': hit.get('text_hour') or '',
+                    'speci_hour': bool(hit.get('speci_hour')),
+                })
             else:
-                cells.append({'text': '', 'speci': False})
+                cells.append({'text': '', 'speci': False, 'text_hour': '', 'speci_hour': False})
         latest = row.get('latest') or {}
         rows.append({
             'key': row.get('key'),
@@ -1157,8 +1348,8 @@ def _self_check() -> None:
     assert _condition_match(to_clear, became_clear, now)
     assert not _condition_match(to_clear, [obs(6, cover='FEW', base=20, nsc=False), obs(0, cover='NSC', base=None, nsc=True)], now)
     assert _hit_rows(to_clear) == ['height']
-    assert _hit_rows({'kind': 'weather', 'use_change': True}) == []
-    assert _hit_rows({'kind': 'cover', 'use_change': True}) == []
+    assert _hit_rows({'kind': 'weather', 'use_change': True}) == ['weather']
+    assert _hit_rows({'kind': 'cover', 'use_change': True}) == ['cover']
     only_nsc, height_errs = normalize_config({'groups': [{
         'name': '云', 'airport_mode': 'all', 'threshold_g': 1, 'threshold_y': 2, 'threshold_r': 3,
         'conditions': [{
@@ -1195,7 +1386,7 @@ def _self_check() -> None:
     }
     scored = score_group(group, series, now)
     assert scored and scored['color'] == 'R' and abs(scored['score'] - (4 + EXTRA_SCORE_CAP)) < 1e-9
-    assert scored['rows'] == ['temperature', 'visibility']
+    assert scored['rows'] == ['temperature', 'visibility', 'weather']
     assert scored['labels'] == ['气温下降且能见度低', '出现降雨']
     missed = dict(element, label='风速上升', use_current=False, change_element='wind', direction='up', change_amount=20)
     partial = score_group(dict(group, conditions=[element, weather, missed]), series, now)
@@ -1263,6 +1454,59 @@ def _self_check() -> None:
     special['time'] = hour_slot - 3 * 60 * 1000
     special_rows, _idx = _series([special], [hour_slot], ['temperature'], hour_slot)
     assert special_rows[0]['cells'][0]['text'] == ''
+    slot = (now // HOUR_MS) * HOUR_MS
+    if slot > now:
+        slot -= HOUR_MS
+    half = slot + 30 * 60 * 1000
+    rain = {
+        'kind': 'weather', 'use_current': True, 'use_change': False,
+        'current_codes': ['RA'], 'current_match': 'any',
+    }
+    sa_clear = obs(0, weather=[], sa=True, speci=False)
+    sa_clear['time'] = slot
+    sa_rain = obs(0, weather=['RA'], sa=True, speci=False)
+    sa_rain['time'] = slot - 5 * 60 * 1000
+    sp_rain = obs(0, weather=['RA', 'BR'], speci=True, sa=False)
+    sp_rain['time'] = slot + 15 * 60 * 1000
+    sp_late = obs(0, weather=['RA'], speci=True, sa=False)
+    sp_late['time'] = slot + 40 * 60 * 1000
+    phenom, _idx = _series([sa_clear, sp_rain, sa_rain, sp_late], [slot, half], ['weather'], slot + 50 * 60 * 1000, [rain])
+    assert phenom[0]['cells'][0]['text'] == 'RA' and phenom[0]['cells'][0]['speci'] is False
+    assert phenom[0]['cells'][0]['text_hour'] == 'RA'
+    assert phenom[0]['cells'][1]['text'] == 'RA' and phenom[0]['cells'][1]['speci'] is True
+    only_later, _idx = _series([sa_clear, sp_rain], [slot], ['weather'], slot, [rain])
+    assert only_later[0]['cells'][0]['text'] == 'RA,BR' and only_later[0]['cells'][0]['speci'] is True
+    assert only_later[0]['cells'][0]['text_hour'] == 'RA,BR'
+    stopped = {
+        'kind': 'weather', 'use_current': True, 'use_change': True,
+        'current_codes': [], 'current_match': 'any', 'past_codes': ['RA'], 'past_match': 'any',
+    }
+    after_rain, _idx = _series([sa_clear, sp_rain], [slot], ['weather'], slot, [stopped])
+    assert after_rain[0]['cells'][0]['text'] == 'RA,BR'
+    sa_gap = obs(0, weather=['RA'], sa=True, speci=False)
+    sa_gap['time'] = slot + 15 * 60 * 1000
+    gap_rows, _idx = _series([sa_gap], [slot], ['weather'], slot, [rain])
+    assert gap_rows[0]['cells'][0]['text'] == ''
+    assert gap_rows[0]['cells'][0]['text_hour'] == 'RA'
+    sa_half = obs(0, weather=['RA'], sa=True, speci=False)
+    sa_half['time'] = slot + 25 * 60 * 1000
+    hour_only_sa, _idx = _series([sa_half], [slot], ['weather'], slot, [rain])
+    assert hour_only_sa[0]['cells'][0]['text'] == ''
+    assert hour_only_sa[0]['cells'][0]['text_hour'] == 'RA'
+    cloud_rule = {
+        'kind': 'cover', 'use_current': True, 'use_change': False, 'cover_now': ['BKN', 'OVC'],
+    }
+    sa_few = obs(0, cover='FEW', covers=['FEW'], sa=True, speci=False)
+    sa_few['time'] = slot
+    sp_cloud = obs(0, cover='BKN', covers=['FEW', 'BKN'], speci=True, sa=False)
+    sp_cloud['time'] = slot + 20 * 60 * 1000
+    clouds, _idx = _series([sa_few, sp_cloud], [slot], ['cover'], slot, [cloud_rule])
+    assert clouds[0]['cells'][0]['text'] == 'FEW,BKN'
+    assert clouds[0]['cells'][0]['text_hour'] == 'FEW,BKN'
+    packed = _pack_series(clouds, [slot])
+    unpacked = _unpack_series(packed, [slot])
+    assert unpacked[0]['cells'][0]['text'] == 'FEW,BKN'
+    assert unpacked[0]['cells'][0]['text_hour'] == 'FEW,BKN'
     quiet = evaluate_airport(only_hour, [], now, [hour_slot, half_slot])
     assert quiet['color'] == 'N' and quiet['rows'] == []
     merged = merge_hits([

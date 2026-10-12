@@ -28,6 +28,74 @@ function createTafForecastRow(tafData, rowType) {
  * 甘特条带文本：中文模式下取明语翻译，其余视图仍用报文原文。
  * key 为 'SUBJECT' 或 '变化组类型|开始时次'，与 taf_elements 侧的键一致。
  */
+function escapeGantt(text) {
+    return String(text == null ? '' : text)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
+// 翻译详情：长效预报按要素分行，条带时间来自明语接口的 tracks
+function createPlainElementForecast(tafData, element, track) {
+    if (!tafData || tafData.length === 0) {
+        return '<div class="taf-row-container" style="position: relative; height: 100%;"></div>';
+    }
+    const taf = tafData[0];
+    const loader = track === 'tempo' ? window.plainTempoTracks : window.plainElementTracks;
+    const tracks = (typeof loader === 'function') ? loader(taf) : null;
+    const segs = (tracks && tracks[element]) || [];
+    const barType = track === 'tempo' ? 'tempo-prob' : 'main-forecast';
+    let html = '';
+    segs.forEach((seg) => {
+        if (!seg || !seg.start || !seg.end) return;
+        if (seg.kind === 'transition') {
+            html += createPlainTransitionBar(seg);
+        } else {
+            html += createSingleGanttBar(
+                seg.start,
+                seg.end,
+                seg.text || '',
+                seg.alert || 'N',
+                barType
+            );
+        }
+    });
+    if (track !== 'tempo' && element === 'wind') {
+        html += createTemperatureIndicators(taf);
+    }
+    return `<div class="taf-row-container" style="position: relative; height: 100%;">${html}</div>`;
+}
+
+function createPlainTransitionBar(seg) {
+    const position = calculateGanttPosition(seg.start, seg.end, getCurrentTime());
+    if (position.width <= 0 || position.left >= 100 || position.left + position.width <= 0) {
+        return '';
+    }
+    const fromLevel = seg.alert || 'N';
+    const toLevel = seg.alert_to || 'N';
+    const fromColor = getAlertColor(fromLevel);
+    const toColor = getAlertColor(toLevel);
+    const backgroundStyle = fromLevel === toLevel
+        ? `background-color: ${fromColor};`
+        : `background: linear-gradient(to right, ${fromColor}, ${toColor});`;
+    return `
+        <div class="gantt-bar gantt-becmg-transition"
+             style="position: absolute;
+                    left: ${position.left}%;
+                    width: ${position.width}%;
+                    ${backgroundStyle}
+                    color: white;
+                    z-index: 2;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;"
+             title="${escapeGantt(seg.title || '➤➤')}">
+            ➤➤
+        </div>
+    `;
+}
+
 function ganttBarContent(taf, key, raw) {
     const fallback = raw || '';
     if (window._viewMode !== 'plain') return fallback;
@@ -155,8 +223,8 @@ function createSingleGanttBar(startTime, endTime, content, warning, type) {
                     background-color: ${backgroundColor}; 
                     color: white; 
                     z-index: 1;"
-             title="${content || ''}">
-            ${content || ''}
+             title="${escapeGantt(content || '')}">
+            ${escapeGantt(content || '')}
         </div>
     `;
 }

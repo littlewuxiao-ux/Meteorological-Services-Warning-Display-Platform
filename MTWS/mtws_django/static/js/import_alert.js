@@ -63,46 +63,31 @@
     box-sizing: border-box;
 }
 
-.ia-panel-header {
-    display: flex;
+.ia-toolbar {
+    flex-shrink: 0;
+}
+.ia-toolbar .ia-tab {
+    display: inline-flex;
     align-items: center;
-    padding: 12px 20px;
-    background: #2c3e50;
-    color: #fff;
-    font-size: 15px;
-    font-weight: bold;
-    flex-shrink: 0;
-    letter-spacing: 0.04em;
-}
-
-/* Tab 切换器 */
-.ia-tab-bar {
-    display: flex;
-    flex-shrink: 0;
-    background: #e8ecf0;
-    border-bottom: 1px solid #ccc;
-    overflow: hidden;
-}
-.ia-tab {
-    flex: 0 0 auto;
-    min-width: 168px;
-    padding: 10px 28px;
-    text-align: center;
-    font-size: 14px;
-    font-weight: bold;
+    padding: 1px 8px;
+    border: 1px solid #3d5368;
+    border-radius: 4px;
+    background: #101820;
+    color: #d5e4f0;
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 1.4;
     cursor: pointer;
-    color: #666;
-    transition: background 0.15s, color 0.15s;
     user-select: none;
-    border-right: 1px solid #ccc;
 }
-.ia-tab:last-child { border-right: none; }
-.ia-tab:hover { background: #dde3e9; }
-.ia-tab.active {
-    background: #fff;
-    color: #2c3e50;
-    border-bottom: 2px solid #2c3e50;
-    margin-bottom: -1px;
+.ia-toolbar .ia-tab:hover {
+    border-color: #6a9ec4;
+}
+.ia-toolbar .ia-tab.active {
+    background: #1a3348;
+    border-color: #6a9ec4;
+    color: #e8f3fb;
+    font-weight: 700;
 }
 
 /* 表格头与行共用列宽，随视图宽度拉伸 */

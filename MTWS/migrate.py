@@ -1,4 +1,4 @@
-"""选择迁移文件后执行。按文件里的模型判断写入配置库、生产库，或两边都写。"""
+"""选择迁移文件后执行。按文件里的模型判断写入配置库、生产库、用户组库。"""
 
 import importlib
 import os
@@ -21,6 +21,8 @@ APPS = ("core", "parsers")
 FILE_RE = re.compile(r"^(\d{4})_.+\.py$")
 DB_CONFIG = "default"
 DB_RUNTIME = "runtime"
+DB_ACCESS = "access"
+DB_TITLES = {DB_CONFIG: "配置库", DB_RUNTIME: "生产库", DB_ACCESS: "用户组库"}
 
 sys.path.insert(0, str(DJANGO_DIR))
 
@@ -53,7 +55,7 @@ def migration_number(name):
 
 
 def database_title(alias):
-    return "配置库" if alias == DB_CONFIG else "生产库"
+    return DB_TITLES.get(alias, alias)
 
 
 def parse_showmigrations(text):
@@ -89,7 +91,7 @@ def _model_names(operation):
 
 
 def databases_for_migration(app, name):
-    """读迁移操作里的模型，对照分库名单。没有模型名时，parsers 归生产库，core 两边都执行。"""
+    """读迁移操作里的模型，对照分库名单。没有模型名时，parsers 归生产库，core 在配置库和生产库执行。"""
     from mtws_system.db_router import database_for
 
     module = importlib.import_module(f"mtws_migrations.{app}.{name}")
@@ -179,7 +181,7 @@ class MigrateApp(tk.Tk):
             return
         self.status_by_db = {}
         lines = []
-        for alias in (DB_CONFIG, DB_RUNTIME):
+        for alias in DB_TITLES:
             code, out = self._run_manage(["showmigrations", "--database", alias])
             if code != 0:
                 lines.append(f"{database_title(alias)} 状态读取失败：")

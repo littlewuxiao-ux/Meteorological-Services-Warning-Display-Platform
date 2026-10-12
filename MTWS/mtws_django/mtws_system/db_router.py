@@ -1,4 +1,4 @@
-"""配置库 default，生产库 runtime。"""
+"""配置库 default，生产库 runtime，用户组库 access。"""
 
 CONFIG_MODELS = {
     'airportinfo',
@@ -12,9 +12,6 @@ CONFIG_MODELS = {
     'weathertypeinfo',
     'airporttafimportconfig',
     'airportprefixarea',
-    'accessgroup',
-    'accessgrouppermission',
-    'nonlocalqrblacklist',
     'radaralertconfig',
     'mapstyleconfig',
     'trendalertconfig',
@@ -30,6 +27,15 @@ RUNTIME_CORE_MODELS = {
     'airporttrendalert',
 }
 
+ACCESS_MODELS = {
+    'accessgroup',
+    'accessgrouppermission',
+    'accesssetting',
+    'nonlocalqrblacklist',
+}
+
+ACCESS_DB = 'access'
+
 DJANGO_APPS = {'admin', 'auth', 'contenttypes', 'sessions'}
 
 
@@ -44,6 +50,8 @@ def database_for(app_label: str, model_name: str | None) -> str | None:
         return 'default'
     if name in RUNTIME_CORE_MODELS:
         return 'runtime'
+    if name in ACCESS_MODELS:
+        return ACCESS_DB
     return None
 
 
@@ -60,6 +68,9 @@ class MtwsRouter:
         )
 
     def allow_migrate(self, db, app_label, model_name=None, **hints):
+        if db == ACCESS_DB:
+            # 用户组库只建 ACCESS_MODELS 的表；历史迁移里的数据脚本（无模型名）不在此库执行
+            return app_label == 'core' and (model_name or '').lower() in ACCESS_MODELS
         if app_label in DJANGO_APPS:
             return db == 'default'
         if app_label == 'parsers':

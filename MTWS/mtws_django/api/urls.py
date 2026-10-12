@@ -16,7 +16,7 @@ from .settings_views import (
     settings_alert_thresholds, settings_alert_thresholds_detail,
     settings_weather_type, settings_weather_type_detail,
     settings_weather_alert, settings_weather_alert_detail,
-    settings_prefix_area, settings_prefix_area_detail,
+    settings_prefix_area, settings_prefix_area_detail, prefix_area_visibility,
     settings_taf_import, settings_taf_import_detail,
 )
 from .plain_views import plain_taf_batch, plain_metar_batch, plain_report_text
@@ -24,7 +24,7 @@ from .access_views import (
     access_bootstrap, access_session_status, access_select_role,
     access_complete_qr_login, access_seat_logout,
     access_admin_unlock, access_admin_lock, access_admin_touch, access_admin_change_password,
-    access_admin_groups, access_admin_group_detail,
+    access_admin_groups, access_admin_group_detail, access_admin_export, access_admin_import,
     access_admin_blacklist, access_admin_blacklist_detail,
 )
 from .radar_views import (
@@ -67,6 +67,7 @@ urlpatterns = [
     
     # 弹窗API
     path('metar-popups/', views.get_metar_popups, name='get_metar_popups'),
+    path('popup-history/', views.get_popup_history, name='get_popup_history'),
     path('popup-received/', views.handle_popup_received, name='handle_popup_received'),
     path('popup-batch-ignore/', views.handle_popup_batch_ignore, name='handle_popup_batch_ignore'),
     path('popup-batch-received/', views.handle_popup_batch_received, name='handle_popup_batch_received'),
@@ -105,6 +106,7 @@ urlpatterns = [
     path('settings/weather-type/<int:type_id>/', settings_weather_type_detail, name='settings_weather_type_detail'),
     path('settings/weather-alert/', settings_weather_alert, name='settings_weather_alert'),
     path('settings/weather-alert/<int:alert_id>/', settings_weather_alert_detail, name='settings_weather_alert_detail'),
+    path('settings/prefix-area/visibility/', prefix_area_visibility, name='prefix_area_visibility'),
     path('settings/prefix-area/', settings_prefix_area, name='settings_prefix_area'),
     path('settings/prefix-area/<str:prefix>/', settings_prefix_area_detail, name='settings_prefix_area_detail'),
     path('settings/taf-import/', settings_taf_import, name='settings_taf_import'),
@@ -127,6 +129,8 @@ urlpatterns = [
     path('access/admin/change-password/', access_admin_change_password, name='access_admin_change_password'),
     path('access/admin/groups/', access_admin_groups, name='access_admin_groups'),
     path('access/admin/groups/<int:group_id>/', access_admin_group_detail, name='access_admin_group_detail'),
+    path('access/admin/export/', access_admin_export, name='access_admin_export'),
+    path('access/admin/import/', access_admin_import, name='access_admin_import'),
     path('access/admin/blacklist/', access_admin_blacklist, name='access_admin_blacklist'),
     path('access/admin/blacklist/<int:item_id>/', access_admin_blacklist_detail, name='access_admin_blacklist_detail'),
 

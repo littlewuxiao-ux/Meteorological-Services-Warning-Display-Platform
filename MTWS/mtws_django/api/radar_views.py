@@ -75,7 +75,7 @@ def radar_alert_status(request, time_mode='current'):
 def radar_alert_run(request, time_mode='current'):
     from utils.airport_scope import airport_codes_for_scope, clamp_future_hours
 
-    denied = _deny(request, 'map_radar', 'activate', '无雷达告警激活权限')
+    denied = _deny(request, 'map_radar', 'display', '无雷达告警权限')
     if denied:
         return denied
     data = _json_body(request)
@@ -184,7 +184,7 @@ def radar_alerts(request, time_mode='current'):
 
     identity = resolve_access_identity(request)
     if not (
-        has_perm(identity, 'map_radar', 'activate')
+        has_perm(identity, 'map_radar', 'display')
         or has_perm(identity, 'map_radar_nav', 'display')
     ):
         return JsonResponse({'success': False, 'error': '无雷达告警查看权限'}, status=403)
@@ -270,7 +270,7 @@ def _echo_waiting(seconds: float):
 @require_http_methods(['GET'])
 def radar_echo(request, time_mode='current'):
     """机场周边 200 公里、Z7 雷达回波。达到每分钟上限时返回等待秒数，不下载瓦片。"""
-    denied = _deny(request, 'map_radar', 'activate', '无雷达回波查看权限')
+    denied = _deny(request, 'map_radar', 'display', '无雷达回波查看权限')
     if denied:
         return denied
     from core.models import RadarAlertConfig

@@ -17,9 +17,8 @@
     const id = window.__accessIdentity;
     if (!id) return false;
     const p = (id.permissions || {})[moduleCode] || {};
-    const visible = !!(p.display || p.activate || p.write);
+    const visible = !!(p.display || p.write);
     if (action === 'display') return visible;
-    if (action === 'activate') return visible && !!p.activate;
     if (action === 'write') return visible && !!p.write;
     return false;
   }
@@ -46,6 +45,12 @@
     };
 
     setDisp(document.getElementById('nwp-btn'), hasAccess('nwp', 'display'));
+    if (!hasAccess('nwp', 'display') && typeof nwpEnabled !== 'undefined' && nwpEnabled) {
+      nwpEnabled = false;
+      if (typeof _nwpCache !== 'undefined') _nwpCache = {};
+      if (typeof clearAllNwpOverlays === 'function') clearAllNwpOverlays();
+      if (typeof updateNwpButtonState === 'function') updateNwpButtonState();
+    }
     setDisp(document.getElementById('refresh-btn'), hasAccess('refresh_btn', 'display'));
     setDisp(document.getElementById('settings-btn'), hasAccess('settings_btn', 'display'));
 
@@ -87,6 +92,8 @@
     const toggle = document.getElementById('settings-default-toggle');
     if (groupBtn) groupBtn.style.display = on ? '' : 'none';
     if (toggle) toggle.style.display = on ? '' : 'none';
+    document.body.classList.toggle('is-superuser', on);
+    if (typeof window.__paintSuperButtons === 'function') window.__paintSuperButtons();
     if (!on) {
       const box = document.getElementById('settings-admin-unlock');
       if (box) box.style.display = 'none';
@@ -106,15 +113,21 @@
       // 本机：沿用 CAS userCode 展示，由 main.js paintSeatUserInfo 配合
       window.__seatIdentity = {
         role: 'local',
-        show_logout: true,
+        show_logout: !!id.show_logout,
         label: '',
         is_local: true,
         permissions: id.permissions,
       };
+      if (!id.show_logout) {
+        section.style.display = 'none';
+      } else if (typeof currentToken !== 'undefined' && currentToken) {
+        section.style.display = 'flex';
+        if (typeof paintSeatUserInfo === 'function') paintSeatUserInfo();
+      }
       return;
     }
 
-    section.style.display = 'flex';
+    section.style.display = id.show_logout ? 'flex' : 'none';
     codeEl.textContent = id.label || id.group_name || '';
     if (logoutBtn) {
       logoutBtn.style.display = id.show_logout ? 'inline-block' : 'none';
@@ -429,6 +442,13 @@
     document.getElementById('access-admin-chg-pw').onclick = changeAdminPassword;
     const exitBtn = document.getElementById('access-admin-exit');
     if (exitBtn) exitBtn.onclick = exitAdminSession;
+    document.getElementById('access-admin-export').onclick = exportAdminConfig;
+    const importFile = document.getElementById('access-admin-import-file');
+    document.getElementById('access-admin-import').onclick = () => { importFile.value = ''; importFile.click(); };
+    importFile.onchange = () => openImportModal(importFile.files[0]);
+    document.getElementById('access-import-cancel').onclick = closeImportModal;
+    document.getElementById('access-import-backdrop').onclick = closeImportModal;
+    document.getElementById('access-import-ok').onclick = submitImport;
     document.getElementById('bl-add').onclick = addBlacklist;
     document.getElementById('access-admin-bl-title').onclick = openBlacklistModal;
     document.getElementById('access-bl-close').onclick = closeBlacklistModal;
@@ -523,7 +543,7 @@
     const catNames = {
       function: '通用功能区',
       views: '视图设置',
-      shared: '通用功能',
+      shared: '其它功能',
       settings: '设置选项',
     };
     const grouped = {};
@@ -533,20 +553,19 @@
       grouped[cat].push(m);
     });
 
-    const permCell = (m, k, enabled, checked, locked) => {
+    const permCell = (m, k, enabled, checked) => {
       if (!enabled) return '<td class="access-perm-na">-</td>';
       const hint = m[`hint_${k}`] || '';
-      const dis = locked ? ' disabled' : '';
-      const cls = locked ? ' access-perm-opt-locked' : '';
-      return `<td class="access-perm-check"><label class="access-perm-opt${cls}"><input type="checkbox" data-mod="${m.code}" data-k="${k}"${dis} ${checked ? 'checked' : ''}/>${hint ? `<span class="access-perm-hint">${hint}</span>` : ''}</label></td>`;
+      return `<td class="access-perm-check"><label class="access-perm-opt"><input type="checkbox" data-mod="${m.code}" data-k="${k}" ${checked ? 'checked' : ''}/>${hint ? `<span class="access-perm-hint">${hint}</span>` : ''}</label></td>`;
     };
+    const canGrantWrite = (m) => !!m.has_write && !(m.local_write_only && !g.is_local);
     let html = `<table class="access-perm-table">
       <colgroup>
         <col class="access-col-cat"><col class="access-col-mod">
-        <col class="access-col-perm"><col class="access-col-perm"><col class="access-col-perm">
+        <col class="access-col-perm"><col class="access-col-perm">
       </colgroup>
       <thead><tr>
-      <th>分类</th><th>模块</th><th>显示</th><th>激活后台</th><th>写入</th></tr></thead><tbody>`;
+      <th>分类</th><th>模块</th><th>显示</th><th>写入</th></tr></thead><tbody>`;
     let firstCat = true;
     catOrder.forEach((cat) => {
       const mods = grouped[cat] || [];
@@ -563,31 +582,36 @@
           firstCat = false;
         }
         const nameCls = m.parent ? 'access-mod-name access-mod-child' : 'access-mod-name';
-        const activateOn = m.activate_locked ? !!p.display : !!p.activate;
         html += `<td class="${nameCls}">${m.name}</td>
-        ${permCell(m, 'display', true, !!p.display, false)}
-        ${permCell(m, 'activate', !!m.has_activate, activateOn, !!m.activate_locked)}
-        ${permCell(m, 'write', !!m.has_write, !!p.write, false)}
+        ${permCell(m, 'display', true, !!p.display)}
+        ${permCell(m, 'write', canGrantWrite(m), !!p.write)}
       </tr>`;
       });
     });
     html += '</tbody></table>';
     wrap.innerHTML = html;
 
+    const box = (mod, k) => wrap.querySelector(`input[data-mod="${mod}"][data-k="${k}"]`);
+    const checkDisplay = (mod) => {
+      const disp = box(mod, 'display');
+      if (disp) disp.checked = true;
+      const meta = _adminModulesCache.find((m) => m.code === mod);
+      if (meta && meta.parent) checkDisplay(meta.parent);
+    };
+    const clearModule = (mod) => {
+      wrap.querySelectorAll(`input[data-mod="${mod}"]`).forEach((x) => { x.checked = false; });
+      _adminModulesCache.filter((m) => m.parent === mod).forEach((m) => clearModule(m.code));
+    };
+
     wrap.querySelectorAll('input[type=checkbox]').forEach((cb) => {
       cb.addEventListener('change', () => {
         const mod = cb.getAttribute('data-mod');
         const k = cb.getAttribute('data-k');
-        if ((k === 'activate' || k === 'write') && cb.checked) {
-          const disp = wrap.querySelector(`input[data-mod="${mod}"][data-k="display"]`);
-          if (disp) disp.checked = true;
-        }
         if (k === 'write' && cb.checked && !g.is_local) {
           const qr = document.getElementById('access-admin-require-qr');
           if (!qr.checked) {
             alert('勾选写入权限时必须同时勾选扫码认证');
             cb.checked = false;
-            syncLockedActivate(wrap, mod);
             return;
           }
         }
@@ -598,22 +622,13 @@
             return;
           }
         }
-        if (k === 'display' && !cb.checked) {
-          wrap.querySelectorAll(`input[data-mod="${mod}"]`).forEach((x) => {
-            if (x !== cb) x.checked = false;
-          });
+        if (cb.checked) {
+          checkDisplay(mod);
+        } else if (k === 'display') {
+          clearModule(mod);
         }
-        syncLockedActivate(wrap, mod);
       });
     });
-  }
-
-  function syncLockedActivate(wrap, mod) {
-    const meta = _adminModulesCache.find((m) => m.code === mod);
-    if (!meta || !meta.activate_locked) return;
-    const disp = wrap.querySelector(`input[data-mod="${mod}"][data-k="display"]`);
-    const act = wrap.querySelector(`input[data-mod="${mod}"][data-k="activate"]`);
-    if (disp && act) act.checked = !!disp.checked;
   }
 
   const VIEW_MODULES = ['view_home', 'view_map', 'view_plain', 'view_trend', 'import_alert'];
@@ -631,18 +646,13 @@
     const wrap = document.getElementById('access-admin-perm-table');
     const permissions = {};
     _adminModulesCache.forEach((m) => {
-      permissions[m.code] = { display: false, activate: false, write: false };
+      permissions[m.code] = { display: false, write: false };
     });
     wrap.querySelectorAll('input[type=checkbox]').forEach((cb) => {
       const mod = cb.getAttribute('data-mod');
       const k = cb.getAttribute('data-k');
       if (!permissions[mod]) permissions[mod] = {};
       permissions[mod][k] = cb.checked;
-    });
-    // 锁定激活项以显示为准（disabled 框在部分环境下仍可能读不到）
-    _adminModulesCache.forEach((m) => {
-      if (!m.activate_locked || !permissions[m.code]) return;
-      permissions[m.code].activate = !!permissions[m.code].display;
     });
     if (!VIEW_MODULES.some((code) => (permissions[code] || {}).display)) {
       alert('主页、地图、翻译、实况趋势、报文入库告警至少选中一个');
@@ -694,6 +704,79 @@
       alert(data.error || '删除失败');
       return;
     }
+    await loadAdminGroups();
+  }
+
+  async function exportAdminConfig() {
+    const userCode = (typeof currentUserCode !== 'undefined' ? currentUserCode : null) || window.currentUserCode;
+    const res = await fetch(`${apiBase()}/access/admin/export/`, {
+      credentials: 'same-origin',
+      headers: userCode ? { 'X-User-Code': userCode } : {},
+    });
+    if (!res.ok) {
+      let msg = '导出失败';
+      try { msg = (await res.json()).error || msg; } catch (e) { /* ignore */ }
+      alert(msg);
+      return;
+    }
+    const disposition = res.headers.get('Content-Disposition') || '';
+    const match = disposition.match(/filename="([^"]+)"/);
+    const url = URL.createObjectURL(await res.blob());
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = match ? match[1] : 'mtws_access.json';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  let _importConfig = null;
+
+  async function openImportModal(file) {
+    if (!file) return;
+    let config;
+    try {
+      config = JSON.parse(await file.text());
+    } catch (e) {
+      alert('文件不是有效的 JSON');
+      return;
+    }
+    if (!config || config.format !== 'mtws-access-config') {
+      alert('不是用户组配置导出文件');
+      return;
+    }
+    _importConfig = config;
+    const groups = config.groups || [];
+    const nonLocal = groups.filter((g) => !g.is_local).length;
+    const hasLocal = groups.some((g) => g.is_local);
+    const when = config.exported_at ? `导出于 ${config.exported_at.replace('T', ' ').slice(0, 19)}，` : '';
+    document.getElementById('access-import-summary').textContent =
+      `${file.name}：${when}${hasLocal ? '含本机组、' : ''}非本机组 ${nonLocal} 个，黑名单 ${(config.blacklist || []).length} 条。`;
+    document.querySelector('input[name="access-import-mode"][value="merge"]').checked = true;
+    document.getElementById('access-import-modal').hidden = false;
+  }
+
+  function closeImportModal() {
+    document.getElementById('access-import-modal').hidden = true;
+    _importConfig = null;
+  }
+
+  async function submitImport() {
+    if (!_importConfig) return;
+    const mode = document.querySelector('input[name="access-import-mode"]:checked').value;
+    if (mode === 'replace' && !confirm('覆盖导入会删除文件中没有的非本机组，并替换整个黑名单，确定继续？')) return;
+    const { data } = await accessFetch('/access/admin/import/', {
+      method: 'POST',
+      body: JSON.stringify({ mode, config: _importConfig }),
+    });
+    if (!data.success) {
+      alert(data.error || '导入失败');
+      return;
+    }
+    closeImportModal();
+    const s = data.data || {};
+    alert(`导入完成：新增 ${s.created || 0} 个组，更新 ${s.updated || 0} 个组，删除 ${s.deleted || 0} 个组，新增黑名单 ${s.blacklist_added || 0} 条。`);
     await loadAdminGroups();
   }
 

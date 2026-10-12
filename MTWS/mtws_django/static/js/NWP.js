@@ -24,23 +24,6 @@ function updateNwpButtonState() {
 function handleNwpToggle() {
     if (typeof hasAccess === 'function' && !hasAccess('nwp', 'display')) return;
 
-    // 无激活权限：只切换本地展示已缓存数据，不触发解析
-    if (typeof hasAccess === 'function' && !hasAccess('nwp', 'activate')) {
-        nwpEnabled = !nwpEnabled;
-        localStorage.setItem('mtws_nwp_enabled', nwpEnabled.toString());
-        updateNwpButtonState();
-        if (nwpEnabled) {
-            if (typeof fetchAndRenderNwp === 'function') fetchAndRenderNwp();
-            else if (Object.keys(_nwpCache || {}).length) {
-                if (typeof renderAllNwpOverlays === 'function') renderAllNwpOverlays();
-            }
-        } else {
-            _nwpCache = {};
-            clearAllNwpOverlays();
-        }
-        return;
-    }
-
     nwpEnabled = !nwpEnabled;
     localStorage.setItem('mtws_nwp_enabled', nwpEnabled.toString());
     updateNwpButtonState();
@@ -169,7 +152,7 @@ function renderNwpOverlayForAirport(forecastTimeline, temperatures) {
     overlay.className = 'nwp-temperature-overlay';
     overlay.style.cssText = [
         'position: absolute',
-        'top: calc(100% / 3)',
+        forecastTimeline.closest('.airport-row-plain') ? 'top: calc(100% * 4 / 9)' : 'top: calc(100% / 3)',
         'left: 0',
         'right: 0',
         'height: 0',           // 不占流布局空间

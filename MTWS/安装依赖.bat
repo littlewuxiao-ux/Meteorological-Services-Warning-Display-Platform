@@ -1,88 +1,88 @@
 @echo off
 chcp 65001 >nul
-title FMSA ÒÀÀµ°²×°
+title FMSA ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½×°
 cd /d "%~dp0"
 
 echo ========================================
-echo          FMSA ÒÀÀµ°²×°
+echo          FMSA ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½×°
 echo ========================================
 echo.
-echo ½«°´Ë³Ðò°²×°ÔËÐÐËùÐèÒÀÀµ£¬¿ÉÖØ¸´Ö´ÐÐ¡£
-echo ÈÕÖ¾£º%~dplogs\install.log
+echo ï¿½ï¿½ï¿½ï¿½Ë³ï¿½ï¿½×°ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ø¸ï¿½Ö´ï¿½Ð¡ï¿½
+echo ï¿½ï¿½Ö¾ï¿½ï¿½%~dplogs\install.log
 echo.
 where python >nul 2>&1
 if errorlevel 1 (
-    echo ´íÎó£ºÎ´ÕÒµ½ python ÃüÁî£¬Çë°²×° Python 3.10+ ²¢¹´Ñ¡ PATH¡£
+    echo ï¿½ï¿½ï¿½ï¿½Î´ï¿½Òµï¿½ python ï¿½ï¿½ï¿½î£¬ï¿½ë°²×° Python 3.10+ ï¿½ï¿½ï¿½ï¿½Ñ¡ PATHï¿½ï¿½
     pause
     exit /b 1
 )
-echo µ±Ç° Python£º
+echo ï¿½ï¿½Ç° Pythonï¿½ï¿½
 python --version
 echo.
 set FAILED=0
 if not exist "%~dplogs" mkdir "%~dplogs"
 set LOG=%~dplogs\install.log
-echo [%date% %time%] FMSA ÒÀÀµ°²×°¿ªÊ¼ > "%LOG%" 2>&1
+echo [%date% %time%] FMSA ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½×°ï¿½ï¿½Ê¼ > "%LOG%" 2>&1
 
-echo [0/12] Éý¼¶ pip / setuptools / wheel ...
+echo [0/12] ï¿½ï¿½ï¿½ï¿½ pip / setuptools / wheel ...
 python -m pip install --upgrade pip setuptools wheel >> "%LOG%" 2>&1
-if errorlevel 1 echo ¾¯¸æ£ºpip Éý¼¶Ê§°Ü£¬½«¼ÌÐø¡£
-echo [1/12] »ù´¡¹¤¾ß°ü ...
+if errorlevel 1 echo ï¿½ï¿½ï¿½æ£ºpip ï¿½ï¿½ï¿½ï¿½Ê§ï¿½Ü£ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+echo [1/12] ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ß°ï¿½ ...
 call :install "packaging==26.2"
 call :install "six==1.17.0"
 call :install "typing_extensions==4.15.0"
-echo [2/12] Django£¨¼æÈÝ3.10/3.12£© ...
+echo [2/12] Djangoï¿½ï¿½ï¿½ï¿½ï¿½ï¿½3.10/3.12ï¿½ï¿½ ...
 call :install "asgiref==3.11.1"
 call :install "sqlparse==0.5.5"
 call :install "Django>=4.2,<6.1"
 call :install "djangorestframework==3.17.1"
-echo [3/12] Ê±¼äÓëÊ±Çø ...
+echo [3/12] Ê±ï¿½ï¿½ï¿½ï¿½Ê±ï¿½ï¿½ ...
 call :install "python-dateutil==2.9.0.post0"
 call :install "pytz==2026.1.post1"
 call :install "tzdata==2026.1"
 call :install "tzlocal"
-echo [4/12] Êý¾Ý´¦Àí£¨¼æÈÝ3.10£© ...
+echo [4/12] ï¿½ï¿½ï¿½Ý´ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½3.10ï¿½ï¿½ ...
 call :install "numpy>=1.26,<2.3"
 call :install "pandas>=2.0,<2.3"
-echo [5/12] ÍøÂçÇëÇó ...
+echo [5/12] ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ...
 call :install "certifi==2026.4.22"
 call :install "charset-normalizer==3.4.7"
 call :install "idna==3.13"
 call :install "urllib3==2.6.3"
 call :install "requests==2.33.1"
-echo [6/12] ÆøÏó½âÎöÒÀÀµ ...
+echo [6/12] ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ...
 call :install "httpcore"
 call :install "httpx"
 call :install "geopy"
 call :install "xmltodict"
-echo [7/12] ÈÕ³öÈÕÂä+¶¨Ê± ...
+echo [7/12] ï¿½Õ³ï¿½ï¿½ï¿½ï¿½ï¿½+ï¿½ï¿½Ê± ...
 call :install "suntime==1.3.2"
 call :install "APScheduler==3.11.1"
-echo [8/12] Í¼Ïñ´¦Àí ...
+echo [8/12] Í¼ï¿½ï¿½ï¿½ï¿½ ...
 call :install "Pillow==12.2.0"
-echo [9/12] ·þÎñ¶ËGUIÓëÍÐÅÌ ...
+echo [9/12] ï¿½ï¿½ï¿½ï¿½ï¿½GUIï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ...
 call :install "customtkinter>=5.2.2"
 call :install "pystray>=0.19.4"
-echo [10/12] FMSA ÍÐÅÌ±ØÐè£¨ÎÞpywebview£© ...
+echo [10/12] FMSA ï¿½ï¿½ï¿½Ì±ï¿½ï¿½è£¨ï¿½ï¿½pywebviewï¿½ï¿½ ...
 call :install "pywin32>=307"
-echo [11/12] ¿ÉÑ¡ÔöÇ¿£¨Ê§°ÜÌø¹ý£© ...
+echo [11/12] ï¿½ï¿½Ñ¡ï¿½ï¿½Ç¿ï¿½ï¿½Ê§ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ ...
 call :install_optional "shapely"
 call :install_optional "scipy"
 call :install_optional "rapidfuzz"
-echo [12/12] ºË¶Ô¹Ø¼üÄ£¿é ...
-python -c "import django, rest_framework, pandas, numpy, requests, PIL, suntime, apscheduler, customtkinter, pystray, httpx, geopy, xmltodict; print('¹Ø¼üÄ£¿éµ¼Èë³É¹¦')"
+echo [12/12] ï¿½Ë¶Ô¹Ø¼ï¿½Ä£ï¿½ï¿½ ...
+python -c "import django, rest_framework, pandas, numpy, requests, PIL, suntime, apscheduler, customtkinter, pystray, httpx, geopy, xmltodict; print('ï¿½Ø¼ï¿½Ä£ï¿½éµ¼ï¿½ï¿½É¹ï¿½')"
 if errorlevel 1 (
-    echo ºË¶ÔÊ§°Ü£¬Ïê¼û install.log
+    echo ï¿½Ë¶ï¿½Ê§ï¿½Ü£ï¿½ï¿½ï¿½ï¿½ install.log
     set FAILED=1
 ) else (
-    echo ºË¶ÔÍ¨¹ý¡£
+    echo ï¿½Ë¶ï¿½Í¨ï¿½ï¿½ï¿½ï¿½
 )
 echo.
 echo ========================================
 if "%FAILED%"=="1" (
-    echo ÓÐÊ§°ÜÏî£¬Çë²é¿´ install.log ºóÖØÊÔ¡£
+    echo ï¿½ï¿½Ê§ï¿½ï¿½ï¿½î£¬ï¿½ï¿½é¿´ install.log ï¿½ï¿½ï¿½ï¿½ï¿½Ô¡ï¿½
 ) else (
-    echo È«²¿ÒÀÀµ°²×°Íê³É£¬Ë«»÷ Æô¶¯FMSA-ÍÐÅÌ.vbs ¼´¿ÉÆô¶¯¡£
+    echo È«ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½×°ï¿½ï¿½É£ï¿½Ë«ï¿½ï¿½ ï¿½ï¿½ï¿½ï¿½FMSA-ï¿½ï¿½ï¿½ï¿½.vbs ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 )
 echo ========================================
 echo.
@@ -91,23 +91,23 @@ exit /b %FAILED%
 
 :install
 echo.
-echo --- ÕýÔÚ°²×° %~1 ---
+echo --- ï¿½ï¿½ï¿½Ú°ï¿½×° %~1 ---
 python -m pip install "%~1" >> "%LOG%" 2>&1
 if errorlevel 1 (
-    echo *** °²×°Ê§°Ü£º%~1£¬Ïê¼û install.log ***
+    echo *** ï¿½ï¿½×°Ê§ï¿½Ü£ï¿½%~1ï¿½ï¿½ï¿½ï¿½ï¿½ install.log ***
     set FAILED=1
 ) else (
-    echo OK£º%~1
+    echo OKï¿½ï¿½%~1
 )
 goto :eof
 
 :install_optional
 echo.
-echo --- ¿ÉÑ¡°ü %~1 ---
+echo --- ï¿½ï¿½Ñ¡ï¿½ï¿½ %~1 ---
 python -m pip install "%~1" >> "%LOG%" 2>&1
 if errorlevel 1 (
-    echo Ìø¹ý¿ÉÑ¡°ü£º%~1£¬²»Ó°ÏìÖ÷ÏµÍ³¡£
+    echo ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ñ¡ï¿½ï¿½ï¿½ï¿½%~1ï¿½ï¿½ï¿½ï¿½Ó°ï¿½ï¿½ï¿½ï¿½ÏµÍ³ï¿½ï¿½
 ) else (
-    echo OK£º%~1
+    echo OKï¿½ï¿½%~1
 )
 goto :eof

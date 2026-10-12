@@ -11,8 +11,9 @@
     ['pressure', '气压'],
     ['wind', '风速'],
     ['visibility', '能见度'],
+    ['spread', '温度露点差'],
   ];
-  const COVERS = 'NSC、FEW、SCT、BKN、OVC，多个用逗号分隔。无云组按 NSC';
+  const COVERS = 'NSC、FEW、SCT、BKN、OVC，多个用逗号分隔。无云组按 NSC（其中之一或多个）';
 
   let config = { groups: [] };
   let savedConfig = { groups: [] };
@@ -113,6 +114,9 @@
       use_change: true,
       use_current: false,
       direction: 'down',
+      change_op: '>=',
+      current_op: '<=',
+      past_match: 'any',
       change_element: 'temperature',
       change_amount: '',
       current_element: 'visibility',
@@ -232,6 +236,21 @@
     return `<textarea class="settings-input trend-codes" rows="1" data-g="${g}"${cAttr} data-field="${field}" placeholder="${esc(placeholder || '')}"${dis()}>${esc(codesText(value))}</textarea>`;
   }
 
+  function scrollToGroup(id) {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const pane = document.getElementById('settings-pane-trend-alert');
+        const el = document.getElementById('trend-group-' + id) || document.querySelector('[data-group-card="' + id + '"]');
+        if (!el) return;
+        if (pane) {
+          pane.scrollTop = Math.max(0, el.offsetTop - pane.offsetTop - 8);
+        } else if (el.scrollIntoView) {
+          el.scrollIntoView({ block: 'start' });
+        }
+      });
+    });
+  }
+
   function fitCodeBoxes(root) {
     (root || document).querySelectorAll('.trend-codes').forEach((el) => {
       const sample = el.value || el.placeholder || '';
@@ -247,25 +266,27 @@
     if (cond.kind === 'element') {
       return `
         <div class="trend-line">
-          <span>方向</span>
-          <select data-g="${g}" data-c="${c}" data-field="direction" data-rerender="1"${dis()}>
-            <option value="down"${cond.direction !== 'up' ? ' selected' : ''}>下降</option>
-            <option value="up"${cond.direction === 'up' ? ' selected' : ''}>上升</option>
-          </select>
-          <span class="trend-hint">当前值自动按 ${op}</span>
-        </div>
-        <div class="trend-line">
           ${check(g, c, 'use_change', cond.use_change, '过去变化', true)}
           <span>过去</span>${num(g, c, 'hours', cond.hours)}<span>小时</span>
           <select data-g="${g}" data-c="${c}" data-field="change_element"${dis()}>${elementOptions(cond.change_element)}</select>
-          <span>${cond.direction === 'up' ? '上升幅度 ≥' : '下降幅度 ≥'}</span>
+          <select data-g="${g}" data-c="${c}" data-field="direction"${dis()}>
+            <option value="down"${cond.direction !== 'up' ? ' selected' : ''}>下降幅度</option>
+            <option value="up"${cond.direction === 'up' ? ' selected' : ''}>上升幅度</option>
+          </select>
+          <select data-g="${g}" data-c="${c}" data-field="change_op"${dis()}>
+            <option value=">="${(cond.change_op || '>=') === '>=' ? ' selected' : ''}>≥</option>
+            <option value="<="${cond.change_op === '<=' ? ' selected' : ''}>≤</option>
+          </select>
           ${num(g, c, 'change_amount', cond.change_amount)}
         </div>
         <div class="trend-line">
           ${check(g, c, 'use_current', cond.use_current, '当前值', true)}
           <span>当前</span>
           <select data-g="${g}" data-c="${c}" data-field="current_element"${dis()}>${elementOptions(cond.current_element)}</select>
-          <span>${op}</span>
+          <select data-g="${g}" data-c="${c}" data-field="current_op"${dis()}>
+            <option value=">="${cond.current_op === '>=' ? ' selected' : ''}>≥</option>
+            <option value="<="${(cond.current_op || '<=') === '<=' ? ' selected' : ''}>≤</option>
+          </select>
           ${num(g, c, 'current_value', cond.current_value)}
         </div>`;
     }
@@ -274,15 +295,19 @@
         <div class="trend-line">
           ${check(g, c, 'use_change', cond.use_change, '过去出现', true)}
           <span>过去</span>${num(g, c, 'hours', cond.hours)}<span>小时内出现过</span>
-          ${codes(g, c, 'past_weather', cond.past_weather, '留空表示无天气现象')}
+          <select data-g="${g}" data-c="${c}" data-field="past_match"${dis()}>
+            <option value="any"${(cond.past_match || 'any') !== 'all' ? ' selected' : ''}>其中之一</option>
+            <option value="all"${cond.past_match === 'all' ? ' selected' : ''}>全部</option>
+          </select>
+          ${codes(g, c, 'past_weather', cond.past_weather, '留空表示无天气现象，多天气现象使用,分隔')}
         </div>
         <div class="trend-line">
           ${check(g, c, 'use_current', cond.use_current, '当前现象', true)}
           <select data-g="${g}" data-c="${c}" data-field="current_match" data-rerender="1"${dis()}>
-            <option value="any"${cond.current_match !== 'none' ? ' selected' : ''}>其中之一</option>
-            <option value="none"${cond.current_match === 'none' ? ' selected' : ''}>无天气现象</option>
+            <option value="any"${(cond.current_match || 'any') !== 'all' ? ' selected' : ''}>其中之一</option>
+            <option value="all"${cond.current_match === 'all' ? ' selected' : ''}>全部</option>
           </select>
-          ${codes(g, c, 'current_weather', cond.current_weather, '多个用逗号分隔')}
+          ${codes(g, c, 'current_weather', cond.current_weather, '留空表示无天气现象，多天气现象使用,分隔')}
         </div>
         <div class="trend-hint">已填写的现象必须能在天气告警等级中查到。留空表示无天气现象。</div>`;
     }
@@ -305,18 +330,18 @@
       <div class="trend-line">
         ${check(g, c, 'use_change', cond.use_change, '过去变化', true)}
         <span>过去</span>${num(g, c, 'hours', cond.hours)}<span>小时，由</span>
-        ${num(g, c, 'from_height', cond.from_height)}
         ${cmpSelect(g, c, 'from_cmp', cond.from_cmp)}
+        ${num(g, c, 'from_height', cond.from_height)}
         ${check(g, c, 'from_nsc', cond.from_nsc, '可为空或NSC')}
         <span>变为</span>
-        ${num(g, c, 'to_height', cond.to_height)}
         ${cmpSelect(g, c, 'to_cmp', cond.to_cmp)}
+        ${num(g, c, 'to_height', cond.to_height)}
         ${check(g, c, 'to_nsc', cond.to_nsc, '可为空或NSC')}
       </div>
       <div class="trend-line">
         ${check(g, c, 'use_current', cond.use_current, '当前云高', true)}
-        ${num(g, c, 'now_height', cond.now_height)}
         ${cmpSelect(g, c, 'now_cmp', cond.now_cmp || 'below')}
+        ${num(g, c, 'now_height', cond.now_height)}
         ${check(g, c, 'now_nsc', cond.now_nsc, '可为空或NSC')}
         <span class="trend-hint">单位：百英尺。只勾选可为空或 NSC、不填数字时，这一侧只接受没有云或 NSC。填了数字再勾选，则数字条件或无云都通过。</span>
       </div>`;
@@ -398,7 +423,7 @@
           </div>`}
         </div>`;
       return `
-      <section class="trend-group${renderLocked ? ' is-readonly' : ''}${collapsed ? ' is-collapsed' : ''}">
+      <section class="trend-group${renderLocked ? ' is-readonly' : ''}${collapsed ? ' is-collapsed' : ''}" data-group-card="${group.id}" id="trend-group-${group.id}">
         <header class="trend-group-global">
           <div class="trend-group-name-row">
             <label>名称 ${text(g, '', 'name', group.name, '规则名称')}</label>
@@ -416,6 +441,9 @@
         ${conditions}
       </section>`;
     }).join('');
+    let sp = document.getElementById('trend-bottom-spacer');
+    if (!sp) { sp = document.createElement('div'); sp.id = 'trend-bottom-spacer'; root.appendChild(sp); }
+    sp.style.height = '60vh';
     fitCodeBoxes(root);
   }
 
@@ -467,6 +495,9 @@
     if (btn.dataset.action === 'edit-group') {
       uiOf(group.id).editing = true;
       uiOf(group.id).collapsed = false;
+      render();
+      scrollToGroup(group.id);
+      return;
     } else if (btn.dataset.action === 'toggle-fold') {
       uiOf(group.id).collapsed = !uiOf(group.id).collapsed;
     } else if (btn.dataset.action === 'save-group') {
@@ -506,6 +537,7 @@
       groupUi[group.id] = { editing: true, collapsed: false };
       config.groups.push(group);
       render();
+      scrollToGroup(group.id);
     });
   }
 
