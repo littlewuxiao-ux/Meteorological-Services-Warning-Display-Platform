@@ -116,10 +116,12 @@
       return `${matchModeSelect(g, c, cond)}<span class="trend-hint">${scoreHint('veto')} ${rule}</span>`;
     }
     const range = scoreRange(cond.role);
+    const pastOn = !!cond.use_change;
+    const nowOn = !!cond.use_current;
     return `
-      <span>过去变化分值</span>${num(g, c, 'change_score', shownScore(cond, 'change_score'), '0.1', range.max, range.min)}
-      <span>当前值分值</span>${num(g, c, 'current_score', shownScore(cond, 'current_score'), '0.1', range.max, range.min)}
-      <span>总分</span>${num(g, c, 'score', cond.score, '0.1', range.max, range.min)}
+      <span class="trend-score${pastOn ? '' : ' is-off'}">过去变化分值${num(g, c, 'change_score', shownScore(cond, 'change_score'), '0.1', range.max, range.min, !pastOn)}</span>
+      <span class="trend-score${nowOn ? '' : ' is-off'}">当前值分值${num(g, c, 'current_score', shownScore(cond, 'current_score'), '0.1', range.max, range.min, !nowOn)}</span>
+      <span class="trend-score">总分${num(g, c, 'score', cond.score, '0.1', range.max, range.min)}</span>
       ${matchModeSelect(g, c, cond)}
       <span class="trend-hint">${scoreHint(cond.role)} ${rule}</span>`;
   }
@@ -306,11 +308,12 @@
     return `<label class="trend-check"><input type="checkbox" data-g="${g}"${cAttr} data-field="${field}"${rerender ? ' data-rerender="1"' : ''}${on ? ' checked' : ''}${dis()}> ${label}</label>`;
   }
 
-  function num(g, c, field, value, step, max, min) {
+  function num(g, c, field, value, step, max, min, locked) {
     const cAttr = c === '' ? '' : ` data-c="${c}"`;
     const maxAttr = max === undefined || max === null || max === '' ? '' : ` max="${max}"`;
     const minValue = min === undefined || min === null || min === '' ? 0 : min;
-    return `<input type="number" class="settings-input trend-num" data-g="${g}"${cAttr} data-field="${field}" value="${esc(value)}" step="${step || 'any'}" min="${minValue}"${maxAttr}${dis()}>`;
+    const disabled = renderLocked || locked ? ' disabled' : '';
+    return `<input type="number" class="settings-input trend-num" data-g="${g}"${cAttr} data-field="${field}" value="${esc(value)}" step="${step || 'any'}" min="${minValue}"${maxAttr}${disabled}>`;
   }
 
   function codesText(value) {
