@@ -40,6 +40,7 @@
     paintDefaultBanner();
     prefixEditingId = null;
     prefixSnapshot = null;
+    prefixHideWanted = null;
     const modal = document.getElementById('settings-modal');
     if (modal && window.getComputedStyle(modal).display !== 'none') loadTab(currentSettingsTab);
   }
@@ -86,12 +87,12 @@
     } catch (err) { /* 顺延失败时保留当前会话，等下一次操作再试 */ }
   }
 
-  function showMsg(elId, text, type) {
+  function showMsg(elId, text, type, hold) {
     const el = document.getElementById(elId);
     if (!el) return;
     el.textContent = text || '';
     el.className = 'settings-msg' + (text && type ? ' ' + type : '');
-    if (text) {
+    if (text && !hold) {
       setTimeout(() => {
         if (el.textContent !== text) return;
         el.textContent = '';
@@ -1700,6 +1701,7 @@ const modeBtn = document.getElementById('threshold-mode-btn');
         if (group === 'prefix_area') {
           prefixEditingId = null;
           prefixSnapshot = null;
+          prefixHideWanted = null;
         }
         if (group === 'trend_alert_config' && window.TrendAlertSettings) await window.TrendAlertSettings.load();
         else await loadTab(currentSettingsTab);
@@ -1770,6 +1772,13 @@ const modeBtn = document.getElementById('threshold-mode-btn');
         }
         const addRegion = event.target.closest('[data-prefix-add-region]');
         if (addRegion) addPrefixRegion(addRegion.dataset.prefixAddRegion);
+      });
+      prefixBoard.addEventListener('change', (event) => {
+        const box = event.target.closest('.prefix-vis-check');
+        if (!box || box.disabled || !prefixEditingId) return;
+        const article = box.closest('.prefix-region');
+        if (!article || article.getAttribute('data-region-id') !== prefixEditingId) return;
+        prefixHideWanted = !!box.checked;
       });
     }
     const tafAdd = document.getElementById('taf-add-btn');
@@ -1917,6 +1926,7 @@ const modeBtn = document.getElementById('threshold-mode-btn');
   let prefixRows = [];
   let prefixEditingId = null;
   let prefixSnapshot = null;
+  let prefixHideWanted = null;
   let prefixDraft = { '国内': [], '国际': [] };
   let prefixCollapsed = new Set();
   let prefixUid = 1;
@@ -1945,6 +1955,7 @@ const modeBtn = document.getElementById('threshold-mode-btn');
     if (!confirm('当前区域修改尚未保存，确定离开吗？')) return false;
     prefixEditingId = null;
     prefixSnapshot = null;
+    prefixHideWanted = null;
     ['国内', '国际'].forEach((kind) => {
       prefixDraft[kind] = prefixDraft[kind].filter((region) => !region.isNew);
     });
@@ -2037,6 +2048,9 @@ const modeBtn = document.getElementById('threshold-mode-btn');
     const regions = block.map((region) => {
       const editing = region.id === prefixEditingId;
       const collapsed = prefixCollapsed.has(region.id);
+      const hiddenChecked = editing && prefixHideWanted !== null
+        ? prefixHideWanted
+        : (window.__hiddenRegions || []).includes(region.area);
       const lines = region.prefixes.map((row) => `<tr>
         <td>${prefixInput(region, 'prefix-code-input', `maxlength="4" data-prefix-row="${row.id}" data-field="prefix" style="text-transform:uppercase;"${prefixFocus === row.id ? ' data-prefix-focus="1"' : ''}`, row.prefix)}</td>
         <td>${prefixInput(region, 'prefix-remark-input', `data-prefix-row="${row.id}" data-field="remark"`, row.remark || '')}</td>
@@ -2054,7 +2068,7 @@ const modeBtn = document.getElementById('threshold-mode-btn');
             <button class="settings-edit-btn prefix-edit-only" type="button" data-prefix-add-line="${region.id}">新增前缀</button>
             <button class="settings-cancel-inline-btn" type="button" data-prefix-cancel="${region.id}"${editing ? '' : ' disabled'}>取消</button>
             <button class="settings-save-inline-btn" type="button" data-prefix-mode="${region.id}">${editing ? '保存' : '编辑'}</button>
-            <label class="prefix-vis"><span>隐藏</span><input type="checkbox" class="prefix-vis-check" data-prefix-vis="${prefixAttr(region.area)}"${(window.__hiddenRegions || []).includes(region.area) ? ' checked' : ''}></label>
+            <label class="prefix-vis"><span>隐藏</span><input type="checkbox" class="prefix-vis-check" data-prefix-vis="${prefixAttr(region.area)}"${hiddenChecked ? ' checked' : ''}${editing && window.__settingsScope === 'default' && window.__adminUnlocked ? '' : ' disabled'}></label>
             <button class="prefix-fold-btn" type="button" data-prefix-fold="${region.id}">${collapsed ? '展开' : '收起'}</button>
           </div>
         </div>
@@ -2125,6 +2139,7 @@ const modeBtn = document.getElementById('threshold-mode-btn');
     if (!found) return;
     prefixSnapshot = cloneRegion(found.region);
     prefixEditingId = regionId;
+    prefixHideWanted = (window.__hiddenRegions || []).includes(found.region.area);
     prefixCollapsed.delete(regionId);
     showMsg('prefix-msg', '', '');
     renderPrefixTable();
@@ -2138,6 +2153,7 @@ const modeBtn = document.getElementById('threshold-mode-btn');
     if (index >= 0) prefixDraft[found.kind][index] = cloneRegion(prefixSnapshot);
     prefixEditingId = null;
     prefixSnapshot = null;
+    prefixHideWanted = null;
     showMsg('prefix-msg', '', '');
     renderPrefixTable();
   }
@@ -2159,6 +2175,7 @@ const modeBtn = document.getElementById('threshold-mode-btn');
     prefixDraft[kind].push(region);
     prefixSnapshot = cloneRegion(region);
     prefixEditingId = region.id;
+    prefixHideWanted = false;
     prefixCollapsed.delete(region.id);
     prefixFocus = region.id;
     showMsg('prefix-msg', '', '');
@@ -2191,6 +2208,7 @@ const modeBtn = document.getElementById('threshold-mode-btn');
       prefixDraft[kind] = prefixDraft[kind].filter((item) => item.id !== region.id);
       prefixEditingId = null;
       prefixSnapshot = null;
+      prefixHideWanted = null;
       renderPrefixTable();
       return;
     }
@@ -2208,12 +2226,14 @@ const modeBtn = document.getElementById('threshold-mode-btn');
       prefixDraft[kind] = prefixDraft[kind].filter((item) => item.id !== region.id);
       prefixEditingId = null;
       prefixSnapshot = null;
+      prefixHideWanted = null;
       persistPrefixDraft(null).then((ok) => {
         if (ok) return;
         prefixDraft[kind].push(backup);
         prefixDraft[kind].sort((a, b) => Number(a.sequence) - Number(b.sequence));
         prefixEditingId = backup.id;
         prefixSnapshot = cloneRegion(backup);
+        prefixHideWanted = (window.__hiddenRegions || []).includes(backup.area);
         renderPrefixTable();
       });
       return;
@@ -2296,35 +2316,70 @@ const modeBtn = document.getElementById('threshold-mode-btn');
       body: JSON.stringify({ rows }),
     });
     if (saveBtn) saveBtn.disabled = false;
-    showMsg('prefix-msg', res.success ? (res.message || '保存成功') : res.error, res.success ? 'success' : 'error');
-    if (!res.success) return false;
-    // persist pending hidden-area state with the same save (default template only)
-    try{
-      if(window.__settingsScope === 'default' && window.__adminUnlocked && window.__pendingHidden !== null){
-        var hiddenList = Array.from(window.__pendingHidden);
-        var cur = window.__hiddenRegions || [];
-        var toHide = hiddenList.filter(function(a){ return cur.indexOf(a) < 0; });
-        var toShow = cur.filter(function(a){ return hiddenList.indexOf(a) < 0; });
-        for(var hi = 0; hi < toHide.length; hi++){
-          await apiFetch(apiUrl('settings/prefix-area/visibility/'), { method: 'POST', body: JSON.stringify({ region_id: toHide[hi], hidden: true }) });
-        }
-        for(var si = 0; si < toShow.length; si++){
-          await apiFetch(apiUrl('settings/prefix-area/visibility/'), { method: 'POST', body: JSON.stringify({ region_id: toShow[si], hidden: false }) });
-        }
-        window.__hiddenRegions = hiddenList;
-        window.__pendingHidden = null;
-        location.reload();
-        return true;
-      }
-    }catch(e){}
+    if (!res.success) {
+      showMsg('prefix-msg', res.error, 'error');
+      return false;
+    }
+    let hideChanged = false;
+    let hideError = '';
+    try {
+      hideChanged = await saveEditedRegionVisibility(savingId);
+    } catch (err) {
+      hideError = '区域内容已保存，但隐藏设置未能保存';
+    }
     prefixEditingId = null;
     prefixSnapshot = null;
+    prefixHideWanted = null;
     await loadPrefixAreas();
     if (extras.length) {
       extras.forEach(({ kind, region }) => prefixDraft[kind].push(region));
       renderPrefixTable();
     }
     await refreshAreaOptionsCache();
+    if (hideError) showMsg('prefix-msg', hideError, 'error');
+    else if (hideChanged) showMsg('prefix-msg', '保存成功。请手动刷新页面后，区域隐藏设置才会生效。', 'success', true);
+    else showMsg('prefix-msg', res.message || '保存成功', 'success');
+    return true;
+  }
+
+  function prefixRegionArticle(regionId) {
+    let found = null;
+    document.querySelectorAll('.prefix-region').forEach((el) => {
+      if (el.getAttribute('data-region-id') === regionId) found = el;
+    });
+    return found;
+  }
+
+  async function saveEditedRegionVisibility(savingId) {
+    if (window.__settingsScope !== 'default' || !window.__adminUnlocked || !savingId) return false;
+    const found = findPrefixRegion(savingId);
+    if (!found) return false;
+    const area = (found.region.area || '').trim();
+    const oldArea = ((prefixSnapshot && prefixSnapshot.area) || '').trim();
+    const article = prefixRegionArticle(savingId);
+    const box = article && article.querySelector('.prefix-vis-check');
+    if (!box || !area) return false;
+    const wantHidden = !!box.checked;
+    const cur = (window.__hiddenRegions || []).map((name) => String(name));
+    const next = cur.filter((name) => name !== area && name !== oldArea);
+    if (wantHidden) next.push(area);
+    const unchanged = next.length === cur.length && next.every((name) => cur.includes(name));
+    if (unchanged) return false;
+    if (oldArea && oldArea !== area && cur.includes(oldArea)) {
+      const off = await apiFetch(apiUrl('settings/prefix-area/visibility/'), {
+        method: 'POST',
+        body: JSON.stringify({ region_id: oldArea, hidden: false }),
+      });
+      if (!off.success) throw new Error(off.error || '隐藏设置保存失败');
+    }
+    if (wantHidden !== cur.includes(area)) {
+      const on = await apiFetch(apiUrl('settings/prefix-area/visibility/'), {
+        method: 'POST',
+        body: JSON.stringify({ region_id: area, hidden: wantHidden }),
+      });
+      if (!on.success) throw new Error(on.error || '隐藏设置保存失败');
+    }
+    window.__hiddenRegions = next;
     return true;
   }
 
@@ -2528,26 +2583,17 @@ const modeBtn = document.getElementById('threshold-mode-btn');
         var cancel = bar.querySelector('[data-prefix-cancel]');
         if(save && cancel && cancel.nextElementSibling !== save){ bar.insertBefore(cancel, save); }
       });
-      // vis checkbox: enabled only in default template (superuser); otherwise readonly display
-      var visLocked = !isSuper() || !isDefaultTpl();
-      document.querySelectorAll('.prefix-vis-check').forEach(function(c){ c.disabled = visLocked; });
+      // vis checkbox: only the region currently being edited, and only on the default template as superuser
+      document.querySelectorAll('.prefix-vis-check').forEach(function(c){
+        var article = c.closest('.prefix-region');
+        var editingThis = !!(article && article.classList.contains('is-editing'));
+        c.disabled = !isSuper() || !isDefaultTpl() || !editingThis;
+      });
     }catch(e){}
   }
   function paintSuperClass(){ document.body.classList.toggle('is-superuser', !!window.__adminUnlocked); if(window.__paintSuperButtons) window.__paintSuperButtons(); }
   paintSuperClass();
   setInterval(function(){ paintSuperClass(); gateGlobal(); }, 1200);
   window.__gateGlobal = gateGlobal;
-  // prefix visibility: checkbox toggles pending set, saved on region save (no instant reload)
-  window.__pendingHidden = null;
-  document.addEventListener('change', function(e){
-    var c = e.target.closest('.prefix-vis-check'); if(!c) return;
-    if(c.disabled) return;
-    var area = c.dataset.prefixVis;
-    if(window.__pendingHidden === null){
-      window.__pendingHidden = new Set(window.__hiddenRegions || []);
-    }
-    if(c.checked) window.__pendingHidden.add(area);
-    else window.__pendingHidden.delete(area);
-  });
 })();
 
