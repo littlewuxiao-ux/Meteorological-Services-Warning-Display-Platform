@@ -222,8 +222,8 @@
     <div class="map-scope-module">
     <div class="trend-title">机场范围</div>
     <div class="trend-toolbar-main">
-      <label class="trend-switch map-wx-check"><input type="radio" name="map-flight-scope" value="has_flight" checked><span class="map-wx-box"></span><span>有航班机场</span></label>
-      <label class="trend-switch map-wx-check"><input type="radio" name="map-flight-scope" value="recent2h"><span class="map-wx-box"></span><span>起降窗口</span></label>
+      <label class="trend-switch map-wx-check"><input type="radio" name="map-flight-scope" value="has_flight" checked><span class="map-wx-box"></span><span>全部机场</span></label>
+      <label class="trend-switch map-wx-check"><input type="radio" name="map-flight-scope" value="recent2h"><span class="map-wx-box"></span><span>起降窗口机场</span></label>
       <label class="trend-hours" id="map-hours-label" title="过去固定 2 小时，此数字只作用于未来">未来
         <input type="number" id="map-future-hours" min="0" max="9" step="1" value="2">
         小时
@@ -295,8 +295,8 @@
   <div class="trend-toolbar map-flight-toolbar">
     <div class="trend-title">实况趋势告警</div>
     <div class="trend-toolbar-main">
-      <label class="trend-switch map-wx-check"><input type="radio" name="trend-scope" value="has_flight" checked><span class="map-wx-box"></span><span>有航班机场</span></label>
-      <label class="trend-switch map-wx-check"><input type="radio" name="trend-scope" value="recent2h"><span class="map-wx-box"></span><span>起降窗口</span></label>
+      <label class="trend-switch map-wx-check"><input type="radio" name="trend-scope" value="has_flight" checked><span class="map-wx-box"></span><span>全部机场</span></label>
+      <label class="trend-switch map-wx-check"><input type="radio" name="trend-scope" value="recent2h"><span class="map-wx-box"></span><span>起降窗口机场</span></label>
       <label class="trend-hours" id="trend-hours-label" title="过去固定 2 小时，此数字只作用于未来">未来
         <input type="number" id="trend-future-hours" min="0" max="9" step="1" value="2">
         小时
@@ -690,6 +690,12 @@
         <div class="radar-settings-toolbar">
           <button type="button" class="settings-btn-cancel" id="trend-alert-add-group">新增规则组</button>
           <button type="button" class="settings-btn-cancel settings-restore-btn" data-group="trend_alert_config" data-msg="trend-alert-msg">恢复默认</button>
+          <div class="radar-alarm-colors" id="trend-alarm-colors">
+            <span class="radar-alarm-colors-label">计入告警</span>
+            <label class="radar-alarm-switch radar-alarm-switch-r"><input type="checkbox" class="radar-alarm-color" value="R" checked><span>红</span></label>
+            <label class="radar-alarm-switch radar-alarm-switch-y"><input type="checkbox" class="radar-alarm-color" value="Y" checked><span>黄</span></label>
+            <label class="radar-alarm-switch radar-alarm-switch-g"><input type="checkbox" class="radar-alarm-color" value="G" checked><span>绿</span></label>
+          </div>
           <span class="settings-hint">规则组计分规则：单个基础条件分值范围为 1.0–5.0 分，多个基础条件分值取平均值或最高值，附加条件分值范围为 0.1–3.0 分，对于多个附加条件，分值在最终基础分值上累加。</span>
         </div>
         <div class="settings-msg" id="trend-alert-msg"></div>

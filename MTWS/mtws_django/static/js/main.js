@@ -968,6 +968,10 @@ function showLoading() {
             正在加载数据...
         </div>
     `;
+    // 过去 2 小时的竖线握柄挂在 body 上，清空机场行后不会跟着消失
+    if (typeof removeMarksPastHandle === 'function') {
+        removeMarksPastHandle('home');
+    }
 }
 
 // 隐藏加载状态
@@ -984,6 +988,9 @@ function showError(message) {
             <div class="empty-state-message">${message}</div>
         </div>
     `;
+    if (typeof removeMarksPastHandle === 'function') {
+        removeMarksPastHandle('home');
+    }
 }
 
 /**
@@ -2639,6 +2646,23 @@ function parseIcaoCodes(input) {
     return codes;
 }
 
+// 搜索进行中。按钮文案固定恢复为「搜索」，不能回写点击时读到的文字：
+// 解析器检查是异步的，连点或回车会在按钮已变成「搜索中...」时再开一次请求，
+// 先结束的请求若把后一次读到的「搜索中...」写回去，结果已经出来按钮也会一直停在搜索中。
+let airportSearchInFlight = false;
+
+function setAirportSearchButtonState(searching) {
+    const searchBtn = document.getElementById('search-btn');
+    if (!searchBtn) return;
+    searchBtn.disabled = !!searching;
+    searchBtn.textContent = searching ? '搜索中...' : '搜索';
+}
+
+function endAirportSearch() {
+    airportSearchInFlight = false;
+    setAirportSearchButtonState(false);
+}
+
 /**
  * 搜索入口（含解析器状态检查）：逻辑与刷新按钮保持一致。
  * 若后端解析器正在执行，则显示等待提示并拦截本次搜索；
@@ -2646,9 +2670,14 @@ function parseIcaoCodes(input) {
  */
 function handleSearchClick(searchValue) {
     if (!searchValue) return;
+    if (airportSearchInFlight) return;
     if (typeof hasAccess === 'function' && !hasAccess('search', 'display')) return;
 
+    airportSearchInFlight = true;
+    setAirportSearchButtonState(true);
+
     checkRunningParsers((err, data) => {
+        if (!airportSearchInFlight) return;
         if (err) {
             performSearch(searchValue);
             return;
@@ -2656,6 +2685,7 @@ function handleSearchClick(searchValue) {
         const running = data.running || [];
         const queued  = data.queued  || [];
         if (running.length > 0 || queued.length > 0) {
+            endAirportSearch();
             showParserRunningMessage(buildParserStatusMessage(running, queued));
             startParserStatusPolling();
         } else {
@@ -2669,10 +2699,12 @@ function performSearch(searchValue) {
     const codes = parseIcaoCodes(searchValue);
 
     if (codes === null) {
+        endAirportSearch();
         alert('输入格式有误：只允许字母和分隔符（空格、逗号）');
         return;
     }
     if (codes.length === 0) {
+        endAirportSearch();
         alert('未识别到有效的四字代码（每个代码须为连续4个英文字母）');
         return;
     }
@@ -2682,6 +2714,7 @@ function performSearch(searchValue) {
         const existing = (typeof airportData !== 'undefined') &&
             airportData.find(a => a.airport_4code === codes[0]);
         if (existing) {
+            endAirportSearch();
             showAirportDetailModal(existing, 'search');
             return;
         }
@@ -2697,12 +2730,7 @@ function performSearch(searchValue) {
 // 注意：搜索不应影响主页当前已展示的内容，因此不调用 showLoading()/hideLoading()
 // （它们会清空 #content-main），仅在搜索按钮上给出轻量的加载中提示。
 function fetchAndShowAirportSearch(codes) {
-    const searchBtn = document.getElementById('search-btn');
-    const originalBtnText = searchBtn ? searchBtn.textContent : null;
-    if (searchBtn) {
-        searchBtn.disabled = true;
-        searchBtn.textContent = '搜索中...';
-    }
+    setAirportSearchButtonState(true);
 
     const headers = { 'Content-Type': 'application/json' };
     if (typeof currentToken !== 'undefined' && currentToken) {
@@ -2740,10 +2768,7 @@ function fetchAndShowAirportSearch(codes) {
             alert('搜索请求失败，请重试');
         })
         .finally(() => {
-            if (searchBtn) {
-                searchBtn.disabled = false;
-                searchBtn.textContent = originalBtnText;
-            }
+            endAirportSearch();
         });
 }
 

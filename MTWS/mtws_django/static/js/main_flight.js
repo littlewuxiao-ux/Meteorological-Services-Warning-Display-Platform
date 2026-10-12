@@ -1229,6 +1229,12 @@ function ensureMarksPastHandle(scope) {
         removeMarksPastHandle(sc);
         return;
     }
+    // 主页刷新会先清空机场行。握柄挂在 body 上，此时不能按上一次的位置留着，
+    // 也不能被 100ms 网格回调或 60 秒时间轴刷新重新挂出来。
+    if (sc === 'home' && !document.querySelector('#content-main .airport-row')) {
+        removeMarksPastHandle(sc);
+        return;
+    }
     const id = marksPastHandleId(sc);
     let wrap = document.getElementById(id);
     if (!wrap) {

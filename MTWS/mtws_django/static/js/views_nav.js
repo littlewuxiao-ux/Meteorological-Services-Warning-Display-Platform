@@ -179,7 +179,7 @@
       btn.type = 'button';
       btn.className = 'view-nav-item';
       btn.dataset.view = view.key;
-      if (view.key !== 'trend') btn.title = view.title || view.label;
+      btn.title = view.title || view.label;
       btn.innerHTML =
         `<span class="view-nav-icon">${view.icon}</span>` +
         `<span class="view-nav-text">${view.label}</span>`;
@@ -237,9 +237,15 @@
     if (!document.querySelector('.view-nav-item[data-view="map"]')) return;
     const mode = (typeof currentTimeMode !== 'undefined') ? currentTimeMode : (window.timeMode || 'current');
     const headers = (typeof getRequestHeaders === 'function') ? getRequestHeaders() : {};
-    fetch(`/${mode}/api/radar/alerts/`, { headers })
+    const scope = sessionStorage.getItem('mtws_map_flight_scope') || 'has_flight';
+    const hours = localStorage.getItem('mtws_flight_future_hours') || '2';
+    const query = `scope=${encodeURIComponent(scope)}&future_hours=${encodeURIComponent(hours)}`;
+    fetch(`/${mode}/api/radar/alerts/?${query}`, { headers })
       .then((r) => r.json())
       .then((data) => {
+        const nowScope = sessionStorage.getItem('mtws_map_flight_scope') || 'has_flight';
+        const nowHours = localStorage.getItem('mtws_flight_future_hours') || '2';
+        if (nowScope !== scope || String(nowHours) !== String(hours)) return;
         if (data && data.success) {
           const count = (data.alerts || []).filter((item) => !item.handled).length;
           updateRadarAlarmNavBadge(count);

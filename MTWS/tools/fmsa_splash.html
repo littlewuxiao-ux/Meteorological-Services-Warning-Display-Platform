@@ -32,21 +32,38 @@ body.leaving{opacity:0}
   pointer-events:none;
 }
 
-.field{
-  position:fixed;left:50%;top:50%;
+.radar{
+  position:fixed;left:50%;top:46%;
   width:min(860px,78vw);height:min(860px,78vw);
   transform:translate(-50%,-50%);
+  border-radius:50%;
   pointer-events:none;
+  clip-path:inset(0 0 50% 0);
 }
-.field canvas{position:absolute;inset:0;width:100%;height:100%}
-.field svg{position:relative;z-index:1;width:100%;height:100%;overflow:visible}
-.set .mark{opacity:0;transition:opacity .4s ease}
-.set.live .mark{opacity:1;transition-delay:calc(var(--d) * 1.65s)}
-.dot{fill:#e0f2fe}
-.route{fill:none;stroke:#7dd3fc;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
-.bolt{fill:none;stroke:#fbbf24;stroke-width:2.1;stroke-linecap:round;stroke-linejoin:round}
-.cross{fill:none;stroke:#cbd5e1;stroke-width:1.6;stroke-linecap:round}
-.gem{fill:none;stroke:#67e8f9;stroke-width:1.5}
+.rings{
+  position:absolute;inset:0;border-radius:50%;
+  background:repeating-radial-gradient(circle,
+    transparent 0 54px,
+    rgba(125,211,252,.16) 55px 56px);
+  mask-image:radial-gradient(circle,#000 0 48%, transparent 72%);
+}
+.sweep{
+  position:absolute;inset:0;border-radius:50%;
+  background:conic-gradient(from 0deg,
+    transparent 0deg 292deg,
+    rgba(56,189,248,0) 292deg,
+    rgba(125,211,252,.28) 360deg);
+  animation:spin 8s linear infinite;
+  mask-image:radial-gradient(circle,#000 0 50%, transparent 72%);
+}
+.routes{position:absolute;inset:0;width:100%;height:100%;opacity:.4}
+.routes path{
+  fill:none;stroke:#7dd3fc;stroke-width:1.2;
+  stroke-dasharray:6 10;
+  animation:flow 22s linear infinite;
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes flow{to{stroke-dashoffset:-420}}
 
 .stage{
   position:relative;z-index:1;
@@ -113,57 +130,12 @@ body.leaving{opacity:0}
 </head>
 <body>
 <div class="sky"></div>
-<div class="field" aria-hidden="true">
-  <canvas id="wave"></canvas>
-  <svg viewBox="0 0 860 860">
-    <g class="set">
-      <path class="mark route" style="--d:.42" d="M250,300 C340,250 470,248 590,300"/>
-      <circle class="mark dot" style="--d:.34" cx="430" cy="292" r="4.5"/>
-      <circle class="mark dot" style="--d:.52" cx="300" cy="286" r="3.5"/>
-      <circle class="mark dot" style="--d:.58" cx="560" cy="288" r="3.5"/>
-      <circle class="mark dot" style="--d:.78" cx="168" cy="210" r="4"/>
-      <circle class="mark dot" style="--d:.86" cx="700" cy="188" r="3.5"/>
-      <polyline class="mark bolt" style="--d:.8" points="648,150 664,176 652,176 670,208"/>
-    </g>
-    <g class="set">
-      <path class="mark route" style="--d:.5" d="M190,260 C300,180 520,170 690,240"/>
-      <circle class="mark dot" style="--d:.4" cx="360" cy="210" r="4"/>
-      <circle class="mark dot" style="--d:.62" cx="530" cy="185" r="3.5"/>
-      <circle class="mark dot" style="--d:.84" cx="150" cy="175" r="3.5"/>
-      <polyline class="mark bolt" style="--d:.72" points="600,120 616,148 604,148 622,180"/>
-      <g class="mark cross" style="--d:.88">
-        <path d="M720,210 v16 M712,218 h16"/>
-      </g>
-    </g>
-    <g class="set">
-      <path class="mark route" style="--d:.46" d="M160,240 C250,150 390,200 470,160"/>
-      <circle class="mark dot" style="--d:.36" cx="430" cy="250" r="4"/>
-      <circle class="mark dot" style="--d:.58" cx="250" cy="200" r="3.5"/>
-      <circle class="mark dot" style="--d:.8" cx="120" cy="230" r="4"/>
-      <polygon class="mark gem" style="--d:.7" points="560,150 572,138 584,150 572,162"/>
-      <polyline class="mark bolt" style="--d:.9" points="680,130 696,158 684,158 702,190"/>
-    </g>
-    <g class="set">
-      <path class="mark route" style="--d:.55" d="M220,220 C360,120 560,130 700,200"/>
-      <circle class="mark dot" style="--d:.38" cx="400" cy="175" r="4"/>
-      <circle class="mark dot" style="--d:.66" cx="280" cy="175" r="3.5"/>
-      <circle class="mark dot" style="--d:.74" cx="620" cy="160" r="3.5"/>
-      <circle class="mark dot" style="--d:.9" cx="760" cy="140" r="3"/>
-      <g class="mark cross" style="--d:.48">
-        <path d="M480,230 v16 M472,238 h16"/>
-      </g>
-      <polyline class="mark bolt" style="--d:.82" points="160,140 176,168 164,168 182,200"/>
-    </g>
-    <g class="set">
-      <path class="mark route" style="--d:.5" d="M170,200 C280,250 360,140 500,170 C620,195 680,140 760,180"/>
-      <circle class="mark dot" style="--d:.4" cx="330" cy="230" r="4"/>
-      <circle class="mark dot" style="--d:.64" cx="560" cy="165" r="3.5"/>
-      <polygon class="mark gem" style="--d:.72" points="210,155 222,143 234,155 222,167"/>
-      <polyline class="mark bolt" style="--d:.86" points="640,110 656,138 644,138 662,170"/>
-      <g class="mark cross" style="--d:.78">
-        <path d="M500,120 v16 M492,128 h16"/>
-      </g>
-    </g>
+<div class="radar" aria-hidden="true">
+  <div class="rings"></div>
+  <div class="sweep"></div>
+  <svg class="routes" viewBox="0 0 860 860">
+    <path d="M120,620 C240,480 300,390 430,360 S640,250 760,180"/>
+    <path d="M160,240 C300,300 390,420 470,470 S680,560 780,640"/>
   </svg>
 </div>
 <div class="stage">
@@ -184,92 +156,6 @@ body.leaving{opacity:0}
   var HOME = "http://127.0.0.1:8000/current/";
   var MIN_MS = 3000;
   var start = Date.now(), redirected = false, backendReady = false, okCount = 0, need = 2;
-  var sets = [].slice.call(document.querySelectorAll(".field .set"));
-  var cursor = 0;
-  var canvas = document.getElementById("wave");
-  var ctx = canvas.getContext("2d");
-  var particles = [];
-  var waveT0 = 0;
-  var WAVE = 2300;
-  var dpr = 1;
-  function fitCanvas(){
-    var rect = canvas.getBoundingClientRect();
-    var next = Math.min(window.devicePixelRatio || 1, 2);
-    var w = Math.max(1, Math.round(rect.width * next));
-    var h = Math.max(1, Math.round(rect.height * next));
-    if (canvas.width !== w || canvas.height !== h) {
-      dpr = next;
-      canvas.width = w;
-      canvas.height = h;
-    }
-  }
-  function spawnWave(){
-    waveT0 = performance.now();
-    particles = [];
-    for (var i = 0; i < 420; i++) {
-      var front = Math.random() < 0.28;
-      particles.push({
-        ang: (Math.PI + 0.62) + Math.random() * (Math.PI - 1.24),
-        u: Math.random(),
-        size: front ? (1.2 + Math.random() * 1.8) : (0.5 + Math.random() * 1.6),
-        alpha: front ? (0.55 + Math.random() * 0.45) : (0.12 + Math.random() * 0.32),
-        color: Math.random() < 0.06 ? "#fde68a" : (Math.random() < 0.35 ? "#e0f2fe" : "#7dd3fc"),
-        soft: !front && Math.random() < 0.2,
-        front: front
-      });
-    }
-  }
-  function paintWave(now){
-    fitCanvas();
-    var w = canvas.width, h = canvas.height;
-    ctx.clearRect(0, 0, w, h);
-    var p = Math.min(1, (now - waveT0) / WAVE);
-    var ease = 1 - Math.pow(1 - p, 2);
-    var cx = w / 2, cy = h / 2;
-    var R = Math.min(cx, cy) * 0.98;
-    var r0 = R * 0.34;
-    var lead = r0 + ease * (R - r0);
-    var fade = p < 0.06 ? p / 0.06 : (p > 0.92 ? (1 - p) / 0.08 : 1);
-    ctx.lineCap = "round";
-    for (var i = 0; i < particles.length; i++) {
-      var pt = particles[i];
-      var along = pt.front ? (0.82 + pt.u * 0.18) : pt.u;
-      var r = r0 + along * (lead - r0);
-      var x = cx + Math.cos(pt.ang) * r;
-      var y = cy + Math.sin(pt.ang) * r;
-      if (y >= cy - R * 0.02) continue;
-      var a = fade * pt.alpha * (0.45 + 0.55 * along);
-      var s = (pt.soft ? pt.size * 3.2 : pt.size) * dpr;
-      ctx.globalAlpha = pt.soft ? a * 0.4 : a;
-      ctx.fillStyle = pt.color;
-      ctx.beginPath();
-      ctx.arc(x, y, s, 0, Math.PI * 2);
-      ctx.fill();
-      if (pt.front) {
-        var r2 = Math.max(r0, r - 18 * dpr);
-        var y2 = cy + Math.sin(pt.ang) * r2;
-        if (y2 < cy) {
-          ctx.globalAlpha = a * 0.45;
-          ctx.strokeStyle = pt.color;
-          ctx.lineWidth = Math.max(1, dpr);
-          ctx.beginPath();
-          ctx.moveTo(cx + Math.cos(pt.ang) * r2, y2);
-          ctx.lineTo(x, y);
-          ctx.stroke();
-        }
-      }
-    }
-    ctx.globalAlpha = 1;
-    requestAnimationFrame(paintWave);
-  }
-  function scan(){
-    sets.forEach(function(el, i){ el.classList.toggle("live", i === cursor); });
-    spawnWave();
-    cursor = (cursor + 1) % sets.length;
-  }
-  requestAnimationFrame(paintWave);
-  scan();
-  setInterval(scan, 2800);
   function setBar(p){
     document.getElementById("num").textContent = p;
     document.getElementById("bar").style.width = p + "%";

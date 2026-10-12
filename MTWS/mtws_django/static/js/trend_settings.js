@@ -164,8 +164,80 @@
         });
       });
     });
-    config = { groups: groups };
+    config = { groups: groups, alarm_colors: alarmColorsOf(raw) };
     lockSaved(groups);
+  }
+
+  function alarmColorsOf(raw) {
+    const picked = new Set(Array.isArray(raw && raw.alarm_colors) ? raw.alarm_colors : ['R', 'Y', 'G']);
+    if (!raw || !Array.isArray(raw.alarm_colors)) return ['R', 'Y', 'G'];
+    if (picked.has('G')) return ['R', 'Y', 'G'];
+    if (picked.has('Y')) return ['R', 'Y'];
+    if (picked.has('R')) return ['R'];
+    return [];
+  }
+
+  function paintAlarmColors() {
+    const picked = new Set(config.alarm_colors || ['R', 'Y', 'G']);
+    document.querySelectorAll('#trend-alarm-colors .radar-alarm-color').forEach((el) => {
+      el.checked = picked.has(el.value);
+    });
+  }
+
+  function applyAlarmHierarchy(changed) {
+    const root = document.getElementById('trend-alarm-colors');
+    if (!root || !changed) return;
+    const red = root.querySelector('.radar-alarm-color[value="R"]');
+    const yellow = root.querySelector('.radar-alarm-color[value="Y"]');
+    const green = root.querySelector('.radar-alarm-color[value="G"]');
+    if (changed.value === 'G' && changed.checked) {
+      if (yellow) yellow.checked = true;
+      if (red) red.checked = true;
+    } else if (changed.value === 'Y' && changed.checked) {
+      if (red) red.checked = true;
+    } else if (changed.value === 'Y' && !changed.checked) {
+      if (green) green.checked = false;
+    } else if (changed.value === 'R' && !changed.checked) {
+      if (yellow) yellow.checked = false;
+      if (green) green.checked = false;
+    }
+  }
+
+  function readAlarmColors() {
+    return ['R', 'Y', 'G'].filter((color) => {
+      const el = document.querySelector(`#trend-alarm-colors .radar-alarm-color[value="${color}"]`);
+      return el && el.checked;
+    });
+  }
+
+  async function saveAlarmColors() {
+    if (saving) return;
+    const colors = readAlarmColors();
+    config.alarm_colors = colors;
+    const payload = JSON.parse(JSON.stringify(savedConfig));
+    payload.alarm_colors = colors;
+    saving = true;
+    try {
+      const data = await putConfig(payload);
+      if (!data.success) {
+        msg(data.error || '保存失败', false);
+        config.alarm_colors = alarmColorsOf(savedConfig);
+        paintAlarmColors();
+        return;
+      }
+      const savedColors = alarmColorsOf(data.config || payload);
+      config.alarm_colors = savedColors;
+      savedConfig.alarm_colors = savedColors.slice();
+      paintAlarmColors();
+      if (typeof window.setTrendAlarmColors === 'function') window.setTrendAlarmColors(savedColors);
+      msg('计入告警已保存', true);
+    } catch (err) {
+      msg('保存失败', false);
+      config.alarm_colors = alarmColorsOf(savedConfig);
+      paintAlarmColors();
+    } finally {
+      saving = false;
+    }
   }
 
   function rememberSaved() {
@@ -539,6 +611,12 @@
       render();
       scrollToGroup(group.id);
     });
+    document.querySelectorAll('#trend-alarm-colors .radar-alarm-color').forEach((el) => {
+      el.addEventListener('change', () => {
+        applyAlarmHierarchy(el);
+        saveAlarmColors();
+      });
+    });
   }
 
   async function load() {
@@ -554,6 +632,7 @@
       if (typeof window.applySettingsScope === 'function') window.applySettingsScope(data);
       hydrate(data.config || { groups: [] });
       rememberSaved();
+      paintAlarmColors();
       const list = document.getElementById('trend-weather-list');
       if (list) {
         list.innerHTML = (data.weather_codes || []).map((code) => `<option value="${esc(code)}"></option>`).join('');

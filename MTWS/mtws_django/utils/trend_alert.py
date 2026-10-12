@@ -63,7 +63,21 @@ def new_id() -> str:
 
 
 def default_config() -> dict:
-    return {'groups': []}
+    return {'groups': [], 'alarm_colors': ['R', 'Y', 'G']}
+
+
+def alarm_colors_of(raw) -> list:
+    """导航计入的颜色。没配过时红黄绿都计入。勾绿含黄和红，勾黄含红。"""
+    if not isinstance(raw, dict) or 'alarm_colors' not in raw:
+        return ['R', 'Y', 'G']
+    picked = [color for color in ('R', 'Y', 'G') if color in set(raw.get('alarm_colors') or [])]
+    if 'G' in picked:
+        return ['R', 'Y', 'G']
+    if 'Y' in picked:
+        return ['R', 'Y']
+    if 'R' in picked:
+        return ['R']
+    return []
 
 
 def _num(value) -> Optional[float]:
@@ -980,7 +994,7 @@ def normalize_config(payload: Any, known_weather: Optional[set] = None) -> tuple
             'threshold_r': thresholds['threshold_r'],
             'conditions': conditions,
         })
-    return {'groups': groups}, errors
+    return {'groups': groups, 'alarm_colors': alarm_colors_of(payload if isinstance(payload, dict) else {})}, errors
 
 
 def groups_for_airport(config: dict, airport: str, universe: set) -> list:
@@ -1243,7 +1257,13 @@ def build_results(scope: str, now_ms: Optional[int] = None, future_hours: int = 
             'rows': _unpack_series(row.series or [], slots),
         })
     airports.sort(key=lambda item: (-COLOR_RANK.get(item['color'], 0), item['airport']))
-    return {'slots': slots, 'airports': airports, 'scope': scope, 'universe_count': len(universe)}
+    return {
+        'slots': slots,
+        'airports': airports,
+        'scope': scope,
+        'universe_count': len(universe),
+        'alarm_colors': read_config().get('alarm_colors') or ['R', 'Y', 'G'],
+    }
 
 
 def _self_check() -> None:

@@ -1578,14 +1578,26 @@ function _scheduleRadarPoll() {
     _radarScopePoll = setTimeout(tick, 4000);
 }
 
-function _runRadarForCurrentScope(hideStale) {
-    if (typeof currentTimeMode === 'undefined') return;
+function _rememberMapScope() {
     const hours = _mapFutureHours();
     localStorage.setItem(_FLIGHT_HOURS_KEY, String(hours));
     sessionStorage.setItem('mtws_map_flight_scope', _mapFlightScope());
     _syncMapHoursVisibility();
     const trendHours = document.getElementById('trend-future-hours');
     if (trendHours) trendHours.value = String(hours);
+}
+
+function _scopeIsNarrower(prevScope, prevHours, nextScope, nextHours) {
+    const prevAll = prevScope !== 'recent2h';
+    const nextAll = nextScope !== 'recent2h';
+    if (prevAll && !nextAll) return true;
+    if (!prevAll && nextAll) return false;
+    if (!prevAll && !nextAll) return nextHours < prevHours;
+    return false;
+}
+
+function _runRadarMissing() {
+    if (typeof currentTimeMode === 'undefined') return;
     if (!_accessAllows('map_radar', 'display')) return;
     return fetch(`/${currentTimeMode}/api/radar/run/`, {
         method: 'POST',
@@ -1596,7 +1608,44 @@ function _runRadarForCurrentScope(hideStale) {
         body: JSON.stringify({
             force: false,
             scope: _mapFlightScope(),
-            future_hours: hours,
+            future_hours: _mapFutureHours(),
+            only_missing: true
+        })
+    })
+        .then(r => r.json())
+        .then(() => _refreshRadarAlerts())
+        .catch(err => console.warn('[雷达告警] 补算失败', err));
+}
+
+function _applyScopeChange(prevScope, prevHours) {
+    const nextScope = _mapFlightScope();
+    const nextHours = _mapFutureHours();
+    _rememberMapScope();
+    if (prevScope === nextScope && prevHours === nextHours) {
+        _refreshRadarAlerts();
+        return;
+    }
+    if (_scopeIsNarrower(prevScope, prevHours, nextScope, nextHours)) {
+        _refreshRadarAlerts();
+        return;
+    }
+    _runRadarMissing();
+}
+
+function _runRadarForCurrentScope(hideStale) {
+    if (typeof currentTimeMode === 'undefined') return;
+    _rememberMapScope();
+    if (!_accessAllows('map_radar', 'display')) return;
+    return fetch(`/${currentTimeMode}/api/radar/run/`, {
+        method: 'POST',
+        headers: {
+            ...(typeof getRequestHeaders === 'function' ? getRequestHeaders() : {}),
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            force: false,
+            scope: _mapFlightScope(),
+            future_hours: _mapFutureHours(),
             hide_stale: !!hideStale
         })
     })
@@ -1618,12 +1667,18 @@ function _bindMapFlightScope() {
     if (hoursInput) hoursInput.value = String(_readFlightHours());
     _syncMapHoursVisibility();
     panel.querySelectorAll('input[name="map-flight-scope"]').forEach((el) => {
-        el.addEventListener('change', () => _runRadarForCurrentScope(true));
+        el.addEventListener('change', () => {
+            const prevScope = sessionStorage.getItem('mtws_map_flight_scope') || 'has_flight';
+            const prevHours = _readFlightHours();
+            _applyScopeChange(prevScope, prevHours);
+        });
     });
     if (hoursInput) {
         hoursInput.addEventListener('change', () => {
+            const prevScope = sessionStorage.getItem('mtws_map_flight_scope') || _mapFlightScope();
+            const prevHours = _readFlightHours();
             hoursInput.value = String(_mapFutureHours());
-            _runRadarForCurrentScope(true);
+            _applyScopeChange(prevScope, prevHours);
         });
     }
 }

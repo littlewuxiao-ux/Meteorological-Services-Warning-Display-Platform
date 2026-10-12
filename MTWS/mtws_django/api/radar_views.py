@@ -84,7 +84,16 @@ def radar_alert_run(request, time_mode='current'):
     if scope in ('has_flight', 'recent2h'):
         hours = clamp_future_hours(data.get('future_hours'))
         codes = airport_codes_for_scope(scope, hours)
-        hide_stale = bool(data.get('hide_stale'))
+        if data.get('only_missing'):
+            from core.models import AirportRadarAlert
+            have = set(
+                AirportRadarAlert.objects.filter(airport_4code__in=codes)
+                .values_list('airport_4code', flat=True)
+            )
+            codes = [code for code in codes if code not in have]
+            if not codes:
+                return JsonResponse({'success': True, 'status': get_radar_job_status(), 'skipped': True})
+        hide_stale = bool(data.get('hide_stale')) and not data.get('only_missing')
         st = trigger_radar_job(force=force, codes=codes, hide_stale=hide_stale)
     else:
         st = trigger_radar_job(force=force)
