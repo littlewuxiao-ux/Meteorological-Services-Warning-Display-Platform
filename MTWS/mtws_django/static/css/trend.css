@@ -258,6 +258,7 @@
   width: 64px;
   min-width: 64px;
   max-width: 64px;
+  text-align: center;
 }
 
 .trend-table .trend-handle {
@@ -266,6 +267,18 @@
   overflow: visible;
   text-align: center;
   vertical-align: middle;
+}
+
+.trend-observe {
+  display: inline-block;
+  padding: 2px 8px;
+  border: 1px solid #c5d2e0;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.4;
+  color: #6b7c90;
+  background: #f4f7fb;
 }
 
 .trend-handle-btn {

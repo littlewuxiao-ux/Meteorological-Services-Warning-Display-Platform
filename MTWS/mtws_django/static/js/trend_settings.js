@@ -94,12 +94,34 @@
     return '1.0–5.0 分。';
   }
 
+  function shownScore(cond, key) {
+    const value = cond[key];
+    if (value === '' || value == null) return cond.score;
+    return value;
+  }
+
+  function matchModeSelect(g, c, cond) {
+    if (!cond.use_change || !cond.use_current) return '';
+    const mode = cond.match_mode === 'any' ? 'any' : 'all';
+    return `
+      <select data-g="${g}" data-c="${c}" data-field="match_mode"${dis()}>
+        <option value="all"${mode === 'all' ? ' selected' : ''}>共同满足</option>
+        <option value="any"${mode === 'any' ? ' selected' : ''}>分别满足</option>
+      </select>`;
+  }
+
   function scoreField(g, c, cond) {
+    const rule = '两段都勾选时可选择。共同满足：两段同时成立才通过，取总分。分别满足：任一段成立即通过，只取命中那段的分；两段都成立仍取总分。只勾一段时，取该段的分。';
     if (cond.role === 'veto') {
-      return `<span class="trend-hint">${scoreHint('veto')}</span>`;
+      return `${matchModeSelect(g, c, cond)}<span class="trend-hint">${scoreHint('veto')} ${rule}</span>`;
     }
     const range = scoreRange(cond.role);
-    return `<span>分值</span>${num(g, c, 'score', cond.score, '0.1', range.max, range.min)}<span class="trend-hint">${scoreHint(cond.role)}</span>`;
+    return `
+      <span>过去变化分值</span>${num(g, c, 'change_score', shownScore(cond, 'change_score'), '0.1', range.max, range.min)}
+      <span>当前值分值</span>${num(g, c, 'current_score', shownScore(cond, 'current_score'), '0.1', range.max, range.min)}
+      <span>总分</span>${num(g, c, 'score', cond.score, '0.1', range.max, range.min)}
+      ${matchModeSelect(g, c, cond)}
+      <span class="trend-hint">${scoreHint(cond.role)} ${rule}</span>`;
   }
 
   function blankCondition(kind) {
@@ -109,6 +131,9 @@
       role: 'required',
       kind: kind || 'element',
       score: 1,
+      change_score: 1,
+      current_score: 1,
+      match_mode: 'all',
       label: '',
       hours: 6,
       use_change: true,
@@ -546,11 +571,15 @@
       if (cond) {
         if (cond.role === 'veto') {
           cond.score = 0;
+          cond.change_score = 0;
+          cond.current_score = 0;
         } else {
           const range = scoreRange(cond.role);
-          const score = Number(cond.score);
-          if (!Number.isFinite(score) || score < range.min) cond.score = range.min;
-          else if (score > range.max) cond.score = range.max;
+          ['score', 'change_score', 'current_score'].forEach((key) => {
+            const score = Number(cond[key]);
+            if (!Number.isFinite(score) || score < range.min) cond[key] = range.min;
+            else if (score > range.max) cond[key] = range.max;
+          });
         }
       }
     }

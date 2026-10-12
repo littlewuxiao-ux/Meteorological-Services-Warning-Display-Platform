@@ -122,6 +122,7 @@
   function trendHandleButton(airport) {
     const color = airport.color;
     if (color !== 'R' && color !== 'Y' && color !== 'G') return '';
+    if (alarmColors.indexOf(color) < 0) return '<span class="trend-observe">观察项</span>';
     const handled = !!airport.handled;
     const bg = BAR_COLOR[color] || BAR_COLOR.G;
     const fg = color === 'Y' ? '#1b2838' : '#fff';

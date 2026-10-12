@@ -335,122 +335,153 @@ def _height_side(obs: Optional[dict], threshold, cmp: str, allow_nsc: bool) -> b
     return obs['base'] >= threshold
 
 
-def _condition_match(cond: dict, obs: list, now_ms: int) -> bool:
+def _condition_sides(cond: dict, obs: list, now_ms: int):
+    """返回 (过去是否成立, 当前是否成立)。没勾的一侧是 None。"""
     if len(obs) < 1:
-        return False
+        return None, None
     current = obs[-1]
     use_change = bool(cond.get('use_change'))
     use_current = bool(cond.get('use_current'))
     hours = _num(cond.get('hours')) or 0
     begin = int(now_ms - hours * HOUR_MS)
     kind = cond.get('kind')
-    if not use_change and not use_current:
-        return False
+    change_ok = None
+    current_ok = None
 
     if kind == 'element':
         direction = cond.get('direction')
-        ok = True
         if use_change:
             amount = _num(cond.get('change_amount'))
             element = cond.get('change_element')
-            if amount is None:
-                return False
-            values = []
-            for item in _in_past_window(obs, begin, now_ms):
-                value = _element_value(item, element)
-                if value is not None:
-                    values.append(value)
-            after = _element_value(current, element)
-            if not values or after is None:
-                return False
-            change_op = cond.get('change_op') or ('>=' if direction != 'up' else '>=')
-            if direction == 'down':
-                diff = max(values) - after
-            else:
-                diff = after - min(values)
-            ok = diff >= amount if change_op != '<=' else diff <= amount
-        if ok and use_current:
+            change_ok = False
+            if amount is not None:
+                values = []
+                for item in _in_past_window(obs, begin, now_ms):
+                    value = _element_value(item, element)
+                    if value is not None:
+                        values.append(value)
+                after = _element_value(current, element)
+                if values and after is not None:
+                    change_op = cond.get('change_op') or '>='
+                    if direction == 'down':
+                        diff = max(values) - after
+                    else:
+                        diff = after - min(values)
+                    change_ok = diff >= amount if change_op != '<=' else diff <= amount
+        if use_current:
             element = cond.get('current_element')
             limit = _num(cond.get('current_value'))
             value = _element_value(current, element)
-            if value is None or limit is None:
-                return False
-            current_op = cond.get('current_op') or ('<=' if direction != 'up' else '>=')
-            ok = value <= limit if current_op == '<=' else value >= limit
-        return ok
+            current_ok = False
+            if value is not None and limit is not None:
+                current_op = cond.get('current_op') or ('<=' if direction != 'up' else '>=')
+                current_ok = value <= limit if current_op == '<=' else value >= limit
+        return change_ok, current_ok
 
     if kind == 'weather':
-        ok = True
         if use_change:
             codes = cond.get('past_codes') or []
             samples = _in_past_window(obs, begin, now_ms)
-            if not samples:
-                return False
-            if codes:
-                wanted = set(codes)
-                if cond.get('past_match') == 'all':
-                    seen = set()
-                    for item in samples:
-                        seen.update(wanted.intersection(item['weather']))
-                    ok = wanted.issubset(seen)
+            change_ok = False
+            if samples:
+                if codes:
+                    wanted = set(codes)
+                    if cond.get('past_match') == 'all':
+                        seen = set()
+                        for item in samples:
+                            seen.update(wanted.intersection(item['weather']))
+                        change_ok = wanted.issubset(seen)
+                    else:
+                        change_ok = any(wanted.intersection(item['weather']) for item in samples)
                 else:
-                    ok = any(wanted.intersection(item['weather']) for item in samples)
-            else:
-                ok = any(not item['weather'] for item in samples)
-        if ok and use_current:
+                    change_ok = any(not item['weather'] for item in samples)
+        if use_current:
             cm = cond.get('current_match') or 'any'
             if not (cond.get('current_codes') or []):
-                ok = not current['weather']
+                current_ok = not current['weather']
             elif cm == 'all':
-                ok = set(cond.get('current_codes') or []).issubset(set(current['weather']))
+                current_ok = set(cond.get('current_codes') or []).issubset(set(current['weather']))
             else:
-                ok = bool(set(cond.get('current_codes') or []).intersection(current['weather']))
-        return ok
+                current_ok = bool(set(cond.get('current_codes') or []).intersection(current['weather']))
+        return change_ok, current_ok
 
     if kind == 'cover':
-        ok = True
         if use_change:
             samples = _in_past_window(obs, begin, now_ms)
-            if not samples:
-                return False
             wanted_from = set(cond.get('cover_from') or [])
             wanted_to = set(cond.get('cover_to') or [])
-            ok = any(item['cover'] in wanted_from for item in samples) and current['cover'] in wanted_to
-        if ok and use_current:
-            ok = current['cover'] in set(cond.get('cover_now') or [])
-        return ok
+            change_ok = bool(samples) and any(item['cover'] in wanted_from for item in samples) and current['cover'] in wanted_to
+        if use_current:
+            current_ok = current['cover'] in set(cond.get('cover_now') or [])
+        return change_ok, current_ok
 
     if kind == 'height':
-        ok = True
         if use_change:
             samples = _in_past_window(obs, begin, now_ms)
-            if not samples:
-                return False
-            ok = any(
+            change_ok = bool(samples) and any(
                 _height_side(item, _num(cond.get('from_height')), cond.get('from_cmp'), cond.get('from_nsc'))
                 for item in samples
-            )
-            if ok:
-                ok = _height_side(current, _num(cond.get('to_height')), cond.get('to_cmp'), cond.get('to_nsc'))
-        if ok and use_current:
-            ok = _height_side(current, _num(cond.get('now_height')), cond.get('now_cmp'), cond.get('now_nsc'))
-        return ok
-    return False
+            ) and _height_side(current, _num(cond.get('to_height')), cond.get('to_cmp'), cond.get('to_nsc'))
+        if use_current:
+            current_ok = _height_side(current, _num(cond.get('now_height')), cond.get('now_cmp'), cond.get('now_nsc'))
+        return change_ok, current_ok
+    return None, None
 
 
-def _hit_rows(cond: dict) -> list:
-    """时序表只列已经命中的要素。天气现象、云量在对应条件命中后占行。同一要素只保留一次。"""
+def _picked_score(cond: dict, key: str) -> float:
+    value = _num(cond.get(key))
+    if value is None:
+        value = _num(cond.get('score'))
+    return value or 0
+
+
+def _condition_points(cond: dict, obs: list, now_ms: int) -> Optional[dict]:
+    """未命中返回 None。命中时带上采用的分值，以及过去、当前各自是否成立。"""
+    change_ok, current_ok = _condition_sides(cond, obs, now_ms)
+    use_change = change_ok is not None
+    use_current = current_ok is not None
+    if not use_change and not use_current:
+        return None
+    both = use_change and use_current
+    mode = 'any' if cond.get('match_mode') == 'any' else 'all'
+    if both and mode != 'any':
+        if not (change_ok and current_ok):
+            return None
+        score = _num(cond.get('score')) or 0
+    elif both:
+        if change_ok and current_ok:
+            score = _num(cond.get('score')) or 0
+        elif change_ok:
+            score = _picked_score(cond, 'change_score')
+        elif current_ok:
+            score = _picked_score(cond, 'current_score')
+        else:
+            return None
+    else:
+        ok = change_ok if use_change else current_ok
+        if not ok:
+            return None
+        score = _picked_score(cond, 'change_score' if use_change else 'current_score')
+    return {'score': score, 'change': bool(change_ok), 'current': bool(current_ok)}
+
+
+def _condition_match(cond: dict, obs: list, now_ms: int) -> bool:
+    return _condition_points(cond, obs, now_ms) is not None
+
+
+def _hit_rows(cond: dict, change: bool = True, current: bool = True) -> list:
+    """时序表只列已经命中的要素。分别满足时，没命中的那一段不占行。"""
     rows = []
     if cond.get('kind') == 'element':
-        if cond.get('use_change'):
+        if cond.get('use_change') and change:
             rows.append(cond.get('change_element'))
-        if cond.get('use_current'):
+        if cond.get('use_current') and current:
             rows.append(cond.get('current_element'))
-    elif cond.get('kind') == 'height':
+    elif cond.get('kind') == 'height' and (change or current):
         rows.append('height')
-    elif cond.get('kind') == 'weather':
+    elif cond.get('kind') == 'weather' and (change or current):
         rows.append('weather')
-    elif cond.get('kind') == 'cover':
+    elif cond.get('kind') == 'cover' and (change or current):
         rows.append('cover')
     seen = []
     for row in rows:
@@ -693,7 +724,8 @@ def score_group(group: dict, obs: list, now_ms: int) -> Optional[dict]:
     for cond in enabled:
         if cond.get('role') == 'veto':
             continue
-        if not _condition_match(cond, obs, now_ms):
+        hit = _condition_points(cond, obs, now_ms)
+        if hit is None:
             continue
         # 只收录整条条件已经命中的描述，未命中的不出现在四字代码下方
         label = cond.get('label') or ''
@@ -701,9 +733,9 @@ def score_group(group: dict, obs: list, now_ms: int) -> Optional[dict]:
         if role == 'deduct' and label:
             label = f'「{label}」'
         labels.append(label)
-        rows.extend(_hit_rows(cond))
+        rows.extend(_hit_rows(cond, hit['change'], hit['current']))
         matched.append(cond)
-        score = _num(cond.get('score')) or 0
+        score = hit['score']
         if role == 'extra':
             extra_score += min(score, EXTRA_SCORE_CAP)
         elif role == 'deduct':
@@ -830,12 +862,35 @@ def _clean_condition(raw: dict, index: int, known_weather: set, errors: list) ->
     hours = _num(raw.get('hours'))
     if use_change and (hours is None or hours <= 0 or hours > MAX_HOURS):
         errors.append(f'{prefix}过去小时数需大于 0 且不超过 {MAX_HOURS}')
+    match_mode = 'any' if str(raw.get('match_mode') or '') == 'any' else 'all'
+
+    def side_score(key: str, enabled: bool) -> float:
+        if role == 'veto':
+            return 0
+        value = _num(raw.get(key))
+        if value is None:
+            value = score
+        if enabled:
+            if role == 'required':
+                if value is None or value < 1 or value > 5:
+                    errors.append(f'{prefix}分段分值需在 1 到 5 之间')
+                    if value is None:
+                        value = 1
+            elif value is None or value < 0.1 or value > EXTRA_SCORE_CAP:
+                errors.append(f'{prefix}分段分值需在 0.1 到 {EXTRA_SCORE_CAP} 之间')
+                if value is None:
+                    value = 0.1
+        return value if value is not None else 0
+
     cond = {
         'id': str(raw.get('id') or new_id()),
         'enabled': _bool(raw.get('enabled'), True),
         'role': role,
         'kind': kind,
         'score': score if score is not None else 0,
+        'change_score': side_score('change_score', use_change),
+        'current_score': side_score('current_score', use_current),
+        'match_mode': match_mode,
         'label': label,
         'hours': hours if hours is not None else None,
         'use_change': use_change,
@@ -1302,6 +1357,18 @@ def _self_check() -> None:
         'score': 4, 'label': '气温下降且能见度低',
     }
     assert _condition_match(element, series, now)
+    only_past = dict(element, match_mode='any', change_score=2, current_score=3, current_value=100)
+    past_hit = _condition_points(only_past, series, now)
+    assert past_hit and past_hit['score'] == 2 and past_hit['change'] and not past_hit['current']
+    only_now = dict(element, match_mode='any', change_amount=20, change_score=2, current_score=3)
+    now_hit = _condition_points(only_now, series, now)
+    assert now_hit and now_hit['score'] == 3 and not now_hit['change'] and now_hit['current']
+    both_hit = _condition_points(dict(element, match_mode='any', change_score=2, current_score=3), series, now)
+    assert both_hit and both_hit['score'] == 4 and both_hit['change'] and both_hit['current']
+    assert not _condition_points(dict(element, match_mode='all', current_value=100), series, now)
+    one_side = _condition_points(dict(element, use_current=False, change_score=2), series, now)
+    assert one_side and one_side['score'] == 2
+    assert _hit_rows(only_past, past_hit['change'], past_hit['current']) == ['temperature']
     element_short = dict(element, change_amount=9)
     assert not _condition_match(element_short, series, now)
     # 下降对比时段内最高值，上升对比时段内最低值
