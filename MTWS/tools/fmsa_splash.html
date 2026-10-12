@@ -4,134 +4,325 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>FMSA · 启动中</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-html,body{height:100%}
-body{background:#0a0e1a;color:#e8edf5;font-family:"Microsoft YaHei",system-ui,"Segoe UI",sans-serif;display:flex;align-items:center;justify-content:center;overflow:hidden}
-body::before{content:"";position:fixed;inset:-15%;background:radial-gradient(circle at 50% 0%,rgba(56,130,246,.22),transparent 55%),radial-gradient(circle at 50% 100%,rgba(34,211,238,.10),transparent 60%)}
-.ps{position:relative;z-index:1;width:min(640px,94vw);background:#101828;border:1px solid rgba(148,163,184,.14);border-radius:14px;overflow:hidden;box-shadow:0 30px 80px rgba(0,0,0,.6)}
-.banner{position:relative;height:150px;background:linear-gradient(120deg,#0b2a5b,#0e4a8a 45%,#0e7490);overflow:hidden}
-.banner svg{position:absolute;inset:0;width:100%;height:100%;opacity:.5}
-.banner .mask{position:absolute;inset:0;background:linear-gradient(180deg,transparent 40%,rgba(16,24,40,.85))}
-.banner .tag{position:absolute;left:22px;bottom:12px;font-size:11px;letter-spacing:4px;color:#9fc2ee}
-.body{display:flex;gap:22px;padding:22px 24px 18px}
-.left{flex:1.2}
-.left .mark{font-size:44px;font-weight:900;letter-spacing:3px;background:linear-gradient(120deg,#fff,#7dd3fc,#38bdf8);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
-.left .en{font-size:11px;color:#8fa3bd;letter-spacing:1px;margin-top:6px;line-height:1.7}
-.left .ver{margin-top:10px;font-size:11px;color:#5b6b83;font-family:Consolas,monospace}
-.right{flex:1;display:flex;flex-direction:column;gap:10px;justify-content:center}
-.step{display:flex;align-items:center;gap:10px;font-size:12px;color:#5b6b83;padding:8px 12px;border:1px solid rgba(148,163,184,.12);border-radius:8px;transition:all .3s}
-.step .d{width:8px;height:8px;border-radius:50%;background:#334155;flex-shrink:0}
-.step.on{color:#dbe7f5;border-color:rgba(56,189,248,.35);background:rgba(56,189,248,.06)}
-.step.on .d{background:#38bdf8;box-shadow:0 0 8px #38bdf8}
-.step.ok{color:#cbd5e1;border-color:rgba(34,197,94,.3);background:rgba(34,197,94,.06)}
-.step.ok .d{background:#22c55e;box-shadow:0 0 8px #22c55e}
-.foot{padding:0 24px 20px}
-.meter-top{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px}
-.meter-top .lbl{font-size:11px;letter-spacing:3px;color:#5b6b83}
-.pct{font-size:34px;font-weight:800;background:linear-gradient(120deg,#fff,#7dd3fc);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
-.bar{height:8px;border-radius:99px;background:rgba(255,255,255,.06);overflow:hidden}
-.bar>i{display:block;height:100%;width:0;border-radius:99px;background:linear-gradient(90deg,#1d4ed8,#38bdf8,#22d3ee);box-shadow:0 0 12px rgba(56,189,248,.7);transition:width .4s}
-.tip{margin-top:8px;font-size:12px;color:#8fa3bd;display:flex;justify-content:space-between}
-.err{color:#f87171;font-size:12px;display:none;margin-top:6px}
-.err a{color:#60a5fa}
+html,body{height:100%;background:#07111f}
+body{
+  color:#e8eef6;
+  font-family:"Microsoft YaHei",system-ui,"Segoe UI",sans-serif;
+  overflow:hidden;
+  transition:opacity .5s ease;
+}
+body.leaving{opacity:0}
+
+.sky{
+  position:fixed;inset:0;
+  background:
+    radial-gradient(ellipse 80% 50% at 50% 38%, rgba(30,90,170,.35), transparent 62%),
+    radial-gradient(ellipse 50% 40% at 50% 100%, rgba(14,116,144,.16), transparent 70%),
+    linear-gradient(180deg,#07111f 0%,#0b1c33 55%,#071018 100%);
+}
+.sky::after{
+  content:"";
+  position:absolute;inset:0;
+  background-image:linear-gradient(rgba(148,163,184,.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148,163,184,.05) 1px, transparent 1px);
+  background-size:72px 72px;
+  mask-image:radial-gradient(ellipse at 50% 42%, #000 20%, transparent 72%);
+  pointer-events:none;
+}
+
+.field{
+  position:fixed;left:50%;top:50%;
+  width:min(860px,78vw);height:min(860px,78vw);
+  transform:translate(-50%,-50%);
+  pointer-events:none;
+}
+.field canvas{position:absolute;inset:0;width:100%;height:100%}
+.field svg{position:relative;z-index:1;width:100%;height:100%;overflow:visible}
+.set .mark{opacity:0;transition:opacity .4s ease}
+.set.live .mark{opacity:1;transition-delay:calc(var(--d) * 1.65s)}
+.dot{fill:#e0f2fe}
+.route{fill:none;stroke:#7dd3fc;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.bolt{fill:none;stroke:#fbbf24;stroke-width:2.1;stroke-linecap:round;stroke-linejoin:round}
+.cross{fill:none;stroke:#cbd5e1;stroke-width:1.6;stroke-linecap:round}
+.gem{fill:none;stroke:#67e8f9;stroke-width:1.5}
+
+.stage{
+  position:relative;z-index:1;
+  min-height:100%;
+  display:flex;flex-direction:column;
+  align-items:center;justify-content:center;
+  text-align:center;
+  padding:48px 32px 72px;
+  animation:rise .7s ease both;
+}
+@keyframes rise{
+  from{opacity:0;transform:translateY(10px)}
+  to{opacity:1;transform:none}
+}
+
+.zh{
+  font-size:clamp(32px,3.4vw,48px);
+  font-weight:700;
+  letter-spacing:2px;
+  color:#f8fafc;
+  text-shadow:0 10px 40px rgba(0,0,0,.35);
+}
+.pair{
+  margin-top:16px;
+  display:flex;align-items:center;justify-content:center;
+  gap:16px;flex-wrap:wrap;
+  max-width:920px;
+}
+.en{
+  font-size:15px;
+  font-weight:500;
+  letter-spacing:.4px;
+  color:#9fb4cc;
+  line-height:1.5;
+}
+.rule{width:1px;height:16px;background:rgba(148,163,184,.45)}
+.abbr{
+  font-size:20px;
+  font-weight:800;
+  letter-spacing:2px;
+  color:#7dd3fc;
+}
+
+.meter{margin-top:42px;width:min(440px,78vw)}
+.bar{
+  height:2px;border-radius:99px;
+  background:rgba(255,255,255,.1);
+  overflow:hidden;
+}
+.bar>i{
+  display:block;height:100%;width:0;border-radius:99px;
+  background:linear-gradient(90deg,#1d4ed8,#38bdf8 70%,#e0f2fe);
+  box-shadow:0 0 12px rgba(56,189,248,.65);
+  transition:width .45s ease;
+}
+.tip{
+  margin-top:12px;
+  display:flex;justify-content:space-between;
+  font-size:13px;color:#8fa3bd;letter-spacing:.3px;
+}
+.err{color:#fca5a5;font-size:13px;display:none;margin-top:14px}
+.err a{color:#93c5fd}
 </style>
 </head>
 <body>
-<div class="ps" id="ps">
-  <div class="banner">
-    <svg viewBox="0 0 680 150" preserveAspectRatio="none">
-      <g stroke="#7dd3fc" stroke-width="1" fill="none" opacity=".7">
-        <path d="M0,110 Q120,90 240,100 T480,85 T680,95"/>
-        <path d="M0,125 Q140,105 300,112 T680,105"/>
-        <circle cx="120" cy="60" r="2" fill="#7dd3fc"/><circle cx="330" cy="40" r="2" fill="#7dd3fc"/>
-        <circle cx="520" cy="55" r="2" fill="#7dd3fc"/><circle cx="430" cy="95" r="1.5" fill="#bae6fd"/>
-        <path d="M120,60 L330,40 L520,55 L430,95 Z"/>
+<div class="sky"></div>
+<div class="field" aria-hidden="true">
+  <canvas id="wave"></canvas>
+  <svg viewBox="0 0 860 860">
+    <g class="set">
+      <path class="mark route" style="--d:.42" d="M250,300 C340,250 470,248 590,300"/>
+      <circle class="mark dot" style="--d:.34" cx="430" cy="292" r="4.5"/>
+      <circle class="mark dot" style="--d:.52" cx="300" cy="286" r="3.5"/>
+      <circle class="mark dot" style="--d:.58" cx="560" cy="288" r="3.5"/>
+      <circle class="mark dot" style="--d:.78" cx="168" cy="210" r="4"/>
+      <circle class="mark dot" style="--d:.86" cx="700" cy="188" r="3.5"/>
+      <polyline class="mark bolt" style="--d:.8" points="648,150 664,176 652,176 670,208"/>
+    </g>
+    <g class="set">
+      <path class="mark route" style="--d:.5" d="M190,260 C300,180 520,170 690,240"/>
+      <circle class="mark dot" style="--d:.4" cx="360" cy="210" r="4"/>
+      <circle class="mark dot" style="--d:.62" cx="530" cy="185" r="3.5"/>
+      <circle class="mark dot" style="--d:.84" cx="150" cy="175" r="3.5"/>
+      <polyline class="mark bolt" style="--d:.72" points="600,120 616,148 604,148 622,180"/>
+      <g class="mark cross" style="--d:.88">
+        <path d="M720,210 v16 M712,218 h16"/>
       </g>
-    </svg>
-    <div class="mask"></div>
-    <div class="tag">FLIGHT-SCHEDULE METEOROLOGICAL SURVEILLANCE</div>
+    </g>
+    <g class="set">
+      <path class="mark route" style="--d:.46" d="M160,240 C250,150 390,200 470,160"/>
+      <circle class="mark dot" style="--d:.36" cx="430" cy="250" r="4"/>
+      <circle class="mark dot" style="--d:.58" cx="250" cy="200" r="3.5"/>
+      <circle class="mark dot" style="--d:.8" cx="120" cy="230" r="4"/>
+      <polygon class="mark gem" style="--d:.7" points="560,150 572,138 584,150 572,162"/>
+      <polyline class="mark bolt" style="--d:.9" points="680,130 696,158 684,158 702,190"/>
+    </g>
+    <g class="set">
+      <path class="mark route" style="--d:.55" d="M220,220 C360,120 560,130 700,200"/>
+      <circle class="mark dot" style="--d:.38" cx="400" cy="175" r="4"/>
+      <circle class="mark dot" style="--d:.66" cx="280" cy="175" r="3.5"/>
+      <circle class="mark dot" style="--d:.74" cx="620" cy="160" r="3.5"/>
+      <circle class="mark dot" style="--d:.9" cx="760" cy="140" r="3"/>
+      <g class="mark cross" style="--d:.48">
+        <path d="M480,230 v16 M472,238 h16"/>
+      </g>
+      <polyline class="mark bolt" style="--d:.82" points="160,140 176,168 164,168 182,200"/>
+    </g>
+    <g class="set">
+      <path class="mark route" style="--d:.5" d="M170,200 C280,250 360,140 500,170 C620,195 680,140 760,180"/>
+      <circle class="mark dot" style="--d:.4" cx="330" cy="230" r="4"/>
+      <circle class="mark dot" style="--d:.64" cx="560" cy="165" r="3.5"/>
+      <polygon class="mark gem" style="--d:.72" points="210,155 222,143 234,155 222,167"/>
+      <polyline class="mark bolt" style="--d:.86" points="640,110 656,138 644,138 662,170"/>
+      <g class="mark cross" style="--d:.78">
+        <path d="M500,120 v16 M492,128 h16"/>
+      </g>
+    </g>
+  </svg>
+</div>
+<div class="stage">
+  <div class="zh">基于航班计划的气象监视告警系统</div>
+  <div class="pair">
+    <div class="en">Schedule-Based Meteorological Surveillance Alert System</div>
+    <div class="rule"></div>
+    <div class="abbr">FMSA</div>
   </div>
-  <div class="body">
-    <div class="left">
-      <div class="mark" id="mark">FMSA</div>
-      <div class="en">Flight-Schedule-Based<br>Meteorological Surveillance<br>Alert System</div>
-      <div class="ver" id="ver">基于航班计划的气象监视告警系统 · v1.0</div>
-    </div>
-    <div class="right" style="display:none">
-      <div class="step" id="st-splash"><span class="d"></span><span>启动页服务</span></div>
-      <div class="step" id="st-django"><span class="d"></span><span>Django 后端服务</span></div>
-      <div class="step" id="st-home"><span class="d"></span><span>系统主页 /current/</span></div>
-      <div class="step" id="st-static"><span class="d"></span><span>静态资源</span></div>
-    </div>
-  </div>
-  <div class="foot">
-    <div class="meter-top"><span class="lbl">SYSTEM BOOT</span><span class="pct"><span id="num">0</span>%</span></div>
+  <div class="meter">
     <div class="bar"><i id="bar"></i></div>
-    <div class="tip"><span id="status">正在初始化…</span><span id="elapsed">0s</span></div>
-    <div class="err" id="err">启动超时，<a href="http://127.0.0.1:8000/current/">点此手动进入主页</a></div>
+    <div class="tip"><span id="status">正在初始化监视画面…</span><span><span id="num">0</span>%</span></div>
+    <div class="err" id="err">启动超时，<a href="http://127.0.0.1:8000/current/">点此进入主页</a></div>
   </div>
 </div>
 <script>
 (function(){
-  var hasGsap = (typeof gsap !== "undefined");
-  if (hasGsap) {
-    gsap.from("#ps", {y:26, opacity:0, duration:.7, ease:"power3.out"});
-    gsap.from("#mark", {y:34, opacity:0, scale:.85, duration:.8, delay:.15, ease:"back.out(1.6)"});
-    gsap.from(".step", {x:26, opacity:0, duration:.5, stagger:.09, delay:.35, ease:"power2.out"});
-  }
   var HOME = "http://127.0.0.1:8000/current/";
-  var start = Date.now(), redirected = false, okCount = 0, need = 2;
-  function setBar(p){ document.getElementById("num").textContent = p;
-    document.getElementById("bar").style.width = p + "%"; }
-  function setTip(t){ document.getElementById("status").textContent = t; }
-  function light(id, cls){ var el = document.getElementById(id);
-    if (el) { el.classList.remove("on"); el.classList.add(cls || "ok"); } }
-  function prog(id){ var el = document.getElementById(id);
-    if (el && !el.classList.contains("ok")) el.classList.add("on"); }
-  function get(url){ return fetch(url, {cache:"no-store"}).then(function(r){
-    if (!r.ok) throw 0; return r.json(); }).catch(function(){ return null; }); }
-  function finish(){
-    if (redirected) return; redirected = true;
-    setBar(100); setTip("已就绪，正在进入…");
-    try { if (typeof confetti !== "undefined")
-      confetti({particleCount:90, spread:70, origin:{y:.6},
-        colors:["#38bdf8","#22d3ee","#ffffff"]}); } catch(e){}
-    var ps = document.getElementById("ps");
-    function go(){
-      fetch("/exit", {mode:"no-cors"}).catch(function(){});
-      try {
-        var w = 1600, h = 900;
-        try { w = window.screen.availWidth; h = window.screen.availHeight; } catch(e){}
-        window.moveTo(0, 0);
-        window.resizeTo(w, h);
-      } catch(e){}
-      setTimeout(function(){ window.location.href = HOME; }, 120);
+  var MIN_MS = 3000;
+  var start = Date.now(), redirected = false, backendReady = false, okCount = 0, need = 2;
+  var sets = [].slice.call(document.querySelectorAll(".field .set"));
+  var cursor = 0;
+  var canvas = document.getElementById("wave");
+  var ctx = canvas.getContext("2d");
+  var particles = [];
+  var waveT0 = 0;
+  var WAVE = 2300;
+  var dpr = 1;
+  function fitCanvas(){
+    var rect = canvas.getBoundingClientRect();
+    var next = Math.min(window.devicePixelRatio || 1, 2);
+    var w = Math.max(1, Math.round(rect.width * next));
+    var h = Math.max(1, Math.round(rect.height * next));
+    if (canvas.width !== w || canvas.height !== h) {
+      dpr = next;
+      canvas.width = w;
+      canvas.height = h;
     }
-    if (hasGsap && ps) {
-      gsap.to(ps, {scale:1.04, opacity:0, duration:.35, ease:"power2.in", onComplete:go});
-    } else { setTimeout(go, 400); }
+  }
+  function spawnWave(){
+    waveT0 = performance.now();
+    particles = [];
+    for (var i = 0; i < 420; i++) {
+      var front = Math.random() < 0.28;
+      particles.push({
+        ang: (Math.PI + 0.62) + Math.random() * (Math.PI - 1.24),
+        u: Math.random(),
+        size: front ? (1.2 + Math.random() * 1.8) : (0.5 + Math.random() * 1.6),
+        alpha: front ? (0.55 + Math.random() * 0.45) : (0.12 + Math.random() * 0.32),
+        color: Math.random() < 0.06 ? "#fde68a" : (Math.random() < 0.35 ? "#e0f2fe" : "#7dd3fc"),
+        soft: !front && Math.random() < 0.2,
+        front: front
+      });
+    }
+  }
+  function paintWave(now){
+    fitCanvas();
+    var w = canvas.width, h = canvas.height;
+    ctx.clearRect(0, 0, w, h);
+    var p = Math.min(1, (now - waveT0) / WAVE);
+    var ease = 1 - Math.pow(1 - p, 2);
+    var cx = w / 2, cy = h / 2;
+    var R = Math.min(cx, cy) * 0.98;
+    var r0 = R * 0.34;
+    var lead = r0 + ease * (R - r0);
+    var fade = p < 0.06 ? p / 0.06 : (p > 0.92 ? (1 - p) / 0.08 : 1);
+    ctx.lineCap = "round";
+    for (var i = 0; i < particles.length; i++) {
+      var pt = particles[i];
+      var along = pt.front ? (0.82 + pt.u * 0.18) : pt.u;
+      var r = r0 + along * (lead - r0);
+      var x = cx + Math.cos(pt.ang) * r;
+      var y = cy + Math.sin(pt.ang) * r;
+      if (y >= cy - R * 0.02) continue;
+      var a = fade * pt.alpha * (0.45 + 0.55 * along);
+      var s = (pt.soft ? pt.size * 3.2 : pt.size) * dpr;
+      ctx.globalAlpha = pt.soft ? a * 0.4 : a;
+      ctx.fillStyle = pt.color;
+      ctx.beginPath();
+      ctx.arc(x, y, s, 0, Math.PI * 2);
+      ctx.fill();
+      if (pt.front) {
+        var r2 = Math.max(r0, r - 18 * dpr);
+        var y2 = cy + Math.sin(pt.ang) * r2;
+        if (y2 < cy) {
+          ctx.globalAlpha = a * 0.45;
+          ctx.strokeStyle = pt.color;
+          ctx.lineWidth = Math.max(1, dpr);
+          ctx.beginPath();
+          ctx.moveTo(cx + Math.cos(pt.ang) * r2, y2);
+          ctx.lineTo(x, y);
+          ctx.stroke();
+        }
+      }
+    }
+    ctx.globalAlpha = 1;
+    requestAnimationFrame(paintWave);
+  }
+  function scan(){
+    sets.forEach(function(el, i){ el.classList.toggle("live", i === cursor); });
+    spawnWave();
+    cursor = (cursor + 1) % sets.length;
+  }
+  requestAnimationFrame(paintWave);
+  scan();
+  setInterval(scan, 2800);
+  function setBar(p){
+    document.getElementById("num").textContent = p;
+    document.getElementById("bar").style.width = p + "%";
+  }
+  function setTip(t){ document.getElementById("status").textContent = t; }
+  function get(url){
+    return fetch(url, {cache:"no-store"}).then(function(r){
+      if (!r.ok) throw 0;
+      return r.json();
+    }).catch(function(){ return null; });
+  }
+  function finish(){
+    if (redirected) return;
+    redirected = true;
+    setBar(100);
+    setTip("监视画面已就绪");
+    document.body.classList.add("leaving");
+    setTimeout(function(){
+      fetch("/exit", {mode:"no-cors"}).catch(function(){});
+      window.location.href = HOME;
+    }, 520);
+  }
+  function requestFinish(){
+    if (redirected || backendReady) return;
+    backendReady = true;
+    setBar(96);
+    setTip("监视画面已就绪");
+    setTimeout(finish, Math.max(0, MIN_MS - (Date.now() - start)));
   }
   async function tick(){
     var el = Math.round((Date.now()-start)/1000);
-    document.getElementById("elapsed").textContent = el + "s";
-    if (redirected) return;
-    light("st-splash"); prog("st-django"); setTip("正在等待后端服务…");
+    if (redirected || backendReady) return;
+    setTip("正在等待监视服务…");
     var r = await get("/__ready");
     if (r) {
-      if (r.home || r.static) { prog("st-home"); prog("st-static"); }
-      if (r.home) light("st-home");
-      if (r.static) light("st-static");
-      if (r.ready) { light("st-django"); okCount++; setTip("后端就绪确认 " + okCount + "/" + need);
-        setBar(Math.min(60 + okCount*20, 96));
-        if (okCount >= need) { finish(); return; }
-      } else { okCount = 0; setBar(Math.min(15 + el*2, 55)); }
-    } else { setBar(Math.min(10 + el*2, 50)); }
+      if (r.ready) {
+        okCount++;
+        setTip("监视服务确认 " + okCount + "/" + need);
+        setBar(Math.min(62 + okCount * 16, 96));
+        if (okCount >= need) { requestFinish(); return; }
+      } else {
+        okCount = 0;
+        if (r.home || r.static) setTip("正在确认主页资源…");
+        setBar(Math.min(18 + el * 2, 58));
+      }
+    } else {
+      setBar(Math.min(8 + el * 2, 42));
+    }
     if (el > 60) document.getElementById("err").style.display = "block";
   }
-  setBar(5); setInterval(tick, 1000); tick();
+  setBar(6);
+  setInterval(tick, 1000);
+  tick();
 })();
 </script>
 </body>

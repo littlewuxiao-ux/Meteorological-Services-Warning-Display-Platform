@@ -1,4 +1,4 @@
-"""FMSA Splash Server (Flight-Schedule-Based Meteorological Surveillance Alert System)
+"""FMSA Splash Server (Schedule-Based Meteorological Surveillance Alert System)
 标准库 http.server，无第三方依赖。路由: / splash页, /healthz, /__ready 后端探针, /exit 自杀。
 端口被占直接退出（天然单实例）。
 """
@@ -16,7 +16,7 @@ DJANGO_STATIC = "http://127.0.0.1:8000/static/js/echarts.min.js"
 BASE = Path(__file__).parent
 HTML_FILE = BASE / "fmsa_splash.html"
 
-BRAND_EN = "Flight-Schedule-Based Meteorological Surveillance Alert System"
+BRAND_EN = "Schedule-Based Meteorological Surveillance Alert System"
 BRAND_SHORT = "FMSA"
 
 

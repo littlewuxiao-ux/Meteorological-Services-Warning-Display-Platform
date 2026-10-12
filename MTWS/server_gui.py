@@ -1,5 +1,5 @@
 """
-MTWS 服务端图形化控制台
+FMSA 服务端图形化控制台
 深色 macOS 风格 · CustomTkinter
 """
 
@@ -95,7 +95,7 @@ class MTWSServerGUI(ctk.CTk):
     def __init__(self, ipc_sock: "socket.socket"):
         super().__init__()
 
-        self.title("MTWS 服务端控制台")
+        self.title("FMSA 服务端控制台")
         self.geometry("920x660")
         self.minsize(740, 560)
         self.configure(fg_color=BG_PRIMARY)
@@ -162,7 +162,7 @@ class MTWSServerGUI(ctk.CTk):
 
         ctk.CTkLabel(
             left,
-            text="MTWS  航空气象报文监控系统",
+            text="FMSA  基于航班计划的气象监视告警系统",
             font=ctk.CTkFont(size=15, weight="bold"),
             text_color=COLOR_LABEL
         ).pack(side="left", padx=(6, 0))
@@ -307,7 +307,7 @@ class MTWSServerGUI(ctk.CTk):
         # ── 版本号 ──
         ctk.CTkLabel(
             sidebar,
-            text="MTWS  ·  v1.0",
+            text="FMSA  ·  v1.0",
             font=ctk.CTkFont(size=10),
             text_color="#48484a"
         ).pack(pady=(8, 10))
@@ -508,9 +508,9 @@ class MTWSServerGUI(ctk.CTk):
         )
 
         self.tray_icon = pystray.Icon(
-            "MTWS",
+            "FMSA",
             icon_img,
-            "MTWS 航空气象监控系统",
+            "FMSA 基于航班计划的气象监视告警系统",
             menu
         )
 
@@ -805,7 +805,7 @@ class MTWSServerGUI(ctk.CTk):
         ConfirmDialog(
             parent=self,
             title="退出确认",
-            message="确定要退出 MTWS 服务端吗？\n\n退出后 Django 服务器将同时停止，\n前端页面将无法访问。",
+            message="确定要退出 FMSA 服务端吗？\n\n退出后 Django 服务器将同时停止，\n前端页面将无法访问。",
             on_confirm=self._quit_app,
         )
 

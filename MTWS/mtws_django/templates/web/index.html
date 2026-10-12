@@ -17,7 +17,13 @@
 <header class="header-section">
   <h1 class="system-title">
     <img class="system-title-logo" src="{% static 'svg/mtws-favicon.svg' %}" width="32" height="32" alt="">
-    <span>航空气象报文综合监控告警系统</span>
+    <span class="system-title-text">
+      <span class="system-title-zh">基于航班计划的气象监视告警系统</span>
+      <span class="system-title-sub">
+        <span class="system-title-en">Schedule-Based Meteorological Surveillance Alert System</span>
+        <span class="system-title-abbr">FMSA</span>
+      </span>
+    </span>
     <button class="help-icon-btn" id="help-btn" title="系统使用说明">?</button>
   </h1>
   <!-- 用户信息区域（仅current模式显示） -->
@@ -632,8 +638,8 @@
             </div>
             <div class="settings-form-row radar-rings-shared">
               <div class="radar-rings-bar">
-                <button type="button" class="settings-btn-cancel" id="radar-add-ring-btn">＋环</button>
                 <span class="settings-section-label">共用环半径（列，两档矩阵共享）</span>
+                <button type="button" class="settings-btn-cancel" id="radar-add-ring-btn">＋环</button>
               </div>
               <div class="radar-rings-editor" id="radar-rings-editor"></div>
             </div>

@@ -1,5 +1,5 @@
 """FMSA 托盘常驻管家：单实例，接管已有后端，多余杀到只剩一个。
-托盘菜单: 显示窗口 / 打开主页 / 重启后端 / 完全退出(含杀后端)。
+托盘菜单: 显示窗口 / 打开主页 / 重启后端 / 完全退出。
 前端 X 只关窗口不杀后端；完全退出才清 8000+splash。
 """
 import os
@@ -257,7 +257,7 @@ class Manager:
             log(f"enum windows fail {e}")
         for hwnd in found:
             try:
-                SW_RESTORE, SW_SHOW = 9, 5
+                SW_RESTORE = 9
                 HWND_TOPMOST, HWND_NOTOPMOST = -1, -2
                 SWP_NOMOVE, SWP_NOSIZE, SWP_SHOW = 0x2, 0x1, 0x40
                 kernel32 = ctypes.windll.kernel32
@@ -272,8 +272,7 @@ class Manager:
                 try:
                     if user32.IsIconic(hwnd):
                         user32.ShowWindow(hwnd, SW_RESTORE)
-                    else:
-                        user32.ShowWindow(hwnd, SW_SHOW)
+                    user32.ShowWindow(hwnd, 3)
                     user32.SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0,
                                         SWP_NOMOVE | SWP_NOSIZE | SWP_SHOW)
                     user32.SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0,
@@ -315,7 +314,7 @@ class Manager:
         except Exception as e:
             log(f"flow splash fail {e}")
         try:
-            self.open_window(SPLASH_URL, small=True)
+            self.open_window(SPLASH_URL, small=False)
             log("splash window opened (single window, splash will redirect to HOME itself)")
         except Exception as e:
             log(f"open splash fail {e}")
@@ -331,12 +330,16 @@ class Manager:
 
     # ---- tray ----
     def _img(self):
-        img = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
-        d = ImageDraw.Draw(img)
-        d.ellipse([1, 1, 63, 63], fill=(16, 24, 40, 255))
-        d.ellipse([6, 6, 58, 58], fill=(14, 74, 138, 255))
-        d.text((22, 14), "F", fill=(255, 255, 255, 255))
-        return img
+        png = TOOLS / "fmsa_tray_icon.png"
+        try:
+            return Image.open(png).convert("RGBA")
+        except Exception:
+            img = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
+            d = ImageDraw.Draw(img)
+            d.rounded_rectangle([0, 0, 63, 63], radius=8, fill=(229, 57, 53, 255))
+            d.polygon([(32, 0), (63, 0), (63, 63), (32, 63)], fill=(253, 216, 53, 255))
+            d.polygon([(63, 0), (63, 63), (32, 63)], fill=(67, 160, 71, 255))
+            return img
 
     def ensure_tray(self):
         if not TRAY_OK or self.tray is not None:
@@ -347,7 +350,7 @@ class Manager:
             pystray.MenuItem("重启后端", lambda i, x: threading.Thread(
                 target=self.ensure_backend, daemon=True).start()),
             pystray.Menu.SEPARATOR,
-            pystray.MenuItem("完全退出(含杀后端)", lambda i, x: self.quit_all()),
+            pystray.MenuItem("完全退出", lambda i, x: self.quit_all()),
         )
         self.tray = pystray.Icon("FMSA", self._img(), "FMSA", menu)
         threading.Thread(target=self.tray.run, daemon=True).start()

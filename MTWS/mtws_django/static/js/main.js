@@ -4333,7 +4333,7 @@ async function updateUnifiedAuth(token, userCode) {
             body: JSON.stringify({ token, userCode, source: 'MTWS' })
         });
     } catch (error) {
-        console.warn('同步 MTWS 登录态到 Nginx 失败', error);
+        console.warn('同步 FMSA 登录态到 Nginx 失败', error);
     }
 }
 
@@ -4350,7 +4350,7 @@ async function clearUnifiedAuth() {
 }
 
 // 监听控制台统一登录态：控制台后台会定期校验 token，过期时清空统一态。
-// MTWS 轮询发现统一态被清空（且自身仍认为已登录）时，自动登出并提示重新登录。
+// FMSA 轮询发现统一态被清空（且自身仍认为已登录）时，自动登出并提示重新登录。
 let unifiedAuthWatchTimer = null;
 function startUnifiedAuthWatch() {
     if (unifiedAuthWatchTimer) return;

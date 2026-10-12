@@ -139,7 +139,7 @@ def _run_parsing_job(update_types: list, time_mode: str) -> None:
                 f"调度任务跳过 {update_types}：AuthBroker 确认当前无有效 token，请重新扫码登录"
             )
             from utils.auth_broker_client import report_token_invalid
-            report_token_invalid(source="MTWS调度任务")
+            report_token_invalid(source="FMSA调度任务")
             _scheduler_token = None
             for data_type in update_types:
                 update_parsing_status(
@@ -166,7 +166,7 @@ def _run_parsing_job(update_types: list, time_mode: str) -> None:
             if time_mode == 'current' and all_failed and result.get('total_records', 0) == 0:
                 from utils.auth_broker_client import report_token_invalid
                 logger.warning(f"调度任务判定 token 已失效：{update_types}，上报 AuthBroker")
-                report_token_invalid(source="MTWS调度任务")
+                report_token_invalid(source="FMSA调度任务")
                 _scheduler_token = None
         # 更新各数据类型的内存解析状态
         for data_type in update_types:

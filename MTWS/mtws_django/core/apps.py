@@ -18,7 +18,7 @@ def _configure_sqlite(sender, connection, **kwargs):
         raise DatabaseError(
             f'SQLite 无法打开「{alias}」：{db_path}\n'
             f'原错误：{exc}\n'
-            '请先完全退出本机和目标机上的 MTWS。复制库文件时须同时带上同名的 .db-wal、.db-shm；'
+            '请先完全退出本机和目标机上的 FMSA。复制库文件时须同时带上同名的 .db-wal、.db-shm；'
             '更稳妥的做法是停服务后执行 python manage.py snapshot_sqlite，再拷生成的干净文件。'
         ) from exc
 

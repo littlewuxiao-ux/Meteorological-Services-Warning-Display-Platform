@@ -121,7 +121,7 @@ def parsing_status(request, time_mode='current'):
     """解析状态检查页面"""
     return render(request, 'web/parsing_status.html', {
         'time_mode': time_mode,
-        'page_title': '解析状态检查 - MTWS'
+        'page_title': '解析状态检查 - FMSA'
     })
 
 

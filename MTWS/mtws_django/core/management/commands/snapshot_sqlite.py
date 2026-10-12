@@ -40,6 +40,6 @@ class Command(BaseCommand):
 
         self.stdout.write(self.style.SUCCESS(
             f'已导出 {alias} → {dest}\n'
-            '复制这个文件时先停掉目标机上的 MTWS，再覆盖对应的 .db，并删掉同名的 .db-wal、.db-shm。'
+            '复制这个文件时先停掉目标机上的 FMSA，再覆盖对应的 .db，并删掉同名的 .db-wal、.db-shm。'
         ))
         return str(dest)

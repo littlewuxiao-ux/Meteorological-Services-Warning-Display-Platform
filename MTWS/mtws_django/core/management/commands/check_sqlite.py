@@ -43,7 +43,7 @@ class Command(BaseCommand):
         if failed:
             raise CommandError(
                 '损坏的库：' + '、'.join(failed)
-                + '。先退出 MTWS，用完好备份覆盖对应 .db，并一并覆盖同名的 .db-wal、.db-shm；'
+                + '。先退出 FMSA，用完好备份覆盖对应 .db，并一并覆盖同名的 .db-wal、.db-shm；'
                 '或从完好机器执行 snapshot_sqlite 后再拷贝。'
             )
         self.stdout.write(self.style.SUCCESS('全部完好'))
