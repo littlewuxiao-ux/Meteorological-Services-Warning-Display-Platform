@@ -814,7 +814,7 @@
                     const res = await fetch(`${apiBase}/select_folder`);
                     const data = await res.json();
                     const input = document.getElementById('publish-export-path');
-                    if (data.success && input) {
+                    if (data.success && data.path && input) {
                         input.value = data.path;
                         localStorage.setItem('publish_export_path', data.path);
                     }
