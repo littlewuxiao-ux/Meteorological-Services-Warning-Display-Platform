@@ -40,6 +40,9 @@ OMICS/personnel_mapping.json
 MTWS/data/sqlite_database/*.db
 MTWS/data/sqlite_database/*.sqlite
 MTWS/data/sqlite_database/*.sqlite3
+MTWS/data/sqlite_database/*.db-shm
+MTWS/data/sqlite_database/*.db-wal
+MTWS/.mtws_app_profile/
 MTWS/logs/
 MTWS/mtws_django/response.json
 
