@@ -13,8 +13,8 @@
 import json, copy, pathlib
 
 ROOT  = pathlib.Path(__file__).parent.parent
-CHINA = ROOT / 'mtws_django' / 'static' / 'geo' / 'china.json'
-WORLD = ROOT / 'mtws_django' / 'static' / 'geo' / 'world_pacific.json'
+CHINA = ROOT / 'fmsa_django' / 'static' / 'geo' / 'china.json'
+WORLD = ROOT / 'fmsa_django' / 'static' / 'geo' / 'world_pacific.json'
 DST   = WORLD   # 直接覆盖
 
 SHIFT = 150  # world_pacific 坐标系：原始经度 - 150

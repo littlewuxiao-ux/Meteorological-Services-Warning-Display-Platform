@@ -164,6 +164,6 @@
 
 ## 核对入口
 
-- 组装：`mtws_django/parsers/taf_elements.py` → `build_taf_elements`
-- 挂钩：`mtws_django/parsers/taf_parser.py`（继承前 `_snapshot_own_elements`，`to_database_dict` 写入）
+- 组装：`fmsa_django/parsers/taf_elements.py` → `build_taf_elements`
+- 挂钩：`fmsa_django/parsers/taf_parser.py`（继承前 `_snapshot_own_elements`，`to_database_dict` 写入）
 - 模型：`parsers.models.Taf.taf_elements`

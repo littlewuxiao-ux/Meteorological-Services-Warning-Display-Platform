@@ -24,7 +24,7 @@
 ```python
 import os
 script_dir = os.path.dirname(os.path.abspath(__file__))
-db_path = os.path.join(script_dir, "data", "sqlite_database", "mtws_database.db")
+db_path = os.path.join(script_dir, "data", "sqlite_database", "fmsa_database.db")
 ```
 
 ## 数据库操作模板
@@ -35,7 +35,7 @@ import os
 
 # 获取数据库路径（不依赖工作目录）
 script_dir = os.path.dirname(os.path.abspath(__file__))
-db_path = os.path.join(script_dir, "data", "sqlite_database", "mtws_database.db")
+db_path = os.path.join(script_dir, "data", "sqlite_database", "fmsa_database.db")
 
 # 连接数据库
 conn = sqlite3.connect(db_path)

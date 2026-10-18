@@ -230,9 +230,19 @@ class PagedEditDialog:
 class DatabaseViewer(tk.Tk):
     def _open_databases(self):
         found = []
-        for label, filename in (("配置库", "mtws_config.db"), ("生产库", "mtws_runtime.db"), ("用户组库", "mtws_access.db")):
-            path = os.path.join(DB_DIR, filename)
-            if os.path.isfile(path):
+        pairs = (
+            ("配置库", "fmsa_config.db", "mtws_config.db"),
+            ("生产库", "fmsa_runtime.db", "mtws_runtime.db"),
+            ("用户组库", "fmsa_access.db", "mtws_access.db"),
+        )
+        for label, new_name, old_name in pairs:
+            path = None
+            for filename in (new_name, old_name):
+                candidate = os.path.join(DB_DIR, filename)
+                if os.path.isfile(candidate):
+                    path = candidate
+                    break
+            if path:
                 found.append((label, sqlite3.connect(path)))
         return found
 
@@ -242,7 +252,7 @@ class DatabaseViewer(tk.Tk):
         self.geometry("1000x700")
         self.current_conns = self._open_databases()
         if not self.current_conns:
-            messagebox.showerror("错误", "未找到 mtws_config.db 或 mtws_runtime.db")
+            messagebox.showerror("错误", "未找到配置库或生产库（fmsa_config.db / fmsa_runtime.db）")
             self.destroy()
             return
         self.title("数据库浏览器 - " + "、".join(label for label, _conn in self.current_conns))

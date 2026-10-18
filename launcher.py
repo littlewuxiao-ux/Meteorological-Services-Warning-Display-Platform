@@ -3,14 +3,14 @@
 深色简洁风格 · CustomTkinter · 左侧服务管理 + 右侧合并/分项日志
 
 一个入口同时启动并监控四个服务：
-  ① MTWS 航空气象监控系统   (Django, 内部端口 8001)
+  ① FMSA 基于航班计划的气象监视告警系统   (Django, 内部端口 8001)
   ② OMICS 预报评定/发布工具 (Flask+Waitress, 内部端口 8002)
   ③ IWBP 气象智能业务工作台 (Node, 内部端口 8787)
   ④ Nginx 统一入口          (对外端口 8000，/mtws/ /omics/ /iwbp/，局域网可访问)
 
 设计要点：
   - 业务服务对称处理：subprocess.Popen + CREATE_NO_WINDOW（无黑框）+ 读 stdout
-  - 界面显示 MTWS / OMICS / IWBP；Nginx 作为后台统一入口由启动器静默管理
+  - 界面显示 FMSA / OMICS / IWBP；Nginx 作为后台统一入口由启动器静默管理
   - 默认一个合并运行日志，可按级别勾选过滤；点左侧标签查看该子项目全部日志
   - 路径可配置：通过 launcher_config.json 记录各项目路径，不必放同一文件夹
 
@@ -127,12 +127,12 @@ BADGE_W           = 58
 BADGE_H           = 16
 BADGE_RADIUS      = 5
 SERVICE_LABELS = {
-    "mtws":  ("气象报文监控/告警", "MTWS"),
+    "mtws":  ("基于航班计划的气象监视告警", "FMSA"),
     "omics": ("预报发布/质量评定", "OMICS"),
     "iwbp":  ("气象智能业务工作台", "IWBP"),
 }
 BADGE_STYLE = {
-    "mtws":  {"text": "MTWS",  "bg": "#c44742", "fg": "#ffffff"},
+    "mtws":  {"text": "FMSA",  "bg": "#c44742", "fg": "#ffffff"},
     "omics": {"text": "OMICS", "bg": "#c4a035", "fg": "#1c1c1e"},
     "iwbp":  {"text": "IWBP",  "bg": "#3b6fd4", "fg": "#ffffff"},
 }
@@ -283,7 +283,7 @@ OMICS_INLINE_CODE = 'import os, sys, argparse, logging\ntry:\n    sys.stdout.rec
 # ══════════════════════════════════════════════════════════════════════════════
 DEFAULT_CONFIG = {
     "mtws": {
-        "name": "MTWS 监控系统",
+        "name": "FMSA 监控系统",
         "work_dir": str(DEFAULT_MTWS_DIR) if DEFAULT_MTWS_DIR.exists() else "",  # 指向 MTWS 程序根目录；兼容旧配置 manage_py
         "host": "127.0.0.1",
         "port": 8001,
@@ -339,6 +339,8 @@ def load_config():
     if cfg["mtws"].get("manage_py") and not cfg["mtws"].get("work_dir"):
         cfg["mtws"]["work_dir"] = cfg["mtws"].get("manage_py")
     cfg["mtws"].pop("manage_py", None)
+    if cfg["mtws"].get("name") in ("MTWS 监控系统", "MTWS"):
+        cfg["mtws"]["name"] = "FMSA 监控系统"
     # 兼容旧配置：如果已有 run_server 路径，自动折算为项目根目录
     if cfg["omics"].get("run_server") and not cfg["omics"].get("work_dir"):
         cfg["omics"]["work_dir"] = str(Path(cfg["omics"]["run_server"]).parent)
@@ -692,7 +694,7 @@ def resolve_mtws_manage_py(path):
     """MTWS 配置既可指向 manage.py，也可指向 server_gui.py 所在的程序根目录。
 
     兼容交付目录结构：OMICS 项目目录与 MTWS 目录平级摆放时，即使未手动配置
-    MTWS 路径，也会自动尝试 ../MTWS/mtws_django/manage.py。
+    MTWS 路径，也会自动尝试 ../MTWS/fmsa_django/manage.py（旧目录名 mtws_django 仍可用）。
     """
     raw = (path or "").strip()
     paths = []
@@ -717,9 +719,11 @@ def resolve_mtws_manage_py(path):
             p = p.parent
         if p.is_dir():
             candidates = [
-                p / "mtws_django" / "manage.py",  # server_gui.py 的标准布局
+                p / "fmsa_django" / "manage.py",
+                p / "mtws_django" / "manage.py",
                 p / "manage.py",
-                p.parent / "MTWS" / "mtws_django" / "manage.py",  # 配到 OMICS 目录时自动找平级 MTWS
+                p.parent / "MTWS" / "fmsa_django" / "manage.py",
+                p.parent / "MTWS" / "mtws_django" / "manage.py",
             ]
             for c in candidates:
                 if c.exists():
@@ -733,7 +737,9 @@ def mtws_root_from_path(path):
         return None
     p = Path(path)
     if p.is_file() and p.name.lower() == "manage.py":
-        return p.parent.parent if p.parent.name.lower() == "mtws_django" else p.parent
+        if p.parent.name.lower() in ("fmsa_django", "mtws_django"):
+            return p.parent.parent
+        return p.parent
     if p.is_file() and p.name.lower() == "server_gui.py":
         return p.parent
     if p.is_dir():
@@ -882,10 +888,10 @@ class ServicePanel:
     def _build_cmd(self, path):
         """根据服务类型组装启动命令。"""
         if self.key == "mtws":
-            # Django: 可从 MTWS 根目录自动定位 mtws_django/manage.py
+            # Django: 可从程序根目录自动定位 fmsa_django/manage.py
             manage_py = resolve_mtws_manage_py(path)
             if not manage_py:
-                raise FileNotFoundError(f"未找到 MTWS 启动入口 manage.py: {path}")
+                raise FileNotFoundError(f"未找到 FMSA 启动入口 manage.py: {path}")
             return [sys.executable, str(manage_py), "runserver", f"{self.host}:{self.port}"], str(manage_py.parent)
         if self.key == "nginx":
             exe = find_nginx_exe(self.cfg.get("exe_path", ""))
@@ -1223,7 +1229,7 @@ class ServicePanel:
         db_tool = next((c for c in candidates if c and c.exists()), None)
         if not db_tool:
             tried = "、".join(str(c) for c in candidates if c)
-            self.log(f"找不到数据库管理工具（已尝试：{tried or '未配置 MTWS 根目录'}）", "error")
+            self.log(f"找不到数据库管理工具（已尝试：{tried or '未配置 FMSA 根目录'}）", "error")
             return
         try:
             subprocess.Popen([sys.executable, str(db_tool)], cwd=str(db_tool.parent))
@@ -1340,7 +1346,7 @@ class LauncherApp(ctk.CTk):
         self.iwbp = ServicePanel(self, "iwbp", self.cfg["iwbp"])
         self.nginx = ServicePanel(self, "nginx", self.cfg["nginx"])
 
-        self.title("统一服务启动器 · MTWS/OMICS/IWBP")
+        self.title("统一服务启动器 · FMSA/OMICS/IWBP")
         self.geometry(f"{USER_WIN_SIZE[0]}x{USER_WIN_SIZE[1]}")
         self.minsize(*USER_WIN_MIN)
         self.configure(fg_color=BG_PRIMARY)
@@ -1401,7 +1407,7 @@ class LauncherApp(ctk.CTk):
         self._port_box = left
         left.pack(side="left", padx=16, pady=6)
         ctk.CTkLabel(
-            left, text="统一入口 8000  ·  MTWS 8001  ·  OMICS 8002  ·  IWBP 8787",
+            left, text="统一入口 8000  ·  FMSA 8001  ·  OMICS 8002  ·  IWBP 8787",
             font=ctk.CTkFont(size=12),
             text_color="#636366",
         ).pack(side="left")
@@ -1426,7 +1432,7 @@ class LauncherApp(ctk.CTk):
 
         self.auth_info_label = ctk.CTkLabel(
             bar,
-            text="登录状态：未登录｜请在 MTWS / OMICS / IWBP 页面扫码",
+            text="登录状态：未登录｜请在 FMSA / OMICS / IWBP 页面扫码",
             font=ctk.CTkFont(size=12, weight="bold"),
             text_color=COLOR_MUTED,
             anchor="center",
@@ -1677,7 +1683,7 @@ class LauncherApp(ctk.CTk):
         self._log_view = key
         titles = {
             "all": "运行日志",
-            "mtws": "MTWS 详细日志",
+            "mtws": "FMSA 详细日志",
             "omics": "OMICS 详细日志",
             "iwbp": "IWBP 详细日志",
         }
@@ -1692,7 +1698,7 @@ class LauncherApp(ctk.CTk):
         self._rebuild_log_view()
 
     def _request_clear_log(self, svc):
-        names = {"mtws": "MTWS", "omics": "OMICS", "iwbp": "IWBP"}
+        names = {"mtws": "FMSA", "omics": "OMICS", "iwbp": "IWBP"}
         name = names.get(svc.key, svc.key.upper())
         self._select_log_view(svc.key)
         ClearLogConfirmDialog(self, name, on_confirm=lambda: self._clear_log_display(svc))
@@ -1990,7 +1996,7 @@ class LauncherApp(ctk.CTk):
         self._save_auth_state()
         self._refresh_auth_info_label()
         if expired:
-            self.omics.log(f"登录已过期（来源：{source or 'token校验'}），MTWS / OMICS / IWBP 页面将自动登出，请重新扫码登录。", "warn")
+            self.omics.log(f"登录已过期（来源：{source or 'token校验'}），FMSA / OMICS / IWBP 页面将自动登出，请重新扫码登录。", "warn")
         else:
             self.omics.log(f"统一登录态已清空（来源：{source or 'unknown'}）。", "info")
 
@@ -2010,7 +2016,7 @@ class LauncherApp(ctk.CTk):
             )
         elif state.get("expired"):
             self.auth_info_label.configure(
-                text="登录已过期｜请在 MTWS / OMICS / IWBP 页面重新扫码登录",
+                text="登录已过期｜请在 FMSA / OMICS / IWBP 页面重新扫码登录",
                 text_color="#5c3a14",
                 fg_color=COLOR_APRICOT,
                 corner_radius=8,
@@ -2018,7 +2024,7 @@ class LauncherApp(ctk.CTk):
             )
         else:
             self.auth_info_label.configure(
-                text="登录状态：未登录｜请在 MTWS / OMICS / IWBP 页面扫码",
+                text="登录状态：未登录｜请在 FMSA / OMICS / IWBP 页面扫码",
                 text_color=COLOR_MUTED,
                 fg_color="transparent",
                 font=ctk.CTkFont(size=12, weight="bold"),
@@ -2248,10 +2254,10 @@ class PathConfigDialog(ctk.CTkToplevel):
 
         # MTWS
         self.mtws_entry = self._dir_row(
-            "MTWS 程序根目录（server_gui.py 所在目录）",
+            "FMSA 程序根目录（server_gui.py 所在目录）",
             self.cfg["mtws"].get("work_dir", ""),
-            "选择 MTWS 程序根目录")
-        self.mtws_port = self._port_row("MTWS 内部端口", self.cfg["mtws"].get("port", 8001))
+            "选择 FMSA 程序根目录")
+        self.mtws_port = self._port_row("FMSA 内部端口", self.cfg["mtws"].get("port", 8001))
 
         ctk.CTkFrame(self, fg_color=COLOR_SEPARATOR, height=1).pack(fill="x", padx=24, pady=10)
 
@@ -2340,7 +2346,7 @@ class PathConfigDialog(ctk.CTkToplevel):
         omics_path = self.omics_entry.get().strip()
         iwbp_path = self.iwbp_entry.get().strip()
         if mtws_path and not resolve_mtws_manage_py(mtws_path):
-            self.hint.configure(text="⚠ MTWS 根目录无效，需能定位到 mtws_django/manage.py。"); return
+            self.hint.configure(text="⚠ 程序根目录无效，需能定位到 fmsa_django/manage.py。"); return
         if omics_path and (not os.path.isdir(os.path.join(omics_path, "backend")) or not os.path.isdir(os.path.join(omics_path, "frontend"))):
             self.hint.configure(text="⚠ OMICS 项目根目录无效，需包含 backend/frontend。"); return
         resolved_iwbp = resolve_iwbp_root(iwbp_path) if iwbp_path else resolve_iwbp_root(DEFAULT_IWBP_DIR)

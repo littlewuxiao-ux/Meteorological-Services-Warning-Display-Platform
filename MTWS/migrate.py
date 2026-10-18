@@ -10,13 +10,13 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import messagebox, ttk
 
-os.environ["MTWS_SKIP_SCHEDULER"] = "1"
-os.environ.setdefault("DJANGO_SETTINGS_MODULE", "mtws_system.settings")
+os.environ["FMSA_SKIP_SCHEDULER"] = "1"
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "fmsa_system.settings")
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-DJANGO_DIR = SCRIPT_DIR / "mtws_django"
+DJANGO_DIR = SCRIPT_DIR / "fmsa_django"
 MANAGE_PY = DJANGO_DIR / "manage.py"
-MIGRATIONS_ROOT = DJANGO_DIR / "mtws_migrations"
+MIGRATIONS_ROOT = DJANGO_DIR / "fmsa_migrations"
 APPS = ("core", "parsers")
 FILE_RE = re.compile(r"^(\d{4})_.+\.py$")
 DB_CONFIG = "default"
@@ -92,9 +92,9 @@ def _model_names(operation):
 
 def databases_for_migration(app, name):
     """读迁移操作里的模型，对照分库名单。没有模型名时，parsers 归生产库，core 在配置库和生产库执行。"""
-    from mtws_system.db_router import database_for
+    from fmsa_system.db_router import database_for
 
-    module = importlib.import_module(f"mtws_migrations.{app}.{name}")
+    module = importlib.import_module(f"fmsa_migrations.{app}.{name}")
     names = []
     for operation in module.Migration.operations:
         names.extend(_model_names(operation))
@@ -127,7 +127,7 @@ class MigrateApp(tk.Tk):
         pad = {"padx": 10, "pady": 6}
         tk.Label(
             self,
-            text="迁移文件在 mtws_migrations 的 core、parsers 子目录。执行前按模型判断写入哪个库。",
+            text="迁移文件在 fmsa_migrations 的 core、parsers 子目录。执行前按模型判断写入哪个库。",
             anchor="w",
             justify="left",
         ).pack(fill="x", **pad)

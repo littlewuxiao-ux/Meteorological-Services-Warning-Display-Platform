@@ -19,8 +19,8 @@ CENTER_LON = 150    # 新中心经度 (150°E)
 SHIFT      = CENTER_LON  # 减去这个值
 
 ROOT = pathlib.Path(__file__).parent.parent
-SRC  = ROOT / 'mtws_django' / 'static' / 'geo' / 'world.json'
-DST  = ROOT / 'mtws_django' / 'static' / 'geo' / 'world_pacific.json'
+SRC  = ROOT / 'fmsa_django' / 'static' / 'geo' / 'world.json'
+DST  = ROOT / 'fmsa_django' / 'static' / 'geo' / 'world_pacific.json'
 
 # ── shapely ──────────────────────────────────────────────────────────────────
 from shapely.geometry import shape, mapping, Polygon, MultiPolygon, LineString

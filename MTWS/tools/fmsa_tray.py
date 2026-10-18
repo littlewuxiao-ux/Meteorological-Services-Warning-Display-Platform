@@ -13,7 +13,7 @@ from pathlib import Path
 
 BASE = Path(__file__).resolve().parent.parent
 TOOLS = BASE / "tools"
-DJANGO_DIR = BASE / "mtws_django"
+DJANGO_DIR = BASE / "fmsa_django"
 HOME = "http://127.0.0.1:8000/current/"
 HEALTH = "http://127.0.0.1:8000/static/js/echarts.min.js"
 SPLASH = TOOLS / "fmsa_splash_server.py"

@@ -23,7 +23,7 @@ except ImportError:
 
 # ── 路径常量 ──────────────────────────────────────────────────────────────────
 SCRIPT_DIR  = Path(__file__).parent
-DJANGO_DIR  = SCRIPT_DIR / "mtws_django"
+DJANGO_DIR  = SCRIPT_DIR / "fmsa_django"
 MANAGE_PY   = DJANGO_DIR / "manage.py"
 DB_TOOL     = SCRIPT_DIR / "data" / "sqlite_database" / "database_manage_allinone.py"
 HOME_URL    = "http://127.0.0.1:8000/current/"
@@ -90,7 +90,7 @@ def acquire_single_instance() -> "socket.socket | None":
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-class MTWSServerGUI(ctk.CTk):
+class FMSAServerGUI(ctk.CTk):
 
     def __init__(self, ipc_sock: "socket.socket"):
         super().__init__()
@@ -964,5 +964,5 @@ if __name__ == "__main__":
         # 已有实例在运行，SHOW 信号已发送，直接退出
         sys.exit(0)
 
-    app = MTWSServerGUI(ipc_sock)
+    app = FMSAServerGUI(ipc_sock)
     app.mainloop()
