@@ -46,6 +46,9 @@
       <footer class="access-admin-footer">
         <button type="button" id="access-admin-bl-title" class="access-bl-title">扫码黑名单</button>
         <div class="access-admin-footer-right">
+          <button type="button" id="access-admin-export" class="action-btn">导出配置</button>
+          <button type="button" id="access-admin-import" class="action-btn">导入配置</button>
+          <input type="file" id="access-admin-import-file" accept=".json,application/json" hidden>
           <button type="button" id="access-admin-exit" class="action-btn">退出超级用户</button>
           <button type="button" id="access-admin-chg-pw" class="action-btn">修改口令</button>
           <button type="button" id="access-admin-save" class="action-btn">保存权限</button>
@@ -67,6 +70,28 @@
         <button type="button" id="bl-add" class="action-btn">添加</button>
       </div>
       <div id="access-admin-blacklist"></div>
+    </div>
+  </div>
+
+  <div id="access-import-modal" class="access-bl-modal" hidden>
+    <div class="access-bl-backdrop" id="access-import-backdrop"></div>
+    <div class="access-bl-dialog" role="dialog" aria-labelledby="access-import-heading">
+      <div class="access-bl-dialog-head">
+        <h2 id="access-import-heading">导入用户组配置</h2>
+      </div>
+      <p id="access-import-summary" class="access-import-summary"></p>
+      <label class="access-import-mode">
+        <input type="radio" name="access-import-mode" value="merge" checked>
+        合并：新增或更新文件中的用户组和黑名单，保留其它
+      </label>
+      <label class="access-import-mode">
+        <input type="radio" name="access-import-mode" value="replace">
+        覆盖：以文件为准，删除文件中没有的非本机组，黑名单整表替换
+      </label>
+      <div class="access-import-actions">
+        <button type="button" id="access-import-cancel" class="action-btn">取消</button>
+        <button type="button" id="access-import-ok" class="action-btn">确认导入</button>
+      </div>
     </div>
   </div>
 

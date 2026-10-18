@@ -109,19 +109,203 @@ def weather_type_display_name(code: str, description_cn: Optional[str] = None) -
     return '近时天气' if code == 'R' else (code or '天气现象')
 
 
-def get_popup_trace_hours() -> int:
-    """全站弹窗追溯小时数 T，取 popup_settings.trace_time（缺省 6，限制 0–9）。"""
-    ps = (
-        PopupSettings.objects.exclude(user_code__in=('default', 'test')).order_by('id').last()
-        or PopupSettings.objects.filter(user_code='default').first()
-        or PopupSettings.objects.order_by('id').first()
-    )
+def get_popup_trace_hours(user_code: Optional[str] = None) -> int:
+    """该用户的弹窗追溯小时数 T。没有个人行时用 default，缺省 6，限制 0–9。"""
+    from utils.user_settings import TEMPLATE
+
+    code = str(user_code or TEMPLATE).strip() or TEMPLATE
+    ps = PopupSettings.objects.filter(user_code=code).first()
+    if not ps and code != TEMPLATE:
+        ps = PopupSettings.objects.filter(user_code=TEMPLATE).first()
     raw = getattr(ps, 'trace_time', None) if ps else None
     try:
         hours = int(raw) if raw is not None else 6
     except (TypeError, ValueError):
         hours = 6
     return max(0, min(9, hours))
+
+
+POPUP_HISTORY_PAGE_SIZE = 20
+POPUP_HISTORY_MAX_PAGES = 25
+_ALERT_COLORS = frozenset({'R', 'Y', 'G'})
+
+
+def _alert_badge(level, text: str):
+    color = str(level or 'N')
+    if color not in _ALERT_COLORS:
+        return None
+    return {'text': text, 'level': color}
+
+
+def _kind_label(flag) -> str:
+    if flag == 'Y':
+        return '应弹'
+    if flag == 'I':
+        return '拦截'
+    return ''
+
+
+def _clean_text(value) -> str:
+    text = str(value or '').strip()
+    if text.lower() == 'none':
+        return ''
+    return text
+
+
+def _cloud_layer_text(layer: Dict) -> str:
+    cover = _clean_text(layer.get('cover'))
+    height = layer.get('height')
+    kind = _clean_text(layer.get('type'))
+    if height is None or height == '':
+        text = cover
+    else:
+        try:
+            text = f'{cover}{int(height):03d}'
+        except (TypeError, ValueError):
+            text = f'{cover}{height}'
+    return f'{text}{kind}' if kind else text
+
+
+def _as_dict(value) -> Dict:
+    if isinstance(value, str):
+        try:
+            value = json.loads(value) if value else {}
+        except (TypeError, ValueError):
+            return {}
+    return value if isinstance(value, dict) else {}
+
+
+def _element_badges(metar) -> Dict[str, List[Dict]]:
+    """告警格写入报文里的具体要素，底色用该要素自己的告警色。未达告警的留空。"""
+    elements = _as_dict(metar.metar_elements)
+
+    wind = ''
+    direction = _clean_text(metar.metar_wind_direction)
+    speed = _clean_text(metar.metar_wind_speed_original)
+    if direction or speed:
+        wind = f'{direction}{speed}'
+    wind_badges = []
+    wind_badge = _alert_badge(metar.metar_wind_warning, wind)
+    if wind_badge:
+        wind_badges.append(wind_badge)
+
+    vis_badges = []
+    vis_badge = _alert_badge(metar.metar_visibility_warning, _clean_text(metar.metar_visibility_original))
+    if vis_badge:
+        vis_badges.append(vis_badge)
+
+    rvr_badges = []
+    for item in elements.get('rvr') or []:
+        if not isinstance(item, dict):
+            continue
+        badge = _alert_badge(item.get('alert'), _clean_text(item.get('raw')))
+        if badge:
+            rvr_badges.append(badge)
+    if not rvr_badges:
+        rvr_badge = _alert_badge(metar.metar_rvr_warning, _clean_text(metar.metar_rvr_dsc))
+        if rvr_badge:
+            rvr_badges.append(rvr_badge)
+
+    weather_badges = []
+    weather = _as_dict(elements.get('weather'))
+    for item in weather.get('items') or []:
+        if not isinstance(item, dict):
+            continue
+        badge = _alert_badge(item.get('alert'), _clean_text(item.get('code')))
+        if badge:
+            weather_badges.append(badge)
+    if not weather_badges:
+        weather_badge = _alert_badge(metar.metar_weather_warning, _clean_text(metar.metar_weather))
+        if weather_badge:
+            weather_badges.append(weather_badge)
+
+    cloud_badges = []
+    clouds = _as_dict(elements.get('clouds'))
+    for layer in clouds.get('layers') or []:
+        if not isinstance(layer, dict):
+            continue
+        badge = _alert_badge(layer.get('alert'), _cloud_layer_text(layer))
+        if badge:
+            cloud_badges.append(badge)
+    if not cloud_badges:
+        cloud_badge = _alert_badge(metar.metar_cloud_warning, _clean_text(metar.metar_cloud))
+        if cloud_badge:
+            cloud_badges.append(cloud_badge)
+
+    temp = _clean_text(metar.metar_temperature)
+    if temp and '°' not in temp and not temp.endswith('C'):
+        temp = f'{temp}°C'
+    temp_badges = []
+    temp_badge = _alert_badge(metar.metar_temperature_warning, temp)
+    if temp_badge:
+        temp_badges.append(temp_badge)
+
+    shear_badges = []
+    shear_badge = _alert_badge(metar.metar_ws_warning, _clean_text(metar.metar_ws_dsc))
+    if shear_badge:
+        shear_badges.append(shear_badge)
+
+    trend_badges = []
+    trend_badge = _alert_badge(metar.metar_change_trend_warning, _clean_text(metar.metar_change_trend))
+    if trend_badge:
+        trend_badges.append(trend_badge)
+
+    return {
+        'wsp': wind_badges,
+        'vis': vis_badges,
+        'rvr': rvr_badges,
+        'ww': weather_badges,
+        'cld': cloud_badges,
+        't': temp_badges,
+        'ws': shear_badges,
+        'tr': trend_badges,
+    }
+
+
+def _handle_people(records, method: str) -> List[Dict]:
+    if isinstance(records, str):
+        try:
+            records = json.loads(records) if records else {}
+        except (TypeError, ValueError):
+            records = {}
+    if not isinstance(records, dict):
+        return []
+    people = []
+    for uid, item in records.items():
+        if not isinstance(item, dict):
+            continue
+        if str(item.get('handling_method') or '') != method:
+            continue
+        people.append({
+            'user': str(uid),
+            'time': item.get('popup_handle_time'),
+        })
+    people.sort(key=lambda row: (row.get('time') is None, row.get('time') or 0, row['user']))
+    return people
+
+
+def classify_popup_record(operation_popup, parking_popup, records, popup_time, now_ms: int, trace_ms: int):
+    """
+    已处理 > 已忽略 > 已跳过 > 未处理 > 已过期。
+    已跳过：触发的一侧全部是 I，且没有人处理。超出滚动时间窗也仍是已跳过。
+    时间窗为现在往前 trace_ms，到现在。
+    """
+    handled = _handle_people(records, 'handle')
+    if handled:
+        return '已处理', handled
+    ignored = _handle_people(records, 'ignore')
+    if ignored:
+        return '已忽略', ignored
+    flags = [flag for flag in (operation_popup, parking_popup) if flag in ('Y', 'I')]
+    if flags and all(flag == 'I' for flag in flags):
+        return '已跳过', []
+    try:
+        pt = int(popup_time or 0)
+    except (TypeError, ValueError):
+        pt = 0
+    if pt and (now_ms - trace_ms) <= pt <= now_ms:
+        return '未处理', []
+    return '已过期', []
 
 
 class PopupManager:
@@ -143,7 +327,7 @@ class PopupManager:
 
             current_time_utc = TimeManager.get_current_time_utc(self.time_mode)
             current_time_ms = int(current_time_utc.timestamp() * 1000)
-            # 前端按「开启时间 t 往前 T 小时～现在」过滤；后端按最大 T=9 小时供数
+            # 前端按「现在往前 T 小时」过滤；后端按最大 T=9 小时供数
             validity_threshold_ms = 9 * 3600000
 
             weather_type_names = {
@@ -303,3 +487,51 @@ class PopupManager:
             f"弹窗处理写库: method={method} updated={updated_count} User={uid} IP={get_client_ip(request)}"
         )
         return {'written': updated_count > 0, 'updated': updated_count}
+
+
+def list_popup_history(user_code: str, time_mode: str, page: int) -> Dict:
+    """曾形成实况弹窗的报文，按弹窗时间从新到旧，最多 25 页。"""
+    from utils.time_manager import TimeManager
+
+    now_ms = int(TimeManager.get_current_time_utc(time_mode).timestamp() * 1000)
+    trace_ms = get_popup_trace_hours(user_code) * 3600000
+    try:
+        page_no = int(page or 1)
+    except (TypeError, ValueError):
+        page_no = 1
+    qs = Metar.objects.filter(
+        Q(operation_popup__in=['Y', 'I']) | Q(parking_popup__in=['Y', 'I'])
+    ).order_by('-popup_time', '-sqc')
+    capped = min(qs.count(), POPUP_HISTORY_PAGE_SIZE * POPUP_HISTORY_MAX_PAGES)
+    pages = ((capped + POPUP_HISTORY_PAGE_SIZE - 1) // POPUP_HISTORY_PAGE_SIZE) if capped else 1
+    page_no = max(1, min(page_no, pages, POPUP_HISTORY_MAX_PAGES))
+    start = (page_no - 1) * POPUP_HISTORY_PAGE_SIZE
+    rows = list(qs[start:start + POPUP_HISTORY_PAGE_SIZE]) if capped else []
+    data = []
+    for metar in rows:
+        status, people = classify_popup_record(
+            metar.operation_popup,
+            metar.parking_popup,
+            metar.popup_handle_records,
+            metar.popup_time,
+            now_ms,
+            trace_ms,
+        )
+        data.append({
+            'sqc': metar.sqc,
+            'airport_4code': metar.airport_4code or '',
+            'metar_observation_time': metar.metar_observation_time,
+            'popup_time': metar.popup_time,
+            'badges': _element_badges(metar),
+            'operation': _kind_label(metar.operation_popup),
+            'parking': _kind_label(metar.parking_popup),
+            'status': status,
+            'handlers': people if status in ('已处理', '已忽略') else [],
+        })
+    return {
+        'page': page_no,
+        'page_size': POPUP_HISTORY_PAGE_SIZE,
+        'pages': pages,
+        'total': capped,
+        'data': data,
+    }

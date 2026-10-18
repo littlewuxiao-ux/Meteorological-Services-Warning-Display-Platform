@@ -11,8 +11,9 @@
     ['pressure', '气压'],
     ['wind', '风速'],
     ['visibility', '能见度'],
+    ['spread', '温度露点差'],
   ];
-  const COVERS = 'NSC、FEW、SCT、BKN、OVC，多个用逗号分隔。无云组按 NSC';
+  const COVERS = 'NSC、FEW、SCT、BKN、OVC，多个用逗号分隔。无云组按 NSC（其中之一或多个）';
 
   let config = { groups: [] };
   let savedConfig = { groups: [] };
@@ -93,12 +94,36 @@
     return '1.0–5.0 分。';
   }
 
+  function shownScore(cond, key) {
+    const value = cond[key];
+    if (value === '' || value == null) return cond.score;
+    return value;
+  }
+
+  function matchModeSelect(g, c, cond) {
+    if (!cond.use_change || !cond.use_current) return '';
+    const mode = cond.match_mode === 'any' ? 'any' : 'all';
+    return `
+      <select data-g="${g}" data-c="${c}" data-field="match_mode"${dis()}>
+        <option value="all"${mode === 'all' ? ' selected' : ''}>共同满足</option>
+        <option value="any"${mode === 'any' ? ' selected' : ''}>分别满足</option>
+      </select>`;
+  }
+
   function scoreField(g, c, cond) {
+    const rule = '两段都勾选时可选择。共同满足：两段同时成立才通过，取总分。分别满足：任一段成立即通过，只取命中那段的分；两段都成立仍取总分。只勾一段时，取该段的分。';
     if (cond.role === 'veto') {
-      return `<span class="trend-hint">${scoreHint('veto')}</span>`;
+      return `${matchModeSelect(g, c, cond)}<span class="trend-hint">${scoreHint('veto')} ${rule}</span>`;
     }
     const range = scoreRange(cond.role);
-    return `<span>分值</span>${num(g, c, 'score', cond.score, '0.1', range.max, range.min)}<span class="trend-hint">${scoreHint(cond.role)}</span>`;
+    const pastOn = !!cond.use_change;
+    const nowOn = !!cond.use_current;
+    return `
+      <span class="trend-score${pastOn ? '' : ' is-off'}">过去变化分值${num(g, c, 'change_score', shownScore(cond, 'change_score'), '0.1', range.max, range.min, !pastOn)}</span>
+      <span class="trend-score${nowOn ? '' : ' is-off'}">当前值分值${num(g, c, 'current_score', shownScore(cond, 'current_score'), '0.1', range.max, range.min, !nowOn)}</span>
+      <span class="trend-score">总分${num(g, c, 'score', cond.score, '0.1', range.max, range.min)}</span>
+      ${matchModeSelect(g, c, cond)}
+      <span class="trend-hint">${scoreHint(cond.role)} ${rule}</span>`;
   }
 
   function blankCondition(kind) {
@@ -108,11 +133,17 @@
       role: 'required',
       kind: kind || 'element',
       score: 1,
+      change_score: 1,
+      current_score: 1,
+      match_mode: 'all',
       label: '',
       hours: 6,
       use_change: true,
       use_current: false,
       direction: 'down',
+      change_op: '>=',
+      current_op: '<=',
+      past_match: 'any',
       change_element: 'temperature',
       change_amount: '',
       current_element: 'visibility',
@@ -160,8 +191,80 @@
         });
       });
     });
-    config = { groups: groups };
+    config = { groups: groups, alarm_colors: alarmColorsOf(raw) };
     lockSaved(groups);
+  }
+
+  function alarmColorsOf(raw) {
+    const picked = new Set(Array.isArray(raw && raw.alarm_colors) ? raw.alarm_colors : ['R', 'Y', 'G']);
+    if (!raw || !Array.isArray(raw.alarm_colors)) return ['R', 'Y', 'G'];
+    if (picked.has('G')) return ['R', 'Y', 'G'];
+    if (picked.has('Y')) return ['R', 'Y'];
+    if (picked.has('R')) return ['R'];
+    return [];
+  }
+
+  function paintAlarmColors() {
+    const picked = new Set(config.alarm_colors || ['R', 'Y', 'G']);
+    document.querySelectorAll('#trend-alarm-colors .radar-alarm-color').forEach((el) => {
+      el.checked = picked.has(el.value);
+    });
+  }
+
+  function applyAlarmHierarchy(changed) {
+    const root = document.getElementById('trend-alarm-colors');
+    if (!root || !changed) return;
+    const red = root.querySelector('.radar-alarm-color[value="R"]');
+    const yellow = root.querySelector('.radar-alarm-color[value="Y"]');
+    const green = root.querySelector('.radar-alarm-color[value="G"]');
+    if (changed.value === 'G' && changed.checked) {
+      if (yellow) yellow.checked = true;
+      if (red) red.checked = true;
+    } else if (changed.value === 'Y' && changed.checked) {
+      if (red) red.checked = true;
+    } else if (changed.value === 'Y' && !changed.checked) {
+      if (green) green.checked = false;
+    } else if (changed.value === 'R' && !changed.checked) {
+      if (yellow) yellow.checked = false;
+      if (green) green.checked = false;
+    }
+  }
+
+  function readAlarmColors() {
+    return ['R', 'Y', 'G'].filter((color) => {
+      const el = document.querySelector(`#trend-alarm-colors .radar-alarm-color[value="${color}"]`);
+      return el && el.checked;
+    });
+  }
+
+  async function saveAlarmColors() {
+    if (saving) return;
+    const colors = readAlarmColors();
+    config.alarm_colors = colors;
+    const payload = JSON.parse(JSON.stringify(savedConfig));
+    payload.alarm_colors = colors;
+    saving = true;
+    try {
+      const data = await putConfig(payload);
+      if (!data.success) {
+        msg(data.error || '保存失败', false);
+        config.alarm_colors = alarmColorsOf(savedConfig);
+        paintAlarmColors();
+        return;
+      }
+      const savedColors = alarmColorsOf(data.config || payload);
+      config.alarm_colors = savedColors;
+      savedConfig.alarm_colors = savedColors.slice();
+      paintAlarmColors();
+      if (typeof window.setTrendAlarmColors === 'function') window.setTrendAlarmColors(savedColors);
+      msg('计入告警已保存', true);
+    } catch (err) {
+      msg('保存失败', false);
+      config.alarm_colors = alarmColorsOf(savedConfig);
+      paintAlarmColors();
+    } finally {
+      saving = false;
+    }
   }
 
   function rememberSaved() {
@@ -205,11 +308,12 @@
     return `<label class="trend-check"><input type="checkbox" data-g="${g}"${cAttr} data-field="${field}"${rerender ? ' data-rerender="1"' : ''}${on ? ' checked' : ''}${dis()}> ${label}</label>`;
   }
 
-  function num(g, c, field, value, step, max, min) {
+  function num(g, c, field, value, step, max, min, locked) {
     const cAttr = c === '' ? '' : ` data-c="${c}"`;
     const maxAttr = max === undefined || max === null || max === '' ? '' : ` max="${max}"`;
     const minValue = min === undefined || min === null || min === '' ? 0 : min;
-    return `<input type="number" class="settings-input trend-num" data-g="${g}"${cAttr} data-field="${field}" value="${esc(value)}" step="${step || 'any'}" min="${minValue}"${maxAttr}${dis()}>`;
+    const disabled = renderLocked || locked ? ' disabled' : '';
+    return `<input type="number" class="settings-input trend-num" data-g="${g}"${cAttr} data-field="${field}" value="${esc(value)}" step="${step || 'any'}" min="${minValue}"${maxAttr}${disabled}>`;
   }
 
   function codesText(value) {
@@ -232,6 +336,21 @@
     return `<textarea class="settings-input trend-codes" rows="1" data-g="${g}"${cAttr} data-field="${field}" placeholder="${esc(placeholder || '')}"${dis()}>${esc(codesText(value))}</textarea>`;
   }
 
+  function scrollToGroup(id) {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const pane = document.getElementById('settings-pane-trend-alert');
+        const el = document.getElementById('trend-group-' + id) || document.querySelector('[data-group-card="' + id + '"]');
+        if (!el) return;
+        if (pane) {
+          pane.scrollTop = Math.max(0, el.offsetTop - pane.offsetTop - 8);
+        } else if (el.scrollIntoView) {
+          el.scrollIntoView({ block: 'start' });
+        }
+      });
+    });
+  }
+
   function fitCodeBoxes(root) {
     (root || document).querySelectorAll('.trend-codes').forEach((el) => {
       const sample = el.value || el.placeholder || '';
@@ -247,25 +366,27 @@
     if (cond.kind === 'element') {
       return `
         <div class="trend-line">
-          <span>方向</span>
-          <select data-g="${g}" data-c="${c}" data-field="direction" data-rerender="1"${dis()}>
-            <option value="down"${cond.direction !== 'up' ? ' selected' : ''}>下降</option>
-            <option value="up"${cond.direction === 'up' ? ' selected' : ''}>上升</option>
-          </select>
-          <span class="trend-hint">当前值自动按 ${op}</span>
-        </div>
-        <div class="trend-line">
           ${check(g, c, 'use_change', cond.use_change, '过去变化', true)}
           <span>过去</span>${num(g, c, 'hours', cond.hours)}<span>小时</span>
           <select data-g="${g}" data-c="${c}" data-field="change_element"${dis()}>${elementOptions(cond.change_element)}</select>
-          <span>${cond.direction === 'up' ? '上升幅度 ≥' : '下降幅度 ≥'}</span>
+          <select data-g="${g}" data-c="${c}" data-field="direction"${dis()}>
+            <option value="down"${cond.direction !== 'up' ? ' selected' : ''}>下降幅度</option>
+            <option value="up"${cond.direction === 'up' ? ' selected' : ''}>上升幅度</option>
+          </select>
+          <select data-g="${g}" data-c="${c}" data-field="change_op"${dis()}>
+            <option value=">="${(cond.change_op || '>=') === '>=' ? ' selected' : ''}>≥</option>
+            <option value="<="${cond.change_op === '<=' ? ' selected' : ''}>≤</option>
+          </select>
           ${num(g, c, 'change_amount', cond.change_amount)}
         </div>
         <div class="trend-line">
           ${check(g, c, 'use_current', cond.use_current, '当前值', true)}
           <span>当前</span>
           <select data-g="${g}" data-c="${c}" data-field="current_element"${dis()}>${elementOptions(cond.current_element)}</select>
-          <span>${op}</span>
+          <select data-g="${g}" data-c="${c}" data-field="current_op"${dis()}>
+            <option value=">="${cond.current_op === '>=' ? ' selected' : ''}>≥</option>
+            <option value="<="${(cond.current_op || '<=') === '<=' ? ' selected' : ''}>≤</option>
+          </select>
           ${num(g, c, 'current_value', cond.current_value)}
         </div>`;
     }
@@ -274,15 +395,19 @@
         <div class="trend-line">
           ${check(g, c, 'use_change', cond.use_change, '过去出现', true)}
           <span>过去</span>${num(g, c, 'hours', cond.hours)}<span>小时内出现过</span>
-          ${codes(g, c, 'past_weather', cond.past_weather, '留空表示无天气现象')}
+          <select data-g="${g}" data-c="${c}" data-field="past_match"${dis()}>
+            <option value="any"${(cond.past_match || 'any') !== 'all' ? ' selected' : ''}>其中之一</option>
+            <option value="all"${cond.past_match === 'all' ? ' selected' : ''}>全部</option>
+          </select>
+          ${codes(g, c, 'past_weather', cond.past_weather, '留空表示无天气现象，多天气现象使用,分隔')}
         </div>
         <div class="trend-line">
           ${check(g, c, 'use_current', cond.use_current, '当前现象', true)}
           <select data-g="${g}" data-c="${c}" data-field="current_match" data-rerender="1"${dis()}>
-            <option value="any"${cond.current_match !== 'none' ? ' selected' : ''}>其中之一</option>
-            <option value="none"${cond.current_match === 'none' ? ' selected' : ''}>无天气现象</option>
+            <option value="any"${(cond.current_match || 'any') !== 'all' ? ' selected' : ''}>其中之一</option>
+            <option value="all"${cond.current_match === 'all' ? ' selected' : ''}>全部</option>
           </select>
-          ${codes(g, c, 'current_weather', cond.current_weather, '多个用逗号分隔')}
+          ${codes(g, c, 'current_weather', cond.current_weather, '留空表示无天气现象，多天气现象使用,分隔')}
         </div>
         <div class="trend-hint">已填写的现象必须能在天气告警等级中查到。留空表示无天气现象。</div>`;
     }
@@ -305,18 +430,18 @@
       <div class="trend-line">
         ${check(g, c, 'use_change', cond.use_change, '过去变化', true)}
         <span>过去</span>${num(g, c, 'hours', cond.hours)}<span>小时，由</span>
-        ${num(g, c, 'from_height', cond.from_height)}
         ${cmpSelect(g, c, 'from_cmp', cond.from_cmp)}
+        ${num(g, c, 'from_height', cond.from_height)}
         ${check(g, c, 'from_nsc', cond.from_nsc, '可为空或NSC')}
         <span>变为</span>
-        ${num(g, c, 'to_height', cond.to_height)}
         ${cmpSelect(g, c, 'to_cmp', cond.to_cmp)}
+        ${num(g, c, 'to_height', cond.to_height)}
         ${check(g, c, 'to_nsc', cond.to_nsc, '可为空或NSC')}
       </div>
       <div class="trend-line">
         ${check(g, c, 'use_current', cond.use_current, '当前云高', true)}
-        ${num(g, c, 'now_height', cond.now_height)}
         ${cmpSelect(g, c, 'now_cmp', cond.now_cmp || 'below')}
+        ${num(g, c, 'now_height', cond.now_height)}
         ${check(g, c, 'now_nsc', cond.now_nsc, '可为空或NSC')}
         <span class="trend-hint">单位：百英尺。只勾选可为空或 NSC、不填数字时，这一侧只接受没有云或 NSC。填了数字再勾选，则数字条件或无云都通过。</span>
       </div>`;
@@ -398,7 +523,7 @@
           </div>`}
         </div>`;
       return `
-      <section class="trend-group${renderLocked ? ' is-readonly' : ''}${collapsed ? ' is-collapsed' : ''}">
+      <section class="trend-group${renderLocked ? ' is-readonly' : ''}${collapsed ? ' is-collapsed' : ''}" data-group-card="${group.id}" id="trend-group-${group.id}">
         <header class="trend-group-global">
           <div class="trend-group-name-row">
             <label>名称 ${text(g, '', 'name', group.name, '规则名称')}</label>
@@ -416,6 +541,9 @@
         ${conditions}
       </section>`;
     }).join('');
+    let sp = document.getElementById('trend-bottom-spacer');
+    if (!sp) { sp = document.createElement('div'); sp.id = 'trend-bottom-spacer'; root.appendChild(sp); }
+    sp.style.height = '60vh';
     fitCodeBoxes(root);
   }
 
@@ -446,11 +574,15 @@
       if (cond) {
         if (cond.role === 'veto') {
           cond.score = 0;
+          cond.change_score = 0;
+          cond.current_score = 0;
         } else {
           const range = scoreRange(cond.role);
-          const score = Number(cond.score);
-          if (!Number.isFinite(score) || score < range.min) cond.score = range.min;
-          else if (score > range.max) cond.score = range.max;
+          ['score', 'change_score', 'current_score'].forEach((key) => {
+            const score = Number(cond[key]);
+            if (!Number.isFinite(score) || score < range.min) cond[key] = range.min;
+            else if (score > range.max) cond[key] = range.max;
+          });
         }
       }
     }
@@ -467,6 +599,9 @@
     if (btn.dataset.action === 'edit-group') {
       uiOf(group.id).editing = true;
       uiOf(group.id).collapsed = false;
+      render();
+      scrollToGroup(group.id);
+      return;
     } else if (btn.dataset.action === 'toggle-fold') {
       uiOf(group.id).collapsed = !uiOf(group.id).collapsed;
     } else if (btn.dataset.action === 'save-group') {
@@ -506,6 +641,13 @@
       groupUi[group.id] = { editing: true, collapsed: false };
       config.groups.push(group);
       render();
+      scrollToGroup(group.id);
+    });
+    document.querySelectorAll('#trend-alarm-colors .radar-alarm-color').forEach((el) => {
+      el.addEventListener('change', () => {
+        applyAlarmHierarchy(el);
+        saveAlarmColors();
+      });
     });
   }
 
@@ -522,6 +664,7 @@
       if (typeof window.applySettingsScope === 'function') window.applySettingsScope(data);
       hydrate(data.config || { groups: [] });
       rememberSaved();
+      paintAlarmColors();
       const list = document.getElementById('trend-weather-list');
       if (list) {
         list.innerHTML = (data.weather_codes || []).map((code) => `<option value="${esc(code)}"></option>`).join('');

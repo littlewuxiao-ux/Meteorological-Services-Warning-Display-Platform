@@ -1928,7 +1928,7 @@ class TafParser:
             Taf.objects.filter(
                 airport_4code__in=airport_codes,
                 data_status='N',
-            ).exclude(import_alert='Y').values('airport_4code', 'sqc', 'taf_observation_time')
+            ).exclude(import_alert='Y').values('airport_4code', 'sqc', 'taf_observation_time', 'taf_content', 'taf_type', 'subject_validity_period_start')
         )
 
         # 批量查询所有相关机场的 airport_info 配置
@@ -1961,6 +1961,8 @@ class TafParser:
             taf_obs_time   = row['taf_observation_time']
 
             if taf_obs_time is not None and taf_obs_time < check_obs_time:
+                if self._suppress_taf_import_alert_fresh(row, cfg, now_ms):
+                    continue
                 alert_sqcs.append(row['sqc'])
                 alerted_airports.append(airport_code)
 
@@ -1993,6 +1995,82 @@ class TafParser:
                     auto_cover_airports.append(airport_code)
             if auto_cover_airports:
                 logger.info(f"[TAF入库告警] 自动覆盖历史告警，机场: {auto_cover_airports}")
+
+    FT_FRESH_MS = 3 * 3600 * 1000
+    FC_FRESH_MS = 1 * 3600 * 1000
+
+    @staticmethod
+    def _valid_start_ms(value):
+        try:
+            if value is None or value == '':
+                return None
+            if isinstance(value, (int, float)):
+                v = int(value)
+                return v if v > 0 else None
+            s = str(value).strip()
+            if not s:
+                return None
+            if s.isdigit() or (s.startswith('-') and s[1:].isdigit()):
+                v = int(s)
+                return v if v > 0 else None
+            from datetime import datetime as _dt, timezone as _tz
+            t = s.replace('Z', '+00:00')
+            return int(_dt.fromisoformat(t).timestamp() * 1000)
+        except (TypeError, ValueError):
+            return None
+
+    def _suppress_taf_import_alert_fresh(self, row, cfg, now_ms):
+        """原告警成立后的新鲜度排除。任一命中则不告警。类型读表 interval：6→FT(3h)，否则FC(1h)。"""
+        import re as _re
+        try:
+            interval = int(cfg.import_check_interval)
+        except (TypeError, ValueError):
+            interval = 3
+        want_ft = interval == 6
+        # 同类型校验：配置FT只接受FT，配置FC只接受FC
+        wtype = str(row.get('taf_type') or '').upper()
+        if want_ft and wtype not in ('', 'FT', 'TAF FT', 'FT TAF'):
+            if 'FT' not in wtype:
+                return False
+        if not want_ft and 'FT' in wtype:
+            return False
+        content = str(row.get('taf_content') or '')
+        if _re.search(r'\b(?:AMD|COR)\b', content, _re.I):
+            # 最新为修订报时回退同类型历史最近5份中的首条非修订报
+            try:
+                hist = list(
+                    Taf.objects.filter(
+                        airport_4code=row['airport_4code'], data_status='N',
+                    ).order_by('-created_at').values('taf_content', 'taf_type', 'subject_validity_period_start')[:5]
+                )
+            except Exception:
+                return False
+            picked = None
+            for h in hist:
+                hw = str(h.get('taf_type') or '').upper()
+                if want_ft and 'FT' not in hw and hw != '':
+                    continue
+                if not want_ft and 'FT' in hw:
+                    continue
+                if _re.search(r'\b(?:AMD|COR)\b', str(h.get('taf_content') or ''), _re.I):
+                    continue
+                ms = self._valid_start_ms(h.get('subject_validity_period_start'))
+                if ms is None:
+                    continue
+                picked = ms
+                break
+            if picked is None:
+                return False
+            start_ms = picked
+        else:
+            start_ms = self._valid_start_ms(row.get('subject_validity_period_start'))
+            if start_ms is None:
+                return False
+        now_ms = int(now_ms)
+        if start_ms > now_ms:
+            return True
+        threshold = self.FT_FRESH_MS if want_ft else self.FC_FRESH_MS
+        return (now_ms - start_ms) <= threshold
 
     def _create_taf_placeholder(self, airport_code: str, now_ms: int):
         """

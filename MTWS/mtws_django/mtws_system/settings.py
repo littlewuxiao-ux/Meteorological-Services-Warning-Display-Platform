@@ -155,6 +155,12 @@ DATABASES = {
         'NAME': _SQLITE_DIR / 'mtws_runtime.db',
         'OPTIONS': _SQLITE_OPTIONS,
     },
+    # 用户组权限、扫码黑名单、超管口令，整库复制即可移植
+    'access': {
+        'ENGINE': 'django.db.backends.sqlite3',
+        'NAME': _SQLITE_DIR / 'mtws_access.db',
+        'OPTIONS': _SQLITE_OPTIONS,
+    },
 }
 DATABASE_ROUTERS = ['mtws_system.db_router.MtwsRouter']
 MIGRATION_MODULES = {

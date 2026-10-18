@@ -75,7 +75,7 @@ def radar_alert_status(request, time_mode='current'):
 def radar_alert_run(request, time_mode='current'):
     from utils.airport_scope import airport_codes_for_scope, clamp_future_hours
 
-    denied = _deny(request, 'map_radar', 'activate', '无雷达告警激活权限')
+    denied = _deny(request, 'map_radar', 'display', '无雷达告警权限')
     if denied:
         return denied
     data = _json_body(request)
@@ -84,7 +84,16 @@ def radar_alert_run(request, time_mode='current'):
     if scope in ('has_flight', 'recent2h'):
         hours = clamp_future_hours(data.get('future_hours'))
         codes = airport_codes_for_scope(scope, hours)
-        hide_stale = bool(data.get('hide_stale'))
+        if data.get('only_missing'):
+            from core.models import AirportRadarAlert
+            have = set(
+                AirportRadarAlert.objects.filter(airport_4code__in=codes)
+                .values_list('airport_4code', flat=True)
+            )
+            codes = [code for code in codes if code not in have]
+            if not codes:
+                return JsonResponse({'success': True, 'status': get_radar_job_status(), 'skipped': True})
+        hide_stale = bool(data.get('hide_stale')) and not data.get('only_missing')
         st = trigger_radar_job(force=force, codes=codes, hide_stale=hide_stale)
     else:
         st = trigger_radar_job(force=force)
@@ -184,7 +193,7 @@ def radar_alerts(request, time_mode='current'):
 
     identity = resolve_access_identity(request)
     if not (
-        has_perm(identity, 'map_radar', 'activate')
+        has_perm(identity, 'map_radar', 'display')
         or has_perm(identity, 'map_radar_nav', 'display')
     ):
         return JsonResponse({'success': False, 'error': '无雷达告警查看权限'}, status=403)
@@ -270,7 +279,7 @@ def _echo_waiting(seconds: float):
 @require_http_methods(['GET'])
 def radar_echo(request, time_mode='current'):
     """机场周边 200 公里、Z7 雷达回波。达到每分钟上限时返回等待秒数，不下载瓦片。"""
-    denied = _deny(request, 'map_radar', 'activate', '无雷达回波查看权限')
+    denied = _deny(request, 'map_radar', 'display', '无雷达回波查看权限')
     if denied:
         return denied
     from core.models import RadarAlertConfig

@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FMSA · 启动中</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;background:#07111f}
+body{
+  color:#e8eef6;
+  font-family:"Microsoft YaHei",system-ui,"Segoe UI",sans-serif;
+  overflow:hidden;
+  transition:opacity .5s ease;
+}
+body.leaving{opacity:0}
+
+.sky{
+  position:fixed;inset:0;
+  background:
+    radial-gradient(ellipse 80% 50% at 50% 38%, rgba(30,90,170,.35), transparent 62%),
+    radial-gradient(ellipse 50% 40% at 50% 100%, rgba(14,116,144,.16), transparent 70%),
+    linear-gradient(180deg,#07111f 0%,#0b1c33 55%,#071018 100%);
+}
+.sky::after{
+  content:"";
+  position:absolute;inset:0;
+  background-image:linear-gradient(rgba(148,163,184,.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148,163,184,.05) 1px, transparent 1px);
+  background-size:72px 72px;
+  mask-image:radial-gradient(ellipse at 50% 42%, #000 20%, transparent 72%);
+  pointer-events:none;
+}
+
+.radar{
+  position:fixed;left:50%;top:46%;
+  width:min(860px,78vw);height:min(860px,78vw);
+  transform:translate(-50%,-50%);
+  border-radius:50%;
+  pointer-events:none;
+  clip-path:inset(0 0 50% 0);
+}
+.rings{
+  position:absolute;inset:0;border-radius:50%;
+  background:repeating-radial-gradient(circle,
+    transparent 0 54px,
+    rgba(125,211,252,.16) 55px 56px);
+  mask-image:radial-gradient(circle,#000 0 48%, transparent 72%);
+}
+.sweep{
+  position:absolute;inset:0;border-radius:50%;
+  background:conic-gradient(from 0deg,
+    transparent 0deg 292deg,
+    rgba(56,189,248,0) 292deg,
+    rgba(125,211,252,.28) 360deg);
+  animation:spin 8s linear infinite;
+  mask-image:radial-gradient(circle,#000 0 50%, transparent 72%);
+}
+.routes{position:absolute;inset:0;width:100%;height:100%;opacity:.4}
+.routes path{
+  fill:none;stroke:#7dd3fc;stroke-width:1.2;
+  stroke-dasharray:6 10;
+  animation:flow 22s linear infinite;
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes flow{to{stroke-dashoffset:-420}}
+
+.stage{
+  position:relative;z-index:1;
+  min-height:100%;
+  display:flex;flex-direction:column;
+  align-items:center;justify-content:center;
+  text-align:center;
+  padding:48px 32px 72px;
+  animation:rise .7s ease both;
+}
+@keyframes rise{
+  from{opacity:0;transform:translateY(10px)}
+  to{opacity:1;transform:none}
+}
+
+.zh{
+  font-size:clamp(32px,3.4vw,48px);
+  font-weight:700;
+  letter-spacing:2px;
+  color:#f8fafc;
+  text-shadow:0 10px 40px rgba(0,0,0,.35);
+}
+.pair{
+  margin-top:16px;
+  display:flex;align-items:center;justify-content:center;
+  gap:16px;flex-wrap:wrap;
+  max-width:920px;
+}
+.en{
+  font-size:15px;
+  font-weight:500;
+  letter-spacing:.4px;
+  color:#9fb4cc;
+  line-height:1.5;
+}
+.rule{width:1px;height:16px;background:rgba(148,163,184,.45)}
+.abbr{
+  font-size:20px;
+  font-weight:800;
+  letter-spacing:2px;
+  color:#7dd3fc;
+}
+
+.meter{margin-top:42px;width:min(440px,78vw)}
+.bar{
+  height:2px;border-radius:99px;
+  background:rgba(255,255,255,.1);
+  overflow:hidden;
+}
+.bar>i{
+  display:block;height:100%;width:0;border-radius:99px;
+  background:linear-gradient(90deg,#1d4ed8,#38bdf8 70%,#e0f2fe);
+  box-shadow:0 0 12px rgba(56,189,248,.65);
+  transition:width .45s ease;
+}
+.tip{
+  margin-top:12px;
+  display:flex;justify-content:space-between;
+  font-size:13px;color:#8fa3bd;letter-spacing:.3px;
+}
+.err{color:#fca5a5;font-size:13px;display:none;margin-top:14px}
+.err a{color:#93c5fd}
+</style>
+</head>
+<body>
+<div class="sky"></div>
+<div class="radar" aria-hidden="true">
+  <div class="rings"></div>
+  <div class="sweep"></div>
+  <svg class="routes" viewBox="0 0 860 860">
+    <path d="M120,620 C240,480 300,390 430,360 S640,250 760,180"/>
+    <path d="M160,240 C300,300 390,420 470,470 S680,560 780,640"/>
+  </svg>
+</div>
+<div class="stage">
+  <div class="zh">基于航班计划的气象监视告警系统</div>
+  <div class="pair">
+    <div class="en">Schedule-Based Meteorological Surveillance Alert System</div>
+    <div class="rule"></div>
+    <div class="abbr">FMSA</div>
+  </div>
+  <div class="meter">
+    <div class="bar"><i id="bar"></i></div>
+    <div class="tip"><span id="status">正在初始化监视画面…</span><span><span id="num">0</span>%</span></div>
+    <div class="err" id="err">启动超时，<a href="http://127.0.0.1:8000/current/">点此进入主页</a></div>
+  </div>
+</div>
+<script>
+(function(){
+  var HOME = "http://127.0.0.1:8000/current/";
+  var MIN_MS = 3000;
+  var start = Date.now(), redirected = false, backendReady = false, okCount = 0, need = 2;
+  function setBar(p){
+    document.getElementById("num").textContent = p;
+    document.getElementById("bar").style.width = p + "%";
+  }
+  function setTip(t){ document.getElementById("status").textContent = t; }
+  function get(url){
+    return fetch(url, {cache:"no-store"}).then(function(r){
+      if (!r.ok) throw 0;
+      return r.json();
+    }).catch(function(){ return null; });
+  }
+  function finish(){
+    if (redirected) return;
+    redirected = true;
+    setBar(100);
+    setTip("监视画面已就绪");
+    document.body.classList.add("leaving");
+    setTimeout(function(){
+      fetch("/exit", {mode:"no-cors"}).catch(function(){});
+      window.location.href = HOME;
+    }, 520);
+  }
+  function requestFinish(){
+    if (redirected || backendReady) return;
+    backendReady = true;
+    setBar(96);
+    setTip("监视画面已就绪");
+    setTimeout(finish, Math.max(0, MIN_MS - (Date.now() - start)));
+  }
+  async function tick(){
+    var el = Math.round((Date.now()-start)/1000);
+    if (redirected || backendReady) return;
+    setTip("正在等待监视服务…");
+    var r = await get("/__ready");
+    if (r) {
+      if (r.ready) {
+        okCount++;
+        setTip("监视服务确认 " + okCount + "/" + need);
+        setBar(Math.min(62 + okCount * 16, 96));
+        if (okCount >= need) { requestFinish(); return; }
+      } else {
+        okCount = 0;
+        if (r.home || r.static) setTip("正在确认主页资源…");
+        setBar(Math.min(18 + el * 2, 58));
+      }
+    } else {
+      setBar(Math.min(8 + el * 2, 42));
+    }
+    if (el > 60) document.getElementById("err").style.display = "block";
+  }
+  setBar(6);
+  setInterval(tick, 1000);
+  tick();
+})();
+</script>
+</body>
+</html>

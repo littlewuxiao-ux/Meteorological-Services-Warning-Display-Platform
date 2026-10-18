@@ -834,7 +834,7 @@ function refreshCarrierConfirm() {
     const btn = document.getElementById('carrier-confirm');
     if (!btn) return;
     const dirty = !sameCarrierList(carrierSelectedCodes, carrierSavedCodes);
-    btn.disabled = !dirty || btn.dataset.busy === '1' || !carrierCanEdit();
+    btn.disabled = btn.dataset.busy === '1' || !carrierCanEdit();
     btn.textContent = btn.dataset.busy === '1' ? '正在确认…' : '确认';
 }
 
@@ -1229,6 +1229,12 @@ function ensureMarksPastHandle(scope) {
         removeMarksPastHandle(sc);
         return;
     }
+    // 主页刷新会先清空机场行。握柄挂在 body 上，此时不能按上一次的位置留着，
+    // 也不能被 100ms 网格回调或 60 秒时间轴刷新重新挂出来。
+    if (sc === 'home' && !document.querySelector('#content-main .airport-row')) {
+        removeMarksPastHandle(sc);
+        return;
+    }
     const id = marksPastHandleId(sc);
     let wrap = document.getElementById(id);
     if (!wrap) {
@@ -1382,11 +1388,10 @@ function removeMarksNowBadge(titleTimeline) {
 }
 
 /** NOW：悬浮在时间轴轨道内侧下方，不新开行、不挤整点 */
-function updateMarksNowBadge(titleTimeline, winStart, dur, forcePast) {
+function updateMarksNowBadge(titleTimeline, winStart, dur) {
     if (!titleTimeline) return;
     removeMarksNowBadge(titleTimeline);
-    const showPast = forcePast === true || (forcePast !== false && marksWindowIncludesPast());
-    if (!showPast || !dur) return;
+    if (!dur) return;
     const nowMs = getMarksNowMs();
     const pct = ((nowMs - winStart) / dur) * 100;
     if (pct < -0.5 || pct > 100.5) return;

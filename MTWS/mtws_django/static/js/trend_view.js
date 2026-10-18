@@ -7,12 +7,13 @@
   'use strict';
 
   let payload = null;
+  let alarmColors = ['R', 'Y', 'G'];
   let bound = false;
   let loadSeq = 0;
 
   const HOME_COLOR = { red: 'R', yellow: 'Y', green: 'G', none: 'N' };
   const BAR_COLOR = { R: '#d64545', Y: '#e6b325', G: '#2e9e5b' };
-  const SHOWN_KEYS = new Set(['temperature', 'dewpoint', 'rh', 'pressure', 'wind', 'visibility', 'height']);
+  const SHOWN_KEYS = new Set(['temperature', 'dewpoint', 'rh', 'pressure', 'wind', 'visibility', 'weather', 'cover', 'height']);
 
   function apiUrl(path) {
     const mode = (typeof currentTimeMode !== 'undefined' ? currentTimeMode : null) || window.currentTimeMode || 'current';
@@ -63,7 +64,7 @@
   }
 
   function statColors() {
-    return Array.from(document.querySelectorAll('.trend-color:checked')).map((el) => el.value);
+    return alarmColors.slice();
   }
 
   function homeColors() {
@@ -100,13 +101,19 @@
   function cellsFor(row, fullSlots, visible) {
     const at = new Map();
     fullSlots.forEach((ms, index) => at.set(ms, index));
+    const phenom = row.key === 'weather' || row.key === 'cover';
+    const half = showHalf();
     const cells = visible.map((ms) => {
       const index = at.get(ms);
       const cell = index == null ? null : (row.cells || [])[index];
-      return cell || { text: '', speci: false };
+      const raw = cell || { text: '', speci: false };
+      if (phenom && !half && ms % 3600000 === 0) {
+        return { text: raw.text_hour || '', speci: !!raw.speci_hour };
+      }
+      return { text: raw.text || '', speci: !!raw.speci };
     });
     const latest = row.latest;
-    if (cells.length && latest && latest.text) {
+    if (!phenom && cells.length && latest && latest.text) {
       cells[cells.length - 1] = { text: latest.text, speci: !!latest.speci };
     }
     return cells;
@@ -115,6 +122,7 @@
   function trendHandleButton(airport) {
     const color = airport.color;
     if (color !== 'R' && color !== 'Y' && color !== 'G') return '';
+    if (alarmColors.indexOf(color) < 0) return '<span class="trend-observe">观察项</span>';
     const handled = !!airport.handled;
     const bg = BAR_COLOR[color] || BAR_COLOR.G;
     const fg = color === 'Y' ? '#1b2838' : '#fff';
@@ -140,93 +148,6 @@
     if (el) el.textContent = text || '';
   }
 
-  let statPop = null;
-  let statShowTimer = null;
-  let statOutsideBound = false;
-
-  function statRoot() {
-    return statPop || document;
-  }
-
-  function applyStatHierarchy(changed) {
-    const root = statRoot();
-    if (!changed) return;
-    const red = root.querySelector('.trend-color[value="R"]');
-    const yellow = root.querySelector('.trend-color[value="Y"]');
-    const green = root.querySelector('.trend-color[value="G"]');
-    if (changed.value === 'G' && changed.checked) {
-      if (yellow) yellow.checked = true;
-      if (red) red.checked = true;
-    } else if (changed.value === 'Y' && changed.checked) {
-      if (red) red.checked = true;
-    } else if (changed.value === 'Y' && !changed.checked) {
-      if (green) green.checked = false;
-    } else if (changed.value === 'R' && !changed.checked) {
-      if (yellow) yellow.checked = false;
-      if (green) green.checked = false;
-    }
-  }
-
-  function ensureStatPop() {
-    if (statPop) return statPop;
-    statPop = document.createElement('div');
-    statPop.className = 'trend-stat-pop';
-    statPop.innerHTML =
-      '<div class="trend-stat-pop-title">告警数量统计阈值</div>' +
-      '<label class="trend-switch trend-switch-r"><input type="checkbox" class="trend-color" value="R" checked><span>红</span></label>' +
-      '<label class="trend-switch trend-switch-y"><input type="checkbox" class="trend-color" value="Y" checked><span>黄</span></label>' +
-      '<label class="trend-switch trend-switch-g"><input type="checkbox" class="trend-color" value="G" checked><span>绿</span></label>';
-    document.body.appendChild(statPop);
-    statPop.querySelectorAll('.trend-color').forEach((el) => {
-      el.addEventListener('change', () => {
-        applyStatHierarchy(el);
-        updateNavBadge();
-      });
-    });
-    if (!statOutsideBound) {
-      statOutsideBound = true;
-      document.addEventListener('pointerdown', (event) => {
-        if (!statPop || !statPop.classList.contains('is-open')) return;
-        if (statPop.contains(event.target)) return;
-        updateNavBadge();
-        closeStatPop();
-      });
-    }
-    return statPop;
-  }
-
-  function placeStatPop() {
-    const btn = document.querySelector('.view-nav-item[data-view="trend"]');
-    if (!btn || !statPop) return;
-    const rect = btn.getBoundingClientRect();
-    statPop.style.left = (rect.right + 8) + 'px';
-    statPop.style.top = Math.max(8, rect.top) + 'px';
-  }
-
-  function openStatPop() {
-    ensureStatPop();
-    placeStatPop();
-    statPop.classList.add('is-open');
-  }
-
-  function closeStatPop() {
-    if (statPop) statPop.classList.remove('is-open');
-  }
-
-  function bindStatHover() {
-    const btn = document.querySelector('.view-nav-item[data-view="trend"]');
-    if (!btn || btn.dataset.statHover === '1') return;
-    btn.dataset.statHover = '1';
-    btn.removeAttribute('title');
-    btn.addEventListener('mouseenter', () => {
-      clearTimeout(statShowTimer);
-      statShowTimer = setTimeout(openStatPop, 1500);
-    });
-    btn.addEventListener('mouseleave', () => {
-      clearTimeout(statShowTimer);
-    });
-  }
-
   function trendNavBadgeAllowed() {
     if (typeof hasAccess !== 'function' || !window.__accessIdentity) return true;
     return hasAccess('view_trend_nav', 'display');
@@ -235,7 +156,6 @@
   function updateNavBadge() {
     const btn = document.querySelector('.view-nav-item[data-view="trend"]');
     if (!btn) return;
-    bindStatHover();
     let badge = btn.querySelector('.trend-nav-badge');
     if (!trendNavBadgeAllowed()) {
       if (badge) badge.remove();
@@ -294,7 +214,8 @@
           : '';
         const cells = cellsFor(row, fullSlots, slots).map((cell) => {
           const cls = cell.speci ? ' class="trend-speci"' : '';
-          const title = cell.speci ? ' title="最新特殊报"' : '';
+          const speciTitle = (row.key === 'weather' || row.key === 'cover') ? '特殊报' : '最新特殊报';
+          const title = cell.speci ? ` title="${speciTitle}"` : '';
           return `<td${cls}${title}>${esc(cell.text || '')}</td>`;
         }).join('');
         const handleCell = index === 0
@@ -356,6 +277,9 @@
         return;
       }
       payload = data;
+      if (Array.isArray(data.alarm_colors)) {
+        alarmColors = data.alarm_colors.filter((color) => color === 'R' || color === 'Y' || color === 'G');
+      }
       const reached = (data.airports || []).filter((item) => item.color === 'R' || item.color === 'Y' || item.color === 'G').length;
       setStatus(`参与机场 ${data.universe_count || 0}，达到阈值 ${reached}`);
       render();
@@ -439,12 +363,15 @@
   window.stopTrendView = stopTrendView;
   window.prefetchTrendBadge = function () {
     bindOnce();
-    bindStatHover();
     if (payload) {
       updateNavBadge();
       return;
     }
     load();
+  };
+  window.setTrendAlarmColors = function (colors) {
+    alarmColors = (colors || []).filter((color) => color === 'R' || color === 'Y' || color === 'G');
+    updateNavBadge();
   };
   window.addEventListener('mtws-carriers-changed', () => {
     load();

@@ -19,7 +19,7 @@ from core.models import (
 logger = logging.getLogger('mtws.settings')
 
 from utils.user_settings import (
-    TEMPLATE, TIMER_KEYS, TIMER_NAMES, allow_restore, get_threshold_row,
+    TEMPLATE, TIMER_KEYS, TIMER_NAMES, allow_restore, editing_template, get_threshold_row,
     restore_group, scope_meta, settings_subject, timer_config,
 )
 
@@ -108,6 +108,185 @@ def _airport_info_payload(airport):
     }
 
 
+_TPL_AIRPORT = 'tpl_airport_info'
+_TPL_PREFIX = 'tpl_prefix_area'
+_TPL_TAF = 'tpl_taf_import'
+_TPL_WTYPE = 'tpl_weather_type'
+
+GLOBAL_RESTORE_PERMS = {
+    'airport_info': 'settings_airport_info',
+    'prefix_area': 'settings_prefix_area',
+    'taf_import': 'settings_taf_import',
+    'weather_type': 'settings_weather_type',
+}
+
+
+def _use_global_template(request):
+    """超级用户编辑默认模板时，全局设置写入模板快照，不改正在使用的表。"""
+    return editing_template(request)
+
+
+def _save_template(key, rows):
+    from core.models import SystemConfig
+    text = json.dumps(rows, ensure_ascii=False)
+    obj, created = SystemConfig.objects.get_or_create(
+        config_type='default_template',
+        config_key=key,
+        defaults={'config_value': text, 'description': '全局设置默认模板'},
+    )
+    if not created:
+        obj.config_value = text
+        obj.save(update_fields=['config_value'])
+
+
+def _template_list(key, dump):
+    from core.models import SystemConfig
+    row = SystemConfig.objects.filter(config_type='default_template', config_key=key).first()
+    if row and row.config_value:
+        try:
+            data = json.loads(row.config_value)
+            if isinstance(data, list):
+                return data
+        except (TypeError, ValueError):
+            pass
+    data = dump()
+    _save_template(key, data)
+    return data
+
+
+def _dump_airports():
+    return [
+        _airport_info_payload(airport)
+        for airport in AirportInfo.objects.exclude(catalog_only=True).order_by('airport_4code')
+    ]
+
+
+def _dump_prefix():
+    rows = list(AirportPrefixArea.objects.values(
+        'prefix', 'sequence', 'classification', 'area', 'remark'
+    ))
+    rows.sort(key=lambda row: (
+        0 if row['classification'] == '国内' else 1,
+        row['sequence'], row['area'], row['prefix'],
+    ))
+    return rows
+
+
+def _dump_taf():
+    return list(AirportTafImportConfig.objects.values(
+        'airport_4code', 'taf_init_time', 'import_check_interval', 'taf_max_delay'
+    ).order_by('airport_4code'))
+
+
+def _dump_weather_types():
+    return list(WeatherTypeInfo.objects.values(
+        'id', 'weather_type_code', 'description_cn', 'description_en'
+    ).order_by('weather_type_code'))
+
+
+def _airport_template_row(code, fields):
+    row = _airport_info_payload(AirportInfo(airport_4code=code))
+    row.update({
+        'airport_4code': code,
+        'airport_3code': fields.get('airport_3code'),
+        'airport_name': fields.get('airport_name'),
+        'classification': fields.get('classification'),
+        'area': fields.get('area'),
+        'area_code': fields.get('area_code'),
+        'forecast_phone': fields.get('forecast_phone'),
+        'observation_phone': fields.get('observation_phone'),
+        'other_phone': fields.get('other_phone'),
+    })
+    if 'latitude' in fields:
+        row['latitude'] = fields.get('latitude')
+    if 'longitude' in fields:
+        row['longitude'] = fields.get('longitude')
+    return row
+
+
+def _apply_airport_template(rows):
+    codes = []
+    with transaction.atomic():
+        for row in rows:
+            code = (row.get('airport_4code') or '').strip().upper()
+            if not code:
+                continue
+            codes.append(code)
+            fields = _airport_info_fields(row, row.get('airport_3code'))
+            existing = AirportInfo.objects.filter(airport_4code=code).first()
+            if existing:
+                for key, value in fields.items():
+                    setattr(existing, key, value)
+                existing.catalog_only = False
+                existing.save()
+            else:
+                AirportInfo.objects.create(airport_4code=code, catalog_only=False, **fields)
+        if codes:
+            AirportInfo.objects.filter(catalog_only=False).exclude(airport_4code__in=codes).delete()
+        else:
+            AirportInfo.objects.filter(catalog_only=False).delete()
+
+
+def _apply_taf_template(rows):
+    with transaction.atomic():
+        AirportTafImportConfig.objects.all().delete()
+        for row in rows:
+            code = (row.get('airport_4code') or '').strip().upper()
+            if not code:
+                continue
+            AirportTafImportConfig.objects.create(
+                airport_4code=code,
+                taf_init_time=row.get('taf_init_time'),
+                import_check_interval=row.get('import_check_interval'),
+                taf_max_delay=row.get('taf_max_delay'),
+            )
+
+
+def _apply_weather_template(rows):
+    with transaction.atomic():
+        WeatherTypeInfo.objects.all().delete()
+        for row in rows:
+            WeatherTypeInfo.objects.create(
+                weather_type_code=row.get('weather_type_code') or '',
+                description_cn=row.get('description_cn'),
+                description_en=row.get('description_en'),
+            )
+
+
+def _restore_global(group):
+    if group == 'airport_info':
+        _apply_airport_template(_template_list(_TPL_AIRPORT, _dump_airports))
+        return
+    if group == 'prefix_area':
+        rows = _template_list(_TPL_PREFIX, _dump_prefix)
+        if rows:
+            _replace_prefix_sheet(rows)
+        else:
+            AirportPrefixArea.objects.all().delete()
+        return
+    if group == 'taf_import':
+        _apply_taf_template(_template_list(_TPL_TAF, _dump_taf))
+        return
+    if group == 'weather_type':
+        _apply_weather_template(_template_list(_TPL_WTYPE, _dump_weather_types))
+        return
+    raise ValueError('未知设置组')
+
+
+def _hidden_prefix_regions():
+    from core.models import SystemConfig
+    row = SystemConfig.objects.filter(
+        config_type='default_template', config_key='hidden_prefix_regions'
+    ).first()
+    if not row or not row.config_value:
+        return []
+    try:
+        data = json.loads(row.config_value)
+    except (TypeError, ValueError):
+        return []
+    return data if isinstance(data, list) else []
+
+
 # ===================== 机场信息 =====================
 
 @csrf_exempt
@@ -135,6 +314,15 @@ def settings_airport_info(request, time_mode='current'):
             return JsonResponse({'success': False, 'error': '机场三字代码必须为恰好3位英文大写字母'}, status=400)
 
         fields = _airport_info_fields(data, a3)
+        if _use_global_template(request):
+            rows = _template_list(_TPL_AIRPORT, _dump_airports)
+            if any((item.get('airport_4code') or '').upper() == code for item in rows):
+                return JsonResponse({'success': False, 'error': f'机场代码 {code} 已存在'}, status=400)
+            rows.append(_airport_template_row(code, fields))
+            rows.sort(key=lambda item: item.get('airport_4code') or '')
+            _save_template(_TPL_AIRPORT, rows)
+            logger.info(f"[设置] 用户 {user_code} 新增机场模板: {code}")
+            return JsonResponse({'success': True, 'message': f'机场 {code} 新增成功'})
         existing = AirportInfo.objects.filter(airport_4code=code).first()
         if existing and not existing.catalog_only:
             return JsonResponse({'success': False, 'error': f'机场代码 {code} 已存在'}, status=400)
@@ -160,13 +348,52 @@ def settings_airport_info_detail(request, airport_4code, time_mode='current'):
     user_code = _get_user_code(request, time_mode)
     code = (airport_4code or '').strip().upper()
 
+    if _use_global_template(request):
+        rows = _template_list(_TPL_AIRPORT, _dump_airports)
+        found = next((item for item in rows if (item.get('airport_4code') or '').upper() == code), None)
+        if request.method == 'GET':
+            if not found:
+                return JsonResponse({'success': False, 'error': f'未找到 {code} 的机场信息'}, status=404)
+            return JsonResponse({'success': True, 'data': found, **scope_meta(request, time_mode)})
+        denied = _deny_settings_write(request, 'settings_airport_info')
+        if denied:
+            return denied
+        if request.method == 'DELETE':
+            if not found:
+                return JsonResponse({'success': False, 'error': f'未找到 {code} 的机场信息'}, status=404)
+            _save_template(_TPL_AIRPORT, [item for item in rows if (item.get('airport_4code') or '').upper() != code])
+            logger.info(f"[设置] 用户 {user_code} 删除机场模板: {code}")
+            return JsonResponse({'success': True, 'message': f'机场 {code} 已删除'})
+        try:
+            data = json.loads(request.body)
+            a3 = (data.get('airport_3code') or '').strip().upper() or None
+            if a3 and (len(a3) != 3 or not a3.isalpha()):
+                return JsonResponse({'success': False, 'error': '机场三字代码必须为恰好3位英文大写字母'}, status=400)
+            if not found:
+                return JsonResponse({'success': False, 'error': f'未找到 {code} 的机场信息'}, status=404)
+            updated = _airport_template_row(code, _airport_info_fields(data, a3))
+            if 'latitude' not in data and found.get('latitude') is not None:
+                updated['latitude'] = found.get('latitude')
+            if 'longitude' not in data and found.get('longitude') is not None:
+                updated['longitude'] = found.get('longitude')
+            _save_template(_TPL_AIRPORT, [
+                updated if (item.get('airport_4code') or '').upper() == code else item for item in rows
+            ])
+            logger.info(f"[设置] 用户 {user_code} 修改机场模板: {code}")
+            return JsonResponse({'success': True, 'message': '修改成功'})
+        except (json.JSONDecodeError, ValueError) as e:
+            return JsonResponse({'success': False, 'error': f'数据格式错误: {e}'}, status=400)
+        except Exception as e:
+            logger.error(f"修改机场模板失败: {e}")
+            return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
     try:
         airport = AirportInfo.objects.get(airport_4code=code)
     except AirportInfo.DoesNotExist:
         return JsonResponse({'success': False, 'error': f'未找到 {code} 的机场信息'}, status=404)
 
     if request.method == 'GET':
-        return JsonResponse({'success': True, 'data': _airport_info_payload(airport)})
+        return JsonResponse({'success': True, 'data': _airport_info_payload(airport), **scope_meta(request, time_mode)})
 
     denied = _deny_settings_write(request, 'settings_airport_info')
     if denied:
@@ -275,6 +502,36 @@ def settings_data_refresh_timer_detail(request, timer_id, time_mode='current'):
 
 @csrf_exempt
 @require_http_methods(["POST"])
+
+def prefix_area_visibility(request, time_mode='current'):
+    from django.http import JsonResponse
+    import json
+    from core.models import SystemConfig
+    from utils.user_settings import TEMPLATE
+    from utils.access_control import is_admin_unlocked, is_local_request
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'method'}, status=405)
+    if not (is_local_request(request) and is_admin_unlocked(request, touch=True)):
+        return JsonResponse({'success': False, 'error': 'need superuser'}, status=403)
+    try:
+        body = json.loads(request.body.decode('utf-8') or '{}')
+    except Exception:
+        body = {}
+    region_id = str(body.get('region_id') or '').strip()
+    hidden = bool(body.get('hidden'))
+    row, _ = SystemConfig.objects.get_or_create(config_type='default_template', config_key='hidden_prefix_regions', defaults={'config_value': '[]'})
+    try:
+        cur = json.loads(row.config_value or '[]')
+    except Exception:
+        cur = []
+    cur = [str(x) for x in cur if str(x) != region_id]
+    if hidden and region_id:
+        cur.append(region_id)
+    row.config_value = json.dumps(cur)
+    row.save(update_fields=['config_value'])
+    return JsonResponse({'success': True, 'hidden': cur})
+
+
 def settings_restore(request, time_mode='current'):
     if not allow_restore(request, time_mode):
         return JsonResponse({'success': False, 'error': '当前不能恢复默认'}, status=403)
@@ -282,6 +539,13 @@ def settings_restore(request, time_mode='current'):
     try:
         data = json.loads(request.body or '{}')
         group = data.get('group')
+        if group in GLOBAL_RESTORE_PERMS:
+            denied = _deny_settings_write(request, GLOBAL_RESTORE_PERMS[group])
+            if denied:
+                return denied
+            _restore_global(group)
+            logger.info(f"[设置] 用户 {user_code} 恢复默认: {group}")
+            return JsonResponse({'success': True, 'message': '已恢复默认', **scope_meta(request, time_mode)})
         restore_group(user_code, group)
         if group in ('data_refresh_timer', 'radar_alert_config'):
             from parsers.scheduler import reload_scheduler_jobs
@@ -323,6 +587,9 @@ def settings_popup(request, time_mode='current'):
                     'operation_metar_popup_level': (ps.operation_metar_popup_level if ps else None) or 'Y',
                     'parking_metar_popup_level': (ps.parking_metar_popup_level if ps else None) or 'Y',
                     'trace_time': int(ps.trace_time) if ps and ps.trace_time is not None else 6,
+                    'operation_enabled': bool(ps.operation_enabled) if ps else True,
+                    'parking_enabled': bool(ps.parking_enabled) if ps else True,
+                    'intercept_enabled': bool(ps.intercept_enabled) if ps else True,
                 },
                 **scope_meta(request, time_mode),
             })
@@ -359,6 +626,9 @@ def settings_popup(request, time_mode='current'):
                       'parking_metar_popup_level', 'trace_time']:
             if field in data:
                 update_dict[field] = data[field]
+        for field in ('operation_enabled', 'parking_enabled', 'intercept_enabled'):
+            if field in data:
+                update_dict[field] = bool(data[field])
 
         updated = PopupSettings.objects.filter(user_code=user_code).update(**update_dict)
         if updated == 0:
@@ -370,6 +640,9 @@ def settings_popup(request, time_mode='current'):
                     'operation_metar_popup_level': default_ps.operation_metar_popup_level,
                     'parking_metar_popup_level': default_ps.parking_metar_popup_level,
                     'trace_time': default_ps.trace_time if default_ps.trace_time is not None else 6,
+                    'operation_enabled': default_ps.operation_enabled,
+                    'parking_enabled': default_ps.parking_enabled,
+                    'intercept_enabled': default_ps.intercept_enabled,
                 })
             create_data.update(update_dict)
             PopupSettings.objects.create(**create_data)
@@ -554,10 +827,11 @@ def settings_weather_type(request, time_mode='current'):
 
     if request.method == 'GET':
         try:
-            rows = list(WeatherTypeInfo.objects.values(
-                'id', 'weather_type_code', 'description_cn', 'description_en'
-            ).order_by('weather_type_code'))
-            return JsonResponse({'success': True, 'data': rows})
+            if _use_global_template(request):
+                rows = _template_list(_TPL_WTYPE, _dump_weather_types)
+            else:
+                rows = _dump_weather_types()
+            return JsonResponse({'success': True, 'data': rows, **scope_meta(request, time_mode)})
         except Exception as e:
             logger.error(f"获取天气类型失败: {e}")
             return JsonResponse({'success': False, 'error': str(e)}, status=500)
@@ -576,6 +850,20 @@ def settings_weather_type(request, time_mode='current'):
             return JsonResponse({'success': False, 'error': '中文说明为必填项'}, status=400)
         if not en:
             return JsonResponse({'success': False, 'error': '英文说明为必填项'}, status=400)
+
+        if _use_global_template(request):
+            rows = _template_list(_TPL_WTYPE, _dump_weather_types)
+            used = [int(item['id']) for item in rows if item.get('id') is not None]
+            new_id = (max(used) if used else 0) + 1
+            rows.append({
+                'id': new_id,
+                'weather_type_code': code,
+                'description_cn': cn,
+                'description_en': en,
+            })
+            _save_template(_TPL_WTYPE, rows)
+            logger.info(f"[设置] 用户 {user_code} 新增天气类型模板: {code}")
+            return JsonResponse({'success': True, 'message': '新增成功', 'id': new_id})
 
         obj = WeatherTypeInfo.objects.create(
             weather_type_code=code,
@@ -598,6 +886,44 @@ def settings_weather_type_detail(request, type_id, time_mode='current'):
     denied = _deny_settings_write(request, 'settings_weather_type')
     if denied:
         return denied
+
+    if _use_global_template(request):
+        rows = _template_list(_TPL_WTYPE, _dump_weather_types)
+        try:
+            target = int(type_id)
+        except (TypeError, ValueError):
+            return JsonResponse({'success': False, 'error': '天气类型不存在'}, status=404)
+        found = next((item for item in rows if int(item.get('id') or 0) == target), None)
+        if request.method == 'DELETE':
+            if not found:
+                return JsonResponse({'success': False, 'error': '天气类型不存在'}, status=404)
+            _save_template(_TPL_WTYPE, [item for item in rows if int(item.get('id') or 0) != target])
+            logger.info(f"[设置] 用户 {user_code} 删除天气类型模板: id={type_id}")
+            return JsonResponse({'success': True, 'message': '删除成功'})
+        try:
+            data = json.loads(request.body)
+            code = (data.get('weather_type_code') or '').strip()
+            cn = (data.get('description_cn') or '').strip()
+            en = (data.get('description_en') or '').strip()
+            if not code or len(code) != 1:
+                return JsonResponse({'success': False, 'error': '天气类型代码必须为1位字符'}, status=400)
+            if not cn:
+                return JsonResponse({'success': False, 'error': '中文说明为必填项'}, status=400)
+            if not en:
+                return JsonResponse({'success': False, 'error': '英文说明为必填项'}, status=400)
+            if not found:
+                return JsonResponse({'success': False, 'error': '天气类型不存在'}, status=404)
+            found['weather_type_code'] = code
+            found['description_cn'] = cn
+            found['description_en'] = en
+            _save_template(_TPL_WTYPE, rows)
+            logger.info(f"[设置] 用户 {user_code} 修改天气类型模板: id={type_id}")
+            return JsonResponse({'success': True, 'message': '修改成功'})
+        except (json.JSONDecodeError, ValueError) as e:
+            return JsonResponse({'success': False, 'error': f'数据格式错误: {e}'}, status=400)
+        except Exception as e:
+            logger.error(f"修改天气类型模板失败: {e}")
+            return JsonResponse({'success': False, 'error': str(e)}, status=500)
 
     try:
         obj = WeatherTypeInfo.objects.get(id=type_id)
@@ -919,6 +1245,10 @@ def settings_prefix_area(request, time_mode='current'):
         try:
             data = json.loads(request.body or '{}')
             rows = _prefix_sheet_rows(data)
+            if _use_global_template(request):
+                _save_template(_TPL_PREFIX, rows)
+                logger.info(f"[设置] 用户 {user_code} 保存机场区域模板，共 {len(rows)} 条前缀")
+                return JsonResponse({'success': True, 'message': '已保存'})
             _replace_prefix_sheet(rows)
             logger.info(f"[设置] 用户 {user_code} 保存机场区域，共 {len(rows)} 条前缀")
             return JsonResponse({'success': True, 'message': '已保存'})
@@ -929,14 +1259,16 @@ def settings_prefix_area(request, time_mode='current'):
             return JsonResponse({'success': False, 'error': str(e)}, status=500)
 
     if request.method == 'GET':
-        rows = list(AirportPrefixArea.objects.values(
-            'prefix', 'sequence', 'classification', 'area', 'remark'
-        ))
-        rows.sort(key=lambda row: (
-            0 if row['classification'] == '国内' else 1,
-            row['sequence'], row['area'], row['prefix'],
-        ))
-        return JsonResponse({'success': True, 'data': rows})
+        if _use_global_template(request):
+            rows = _template_list(_TPL_PREFIX, _dump_prefix)
+        else:
+            rows = _dump_prefix()
+        return JsonResponse({
+            'success': True,
+            'data': rows,
+            'hidden_regions': _hidden_prefix_regions(),
+            **scope_meta(request, time_mode),
+        })
 
     denied = _deny_settings_write(request, 'settings_prefix_area')
     if denied:
@@ -1042,10 +1374,11 @@ def _taf_payload(data):
 def settings_taf_import(request, time_mode='current'):
     user_code = _get_user_code(request, time_mode)
     if request.method == 'GET':
-        rows = list(AirportTafImportConfig.objects.values(
-            'airport_4code', 'taf_init_time', 'import_check_interval', 'taf_max_delay'
-        ).order_by('airport_4code'))
-        return JsonResponse({'success': True, 'data': rows})
+        if _use_global_template(request):
+            rows = _template_list(_TPL_TAF, _dump_taf)
+        else:
+            rows = _dump_taf()
+        return JsonResponse({'success': True, 'data': rows, **scope_meta(request, time_mode)})
 
     denied = _deny_settings_write(request, 'settings_taf_import')
     if denied:
@@ -1053,6 +1386,20 @@ def settings_taf_import(request, time_mode='current'):
     try:
         data = json.loads(request.body)
         code, hour, interval, delay = _taf_payload(data)
+        if _use_global_template(request):
+            rows = _template_list(_TPL_TAF, _dump_taf)
+            if any((item.get('airport_4code') or '').upper() == code for item in rows):
+                return JsonResponse({'success': False, 'error': f'{code} 的预报入库告警已存在'}, status=400)
+            rows.append({
+                'airport_4code': code,
+                'taf_init_time': hour,
+                'import_check_interval': interval,
+                'taf_max_delay': delay,
+            })
+            rows.sort(key=lambda item: item.get('airport_4code') or '')
+            _save_template(_TPL_TAF, rows)
+            logger.info(f"[设置] 用户 {user_code} 新增预报入库模板: {code}")
+            return JsonResponse({'success': True, 'message': f'{code} 预报入库告警已保存'})
         if AirportTafImportConfig.objects.filter(airport_4code=code).exists():
             return JsonResponse({'success': False, 'error': f'{code} 的预报入库告警已存在'}, status=400)
         AirportTafImportConfig.objects.create(
@@ -1076,6 +1423,40 @@ def settings_taf_import(request, time_mode='current'):
 def settings_taf_import_detail(request, airport_4code, time_mode='current'):
     user_code = _get_user_code(request, time_mode)
     code = airport_4code.upper()
+    if _use_global_template(request):
+        rows = _template_list(_TPL_TAF, _dump_taf)
+        found = next((item for item in rows if (item.get('airport_4code') or '').upper() == code), None)
+        if request.method == 'GET':
+            if not found:
+                return JsonResponse({'success': False, 'error': '尚未配置'}, status=404)
+            return JsonResponse({'success': True, 'data': found, **scope_meta(request, time_mode)})
+        denied = _deny_settings_write(request, 'settings_taf_import')
+        if denied:
+            return denied
+        if request.method == 'DELETE':
+            if not found:
+                return JsonResponse({'success': False, 'error': '尚未配置'}, status=404)
+            _save_template(_TPL_TAF, [item for item in rows if (item.get('airport_4code') or '').upper() != code])
+            logger.info(f"[设置] 用户 {user_code} 删除预报入库模板: {code}")
+            return JsonResponse({'success': True, 'message': '已删除'})
+        try:
+            data = json.loads(request.body)
+            data['airport_4code'] = code
+            _code, hour, interval, delay = _taf_payload(data)
+            if not found:
+                return JsonResponse({'success': False, 'error': '尚未配置'}, status=404)
+            found['taf_init_time'] = hour
+            found['import_check_interval'] = interval
+            found['taf_max_delay'] = delay
+            _save_template(_TPL_TAF, rows)
+            logger.info(f"[设置] 用户 {user_code} 修改预报入库模板: {code}")
+            return JsonResponse({'success': True, 'message': '修改成功'})
+        except (json.JSONDecodeError, ValueError, TypeError) as e:
+            return JsonResponse({'success': False, 'error': str(e)}, status=400)
+        except Exception as e:
+            logger.error(f"修改预报入库模板失败: {e}")
+            return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
     if request.method == 'GET':
         obj = AirportTafImportConfig.objects.filter(airport_4code=code).first()
         if not obj:

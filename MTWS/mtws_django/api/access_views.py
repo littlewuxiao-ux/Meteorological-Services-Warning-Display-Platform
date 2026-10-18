@@ -6,10 +6,10 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 import uuid
 
 from django.http import JsonResponse
+from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
@@ -30,11 +30,14 @@ from utils.access_control import (
     create_admin_session,
     create_seat_session,
     ensure_bootstrap_data,
+    export_access_config,
     get_local_group,
+    import_access_config,
     has_perm,
     is_admin_unlocked,
     is_local_request,
     is_user_blacklisted,
+    new_group_code,
     permissions_dict_from_group,
     resolve_access_identity,
     seat_sid_from_request,
@@ -221,6 +224,8 @@ def access_complete_qr_login(request, time_mode='current'):
 @require_http_methods(['POST'])
 def access_seat_logout(request, time_mode='current'):
     """非本机席位登出（回到角色选择）。本机勿用此接口清 CAS。"""
+    if not has_perm(resolve_access_identity(request), 'login_user', 'display'):
+        return JsonResponse({'success': False, 'error': '无登出权限'}, status=403)
     sid = seat_sid_from_request(request)
     clear_seat_session(sid)
     request.session.pop('qr_id', None)
@@ -287,6 +292,7 @@ def access_admin_change_password(request, time_mode='current'):
 def _require_admin(request):
     if not is_admin_unlocked(request, touch=True):
         return JsonResponse({'success': False, 'error': '请先解锁超级用户'}, status=403)
+    ensure_bootstrap_data()
     return None
 
 
@@ -323,9 +329,7 @@ def access_admin_groups(request, time_mode='current'):
     name = (data.get('name') or '').strip()
     if not name:
         return JsonResponse({'success': False, 'error': '名称不能为空'}, status=400)
-    code = (data.get('code') or '').strip()
-    if not code:
-        code = 'nl_' + re.sub(r'[^a-zA-Z0-9_]', '_', name)[:40] + '_' + uuid.uuid4().hex[:6]
+    code = (data.get('code') or '').strip() or new_group_code(name)
     if AccessGroup.objects.filter(code=code).exists():
         return JsonResponse({'success': False, 'error': '组代码已存在'}, status=400)
     require_qr = bool(data.get('require_qr'))
@@ -343,7 +347,6 @@ def access_admin_groups(request, time_mode='current'):
             group=group,
             module_code=m['code'],
             can_display=False,
-            can_activate=False,
             can_write=False,
         )
         for m in ACCESS_MODULES
@@ -408,6 +411,32 @@ def access_admin_group_detail(request, group_id, time_mode='current'):
 
     group.refresh_from_db()
     return JsonResponse({'success': True, 'data': _serialize_group(group)})
+
+
+@csrf_exempt
+@require_http_methods(['GET'])
+def access_admin_export(request, time_mode='current'):
+    err = _require_admin(request)
+    if err:
+        return err
+    stamp = timezone.localtime().strftime('%Y%m%d_%H%M%S')
+    resp = JsonResponse(export_access_config(), json_dumps_params={'ensure_ascii': False, 'indent': 2})
+    resp['Content-Disposition'] = f'attachment; filename="mtws_access_{stamp}.json"'
+    return resp
+
+
+@csrf_exempt
+@require_http_methods(['POST'])
+def access_admin_import(request, time_mode='current'):
+    err = _require_admin(request)
+    if err:
+        return err
+    data = _json_body(request)
+    ok, msg, summary = import_access_config(data.get('config'), (data.get('mode') or '').strip())
+    if not ok:
+        return JsonResponse({'success': False, 'error': msg}, status=400)
+    logger.info('导入用户组配置 mode=%s %s', data.get('mode'), summary)
+    return JsonResponse({'success': True, 'data': summary})
 
 
 @csrf_exempt

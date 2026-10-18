@@ -458,6 +458,8 @@ def _period_line(span: str, word: str, segs: list) -> dict:
         'word': word,
         'alert': _segs_alert(segs),
         'text': f'{head}：{body_text}' if body_text else f'{head}：无要素',
+        # 甘特条带不再重复时段和变化组说法，只留要素正文
+        'gantt': body_text,
         'body_html': _segs_html(segs) or '无要素',
     }
 
@@ -548,6 +550,8 @@ def translate_taf_elements(elements: Optional[dict]) -> Optional[dict]:
         cells += f'<span class="plain-temps">{_segs_html(temp_segs, sep="　")}</span>'
     result['html'] = f'<span class="plain-periods">{cells}</span>'
     result['text'] = '；'.join(line['text'] for line in result['periods'])
+    result['tracks'] = _element_tracks(elements)
+    result['tempo_tracks'] = _tempo_tracks(elements)
     return result
 
 
@@ -558,6 +562,270 @@ def _bar_key(block: dict) -> str:
     if not raw_type or not start:
         return ''
     return f'{raw_type}|{start}'
+
+
+_TRACK_NAMES = ('wind', 'visibility', 'weather', 'cloud')
+
+
+def _norm_change(block: dict) -> str:
+    return str(block.get('type') or '').strip().upper().replace(' ', '')
+
+
+def _ddhh_ord(ddhh, origin) -> Optional[int]:
+    """DDHH 相对起点的小时数。跨月按 31 日折返，与甘特定位同一套日界。"""
+    text = str(ddhh or '').strip()
+    base = str(origin or '').strip()
+    if len(text) < 4 or not text[:4].isdigit() or len(base) < 4 or not base[:4].isdigit():
+        return None
+    day, hour = int(text[:2]), int(text[2:4])
+    origin_day, origin_hour = int(base[:2]), int(base[2:4])
+    diff = day - origin_day
+    if diff < -15:
+        diff += 31
+    elif diff > 15:
+        diff -= 31
+    return diff * 24 + (hour - origin_hour)
+
+
+def _later(later, earlier, origin) -> bool:
+    end_ord = _ddhh_ord(later, origin)
+    start_ord = _ddhh_ord(earlier, origin)
+    return end_ord is not None and start_ord is not None and end_ord > start_ord
+
+
+def _own_cavok(block: dict) -> bool:
+    vis = block.get('visibility') or {}
+    if not vis or vis.get('inherited'):
+        return False
+    raw = str(vis.get('raw') or vis.get('value') or '').strip().upper()
+    return bool(vis.get('cavok')) or raw == 'CAVOK'
+
+
+def _becmg_writes(block: dict, name: str) -> bool:
+    """BECMG 本组是否明确写出了这一类要素。CAVOK 同时改写能见度、天气和云。"""
+    if name == 'wind':
+        wind = block.get('wind') or {}
+        return bool(wind) and not wind.get('inherited')
+    if name == 'visibility':
+        vis = block.get('visibility') or {}
+        return bool(vis) and not vis.get('inherited')
+    if name == 'weather':
+        if _own_cavok(block):
+            return True
+        weather = block.get('weather') or {}
+        return (not weather.get('inherited')) and bool(weather.get('items'))
+    if name == 'cloud':
+        if _own_cavok(block):
+            return True
+        clouds = block.get('clouds') or {}
+        return (not clouds.get('inherited')) and bool(clouds.get('layers') or clouds.get('sky'))
+    return False
+
+
+def _element_alert(segs: list, *candidates) -> Optional[str]:
+    """条带颜色只用这一类要素自己的告警，不取整段预报的最高等级。"""
+    found = _segs_alert(segs)
+    if found:
+        return found
+    for value in candidates:
+        level = str(value or '').upper()
+        if level in ALERT_LEVELS:
+            return level
+    return None
+
+
+def _track_phrase(block: Optional[dict], name: str) -> tuple[str, Optional[str]]:
+    """一类要素的甘特正文。天气、云缺省时补全，不把别的要素拼进来。"""
+    if not block:
+        return '', None
+    if name == 'wind':
+        wind = block.get('wind') or {}
+        segs = []
+        segs.extend(_wind_segs(wind))
+        segs.extend(_wind_shear_segs(block.get('wind_shear')))
+        return _segs_text(segs), _element_alert(segs, wind.get('alert'), wind.get('speed_alert'), wind.get('gust_alert'))
+    if name == 'visibility':
+        vis = block.get('visibility') or {}
+        segs = _visibility_segs(vis)
+        return _segs_text(segs), _element_alert(segs, vis.get('alert'))
+    if name == 'weather':
+        weather = block.get('weather') or {}
+        if _own_cavok(block):
+            return '无重要天气现象', None
+        segs = _weather_segs(weather)
+        codes = [
+            str(item.get('code') or '').strip().upper()
+            for item in weather.get('items') or []
+        ]
+        if not segs or (codes and all(code == 'NSW' for code in codes)):
+            return '无重要天气现象', _element_alert(segs, weather.get('warning'))
+        return _segs_text(segs), _element_alert(segs, weather.get('warning'))
+    if name == 'cloud':
+        clouds = block.get('clouds') or {}
+        if _own_cavok(block):
+            return '无重要云', None
+        segs = _cloud_segs(clouds)
+        if not segs:
+            return '无重要云', None
+        return _segs_text(segs), _element_alert(segs, clouds.get('warning'))
+    return '', None
+
+
+def _tempo_phrase(block: dict, name: str) -> tuple[str, Optional[str]]:
+    """短时变化只翻译报文里写出的要素，没写的不补。"""
+    if name == 'wind':
+        wind = block.get('wind') or {}
+        segs = []
+        if wind:
+            segs.extend(_wind_segs(wind))
+        segs.extend(_wind_shear_segs(block.get('wind_shear')))
+        if not segs:
+            return '', None
+        return _segs_text(segs), _element_alert(segs, wind.get('alert'), wind.get('speed_alert'), wind.get('gust_alert'))
+    if name == 'visibility':
+        vis = block.get('visibility') or {}
+        if not vis:
+            return '', None
+        segs = _visibility_segs(vis)
+        if not segs:
+            return '', None
+        return _segs_text(segs), _element_alert(segs, vis.get('alert'))
+    if name == 'weather':
+        weather = block.get('weather') or {}
+        segs = _weather_segs(weather)
+        if not segs:
+            return '', None
+        return _segs_text(segs), _element_alert(segs, weather.get('warning'))
+    if name == 'cloud':
+        clouds = block.get('clouds') or {}
+        segs = _cloud_segs(clouds)
+        if not segs:
+            return '', None
+        return _segs_text(segs), _element_alert(segs, clouds.get('warning'))
+    return '', None
+
+
+def _is_tempo(kind: str) -> bool:
+    return kind in ('TEMPO', 'INTER') or kind.startswith('PROB')
+
+
+def _tempo_tracks(elements: Optional[dict]) -> dict:
+    """短时变化四行。每组只画报文中出现的要素，没有短时变化时四行都空。"""
+    empty = {name: [] for name in _TRACK_NAMES}
+    if not elements or elements.get('cancelled'):
+        return empty
+    period = elements.get('subject_period') or {}
+    origin = str(period.get('start') or '').strip()
+    whole = str(elements.get('whole_validity') or '')
+    if not origin and '/' in whole:
+        origin = whole.split('/')[0].strip()
+    if len(origin) < 4:
+        origin = '0000'
+    groups = [
+        block for block in (elements.get('changes') or [])
+        if _is_tempo(_norm_change(block))
+    ]
+
+    def _sort_key(block: dict):
+        order = _ddhh_ord(block.get('start'), origin)
+        return (order is None, order if order is not None else 0)
+
+    groups.sort(key=_sort_key)
+    tracks = {name: [] for name in _TRACK_NAMES}
+    for block in groups:
+        start = str(block.get('start') or '').strip()
+        end = str(block.get('end') or '').strip()
+        for name in _TRACK_NAMES:
+            text, alert = _tempo_phrase(block, name)
+            _append_track_span(tracks[name], start, end, text, alert, origin)
+    return tracks
+
+
+def _append_track_span(bucket: list, start, end, text, alert, origin) -> bool:
+    if not text or not start or not end or not _later(end, start, origin):
+        return False
+    bucket.append({
+        'start': str(start).strip()[:4],
+        'end': str(end).strip()[:4],
+        'kind': 'span',
+        'text': text,
+        'alert': alert,
+    })
+    return True
+
+
+def _element_tracks(elements: dict) -> dict:
+    """长效预报四行甘特。
+
+    没在 BECMG 里写出的要素不插入过渡，条带一直画到 FM，
+    或画到下一份明确改了该要素的 BECMG。FM 四行都从该时次重新起段。
+    """
+    empty = {name: [] for name in _TRACK_NAMES}
+    if not elements or elements.get('cancelled') or not elements.get('subject'):
+        return empty
+    period = elements.get('subject_period') or {}
+    origin = str(period.get('start') or '').strip()
+    whole = str(elements.get('whole_validity') or '')
+    if not origin and '/' in whole:
+        origin = whole.split('/')[0].strip()
+    end_all = whole.split('/')[-1].strip() if '/' in whole else ''
+    if len(origin) < 4 or len(end_all) < 4:
+        return empty
+
+    changes = []
+    for block in elements.get('changes') or []:
+        kind = _norm_change(block)
+        if kind in ('BECMG', 'FROM', 'FM') or kind.startswith('FM'):
+            changes.append(block)
+
+    def _sort_key(block: dict):
+        kind = _norm_change(block)
+        token = block.get('transition_start') or block.get('start') if kind == 'BECMG' else block.get('start')
+        order = _ddhh_ord(token, origin)
+        # 同一时次先落 FM，再画从这一时次开始的 BECMG 过渡
+        rank = 0 if kind in ('FROM', 'FM') or kind.startswith('FM') else 1
+        return (order is None, order if order is not None else 0, rank)
+
+    changes.sort(key=_sort_key)
+    tracks = {name: [] for name in _TRACK_NAMES}
+    subject = elements.get('subject') or {}
+    for name in _TRACK_NAMES:
+        text, alert = _track_phrase(subject, name)
+        shown_text, shown_alert = text, alert
+        start = origin
+        for block in changes:
+            kind = _norm_change(block)
+            if kind == 'BECMG':
+                if not _becmg_writes(block, name):
+                    continue
+                raw_start = str(block.get('transition_start') or block.get('start') or '').strip()
+                raw_end = str(block.get('start') or raw_start).strip()
+                if _append_track_span(tracks[name], start, raw_start, text, alert, origin):
+                    shown_text, shown_alert = text, alert
+                left_text = text or shown_text
+                left_alert = alert if text else shown_alert
+                new_text, new_alert = _track_phrase(block, name)
+                if raw_start and raw_end and _later(raw_end, raw_start, origin):
+                    tracks[name].append({
+                        'start': raw_start[:4],
+                        'end': raw_end[:4],
+                        'kind': 'transition',
+                        'text': '➤➤',
+                        'title': f'{left_text}➤➤{new_text}' if left_text else f'➤➤{new_text}',
+                        'alert': left_alert,
+                        'alert_to': new_alert,
+                    })
+                text, alert, start = new_text, new_alert, (raw_end or raw_start)
+            else:
+                moment = str(block.get('start') or '').strip()
+                if not moment:
+                    continue
+                if _append_track_span(tracks[name], start, moment, text, alert, origin):
+                    shown_text, shown_alert = text, alert
+                text, alert = _track_phrase(block, name)
+                start = moment
+        _append_track_span(tracks[name], start, end_all, text, alert, origin)
+    return tracks
 
 
 def translate_taf_row(row: Any) -> Optional[dict]:
@@ -664,8 +932,6 @@ def translate_metar_elements(elements: Optional[dict]) -> Optional[dict]:
         suffix = '英寸汞柱' if str(alt.get('unit') or '') in ('inHg', 'inhg', 'in') else '百帕'
         segs.append(_seg(f'修正海压{_fmt_num(alt["value"])}{suffix}'))
     segs.extend(_wind_shear_segs(elements.get('wind_shear')))
-    if elements.get('nosig'):
-        segs.append(_seg('未来2小时无重要变化'))
 
     head = _obs_head_zh(elements)
     body = _segs_html(segs) or '无可翻译要素'
@@ -1063,8 +1329,6 @@ def _avwx_altimeter_segs(data, units) -> list:
 def _metar_trend_segs(content: str) -> list:
     body = content.split(' RMK')[0]
     segs = []
-    if re.search(r'\bNOSIG\b', body, re.IGNORECASE):
-        segs.append(_seg('未来2小时无重要变化'))
     for match in _METAR_WS_RE.finditer(body):
         segs.append(_seg(_part(f'风切变（{match.group().strip()}）', 'R')))
     trend = _TREND_RE.search(body)

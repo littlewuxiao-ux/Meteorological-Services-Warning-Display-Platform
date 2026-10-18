@@ -145,7 +145,7 @@
 
 .access-col-cat { width: 46px; }
 .access-col-mod { width: 16%; }
-.access-col-perm { width: 26%; }
+.access-col-perm { width: 38%; }
 
 .access-perm-table th,
 .access-perm-table td {
@@ -189,14 +189,6 @@
 .access-mod-child::before {
   content: '└ ';
   color: #7f97ad;
-}
-
-.access-perm-opt-locked {
-  cursor: default;
-}
-
-.access-perm-opt-locked input {
-  cursor: not-allowed;
 }
 
 .access-perm-check {
@@ -318,4 +310,30 @@
 #access-admin-blacklist {
   max-height: 40vh;
   overflow: auto;
+}
+
+.access-import-summary {
+  margin: 0 0 12px;
+  color: #9bb3c9;
+  font-size: 13px;
+}
+
+.access-import-mode {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin-bottom: 10px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.access-import-mode input {
+  margin-top: 2px;
+}
+
+.access-import-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 16px;
 }

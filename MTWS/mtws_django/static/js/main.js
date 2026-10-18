@@ -36,6 +36,13 @@ let _parserStatusTimer = null;  // 后端解析状态轮询计时器
 const POPUP_PREFS_KEY = 'mtws_popup_display_prefs';
 const POPUP_SEAT_READY_KEY = 'mtws_popup_seat_ready';
 const POPUP_DISMISSED_KEY = 'mtws_popup_dismissed_sqc';
+const popupDisplayPrefs = {
+    operation: true,
+    parking: true,
+    intercept: true
+};
+let popupPrefsLoaded = false;
+let popupPrefsLoadTask = null;
 
 // 数据更新时间记录
 let dataUpdateTimes = {
@@ -100,20 +107,31 @@ function formatTimestampByMode(timestamp) {
     }
 }
 
-// 根据当前时区模式将时间戳格式化为 { date, time }
+// 根据当前时区模式将时间戳格式化为 { date, time }。CST 为北京时，UTC 为世界时。
 function formatTimestampPartsByMode(timestamp) {
     if (!timestamp) return { date: '', time: '' };
     try {
         const date = new Date(timestamp);
-        if (window.displayTimezone === 'UTC') {
-            return {
-                date: `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`,
-                time: `${String(date.getUTCHours()).padStart(2, '0')}:${String(date.getUTCMinutes()).padStart(2, '0')}:${String(date.getUTCSeconds()).padStart(2, '0')}`
-            };
-        }
+        const timeZone = window.displayTimezone === 'UTC' ? 'UTC' : 'Asia/Shanghai';
+        const parts = new Intl.DateTimeFormat('en-CA', {
+            timeZone: timeZone,
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            hour12: false
+        }).formatToParts(date);
+        const pick = (type) => {
+            const item = parts.find((part) => part.type === type);
+            return item ? item.value : '';
+        };
+        let hour = pick('hour');
+        if (hour === '24') hour = '00';
         return {
-            date: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`,
-            time: `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}:${String(date.getSeconds()).padStart(2, '0')}`
+            date: `${pick('year')}-${pick('month')}-${pick('day')}`,
+            time: `${hour}:${pick('minute')}:${pick('second')}`
         };
     } catch (e) {
         return { date: '', time: '' };
@@ -160,6 +178,9 @@ function refreshAllTimezoneDisplays() {
     // 入库视图打开时，重新渲染以反映新时区
     if (typeof currentView === 'function' && currentView() === 'import' && typeof _renderAlertPanel === 'function') {
         _renderAlertPanel();
+    }
+    if (typeof refreshPopupHistoryTimezone === 'function') {
+        refreshPopupHistoryTimezone();
     }
 }
 
@@ -296,17 +317,7 @@ function startParserStatusPolling() {
 
 // 刷新按钮点击：先查后端状态，有解析运行则拦截并提示，否则执行刷新
 function handleRefreshButtonClick() {
-    // 无激活权限：只重拉已解析数据，不触发后端解析
-    if (typeof hasAccess === 'function' && hasAccess('refresh_btn', 'display') && !hasAccess('refresh_btn', 'activate')) {
-        updateRefreshTime();
-        generateTimeline();
-        applyTimeRangeScaling();
-        if (typeof loadInitialData === 'function') {
-            showLoading();
-            loadInitialData();
-        }
-        return;
-    }
+    if (typeof hasAccess === 'function' && window.__accessIdentity && !hasAccess('refresh_btn', 'display')) return;
     checkRunningParsers((err, data) => {
         if (err) {
             // 接口异常时放行（乐观策略）
@@ -879,6 +890,7 @@ function triggerParsingAndLoadData() {
                 // 更新区域选项
                 if (data.data.area_options) {
                     currentAreaOptions = data.data.area_options;
+                    try{ if(Array.isArray(data.data.hidden_regions)){ window.__hiddenRegions = data.data.hidden_regions; } }catch(e){}
 
                     // 检查是否需要重置区域筛选（强制刷新或清除缓存时）
                     const needResetRegions = sessionStorage.getItem('mtws_reset_regions');
@@ -956,6 +968,10 @@ function showLoading() {
             正在加载数据...
         </div>
     `;
+    // 过去 2 小时的竖线握柄挂在 body 上，清空机场行后不会跟着消失
+    if (typeof removeMarksPastHandle === 'function') {
+        removeMarksPastHandle('home');
+    }
 }
 
 // 隐藏加载状态
@@ -972,6 +988,9 @@ function showError(message) {
             <div class="empty-state-message">${message}</div>
         </div>
     `;
+    if (typeof removeMarksPastHandle === 'function') {
+        removeMarksPastHandle('home');
+    }
 }
 
 /**
@@ -1206,6 +1225,16 @@ function bindEvents() {
     });
 
     // 功能按钮事件
+    const popupHistoryBtn = document.getElementById('popup-history-btn');
+    if (popupHistoryBtn && popupHistoryBtn.dataset.historyBound !== '1') {
+        popupHistoryBtn.dataset.historyBound = '1';
+        popupHistoryBtn.addEventListener('click', function (event) {
+            event.preventDefault();
+            event.stopPropagation();
+            if (typeof openPopupHistory === 'function') openPopupHistory(1);
+        });
+    }
+
     document.getElementById('settings-btn').addEventListener('click', function () {
         if (window.SettingsModal) {
             window.SettingsModal.open();
@@ -1345,6 +1374,7 @@ function bindEvents() {
     const logoutBtn = document.getElementById('logout-btn');
     if (logoutBtn) {
         logoutBtn.addEventListener('click', function () {
+            if (!canShowLoginUser()) return;
             showModal('logout-confirm-modal');
         });
     }
@@ -1377,46 +1407,72 @@ function bindEvents() {
     }
 }
 
-// 初始化弹窗设置（席位本地）
-function loadPopupDisplayPrefs() {
-    const defaults = {
-        operation: false,
-        parking: false,
-        intercept: true,
-        operationSince: 0,
-        parkingSince: 0
-    };
-    try {
-        const raw = sessionStorage.getItem(POPUP_PREFS_KEY);
-        if (!raw) return defaults;
-        return { ...defaults, ...JSON.parse(raw) };
-    } catch (e) {
-        return defaults;
+// 弹窗开关存在用户设置里。是否显示仍由前端按滚动追溯时间判断。
+function popupPrefsHeaders() {
+    const headers = { 'Content-Type': 'application/json' };
+    if (typeof currentToken !== 'undefined' && currentToken) {
+        headers['Authorization'] = `Bearer ${currentToken}`;
     }
+    if (currentTimeMode === 'test') {
+        headers['X-User-Code'] = 'test';
+    } else if (currentUserCode) {
+        headers['X-User-Code'] = currentUserCode;
+    }
+    return headers;
 }
 
-function savePopupDisplayPrefs(prefs) {
-    sessionStorage.setItem(POPUP_PREFS_KEY, JSON.stringify(prefs));
+function loadPopupDisplayPrefs() {
+    return popupDisplayPrefs;
 }
+
+function applyPopupDisplayPrefs(data, options) {
+    const source = data || {};
+    if (source.operation_enabled != null) popupDisplayPrefs.operation = !!source.operation_enabled;
+    if (source.parking_enabled != null) popupDisplayPrefs.parking = !!source.parking_enabled;
+    if (source.intercept_enabled != null) popupDisplayPrefs.intercept = !!source.intercept_enabled;
+    if (source.trace_time != null && source.trace_time !== '') {
+        window.__popupTraceHours = Number(source.trace_time);
+    }
+    popupPrefsLoaded = true;
+    updateToggleState('operation-toggle', popupDisplayPrefs.operation);
+    updateToggleState('parking-toggle', popupDisplayPrefs.parking);
+    const refresh = !options || options.refresh !== false;
+    if (refresh && typeof checkAndShowPopups === 'function') {
+        checkAndShowPopups();
+    }
+}
+window.applyPopupDisplayPrefs = applyPopupDisplayPrefs;
+
+function ensurePopupDisplayPrefs() {
+    if (popupPrefsLoaded) return Promise.resolve(popupDisplayPrefs);
+    if (popupPrefsLoadTask) return popupPrefsLoadTask;
+    popupPrefsLoadTask = (async () => {
+        try {
+            const mode = currentTimeMode || 'current';
+            const res = await fetch(`/${mode}/api/settings/popup/`, { headers: popupPrefsHeaders() });
+            const body = await res.json();
+            if (body && body.success && body.data) {
+                applyPopupDisplayPrefs(body.data, { refresh: false });
+            }
+        } catch (e) {
+            console.error('加载弹窗开关失败', e);
+        } finally {
+            popupPrefsLoaded = true;
+            popupPrefsLoadTask = null;
+        }
+        return popupDisplayPrefs;
+    })();
+    return popupPrefsLoadTask;
+}
+window.ensurePopupDisplayPrefs = ensurePopupDisplayPrefs;
 
 function ensurePopupSeatSession() {
-    if (typeof hasAccess === 'function' && window.__accessIdentity
-        && !hasAccess('metar_popup', 'display')) {
-        return;
-    }
-    if (sessionStorage.getItem(POPUP_SEAT_READY_KEY) === '1') return;
-    const now = Date.now();
-    savePopupDisplayPrefs({
-        operation: true,
-        parking: true,
-        intercept: true,
-        operationSince: now,
-        parkingSince: now
-    });
-    sessionStorage.setItem(POPUP_SEAT_READY_KEY, '1');
+    ensurePopupDisplayPrefs();
 }
 
 function clearPopupSeatSession() {
+    popupPrefsLoaded = false;
+    popupPrefsLoadTask = null;
     try { sessionStorage.removeItem(POPUP_PREFS_KEY); } catch (e) { /* ignore */ }
     try { sessionStorage.removeItem(POPUP_SEAT_READY_KEY); } catch (e) { /* ignore */ }
     try { localStorage.removeItem(POPUP_DISMISSED_KEY); } catch (e) { /* ignore */ }
@@ -1453,26 +1509,20 @@ function popupMatchesLocalPrefs(popup) {
     const allowed = prefs.intercept ? ['Y'] : ['Y', 'I'];
     const traceHours = Number(window.__popupTraceHours);
     const Tms = (Number.isFinite(traceHours) ? Math.max(0, Math.min(9, traceHours)) : 6) * 3600000;
-    const now = Date.now();
-    const inTraceWindow = (since) => {
-        if (!since) return false;
-        const pt = popup.popup_time || 0;
-        return pt >= (since - Tms) && pt <= now;
-    };
-    const opOk = prefs.operation
-        && allowed.includes(popup.operation_popup)
-        && inTraceWindow(prefs.operationSince);
-    const pkOk = prefs.parking
-        && allowed.includes(popup.parking_popup)
-        && inTraceWindow(prefs.parkingSince);
+    const serverNow = Number(popup.current_time);
+    const now = Number.isFinite(serverNow) && serverNow > 0 ? serverNow : Date.now();
+    const pt = Number(popup.popup_time) || 0;
+    const inWindow = pt >= (now - Tms) && pt <= now;
+    const opOk = prefs.operation && allowed.includes(popup.operation_popup) && inWindow;
+    const pkOk = prefs.parking && allowed.includes(popup.parking_popup) && inWindow;
     return opOk || pkOk;
 }
 
 function initializePopupSettings() {
-    const prefs = loadPopupDisplayPrefs();
-    updateToggleState('operation-toggle', prefs.operation);
-    updateToggleState('parking-toggle', prefs.parking);
-    updateToggleState('intercept-toggle', prefs.intercept);
+    ensurePopupDisplayPrefs().then(() => {
+        updateToggleState('operation-toggle', popupDisplayPrefs.operation);
+        updateToggleState('parking-toggle', popupDisplayPrefs.parking);
+    });
 }
 
 window.updateToggleState = updateToggleState;
@@ -1492,27 +1542,34 @@ function updateToggleState(toggleId, isActive) {
     }
 }
 
-// 处理开关点击（仅本机，不写库）
-function handleToggleClick(toggle) {
+// 主页运行类、停场类写入当前用户自己的弹窗设置
+async function handleToggleClick(toggle) {
     const field = toggle.getAttribute('data-field');
-    const prefs = loadPopupDisplayPrefs();
+    if (field !== 'operation' && field !== 'parking') return;
     const nowOn = !toggle.classList.contains('selected');
-    const now = Date.now();
-
-    if (field === 'operation') {
-        prefs.operation = nowOn;
-        prefs.operationSince = nowOn ? now : 0;
-    } else if (field === 'parking') {
-        prefs.parking = nowOn;
-        prefs.parkingSince = nowOn ? now : 0;
-    } else if (field === 'intercept') {
-        prefs.intercept = nowOn;
-    }
-
-    savePopupDisplayPrefs(prefs);
+    const key = field === 'operation' ? 'operation_enabled' : 'parking_enabled';
+    const prev = popupDisplayPrefs[field];
+    popupDisplayPrefs[field] = nowOn;
     updateToggleState(toggle.id, nowOn);
-    if (typeof checkAndShowPopups === 'function') {
-        checkAndShowPopups();
+    try {
+        const mode = currentTimeMode || 'current';
+        const res = await fetch(`/${mode}/api/settings/popup/`, {
+            method: 'PUT',
+            headers: popupPrefsHeaders(),
+            body: JSON.stringify({ [key]: nowOn })
+        });
+        const body = await res.json();
+        if (!body || !body.success) {
+            throw new Error((body && body.error) || '保存失败');
+        }
+        const chkId = field === 'operation' ? 'pf-operation-enabled' : 'pf-parking-enabled';
+        const chk = document.getElementById(chkId);
+        if (chk && window.__settingsScope !== 'default') chk.checked = nowOn;
+        if (typeof checkAndShowPopups === 'function') checkAndShowPopups();
+    } catch (e) {
+        popupDisplayPrefs[field] = prev;
+        updateToggleState(toggle.id, prev);
+        console.error('保存弹窗开关失败', e);
     }
 }
 
@@ -2485,25 +2542,48 @@ function createAirportRowForDetailUnforced(airport) {
     const weatherBox = isPlain
         ? ''
         : buildWeatherInfoDiv(airport.airport_4code, latestMetar);
+    const elementLabels = ['风', '能', '天', '云']
+        .map((name) => `<div class="plain-row-label">${name}</div>`).join('');
     const rowLabels = isPlain
         ? `<div class="plain-row-labels">
-            <div class="plain-row-label">长效预报</div>
-            <div class="plain-row-label">短时变化</div>
-            <div class="plain-row-label">航班信息</div>
+            <div class="plain-label-group">
+              <div class="plain-label-parent">长效预报</div>
+              <div class="plain-label-children">${elementLabels}</div>
+            </div>
+            <div class="plain-label-group">
+              <div class="plain-label-parent">短时变化</div>
+              <div class="plain-label-children">${elementLabels}</div>
+            </div>
+            <div class="plain-label-group plain-label-flight">
+              <div class="plain-label-parent">航班信息</div>
+              <div class="plain-label-children"><div class="plain-row-label plain-row-label-placeholder">—</div></div>
+            </div>
           </div>`
         : '';
     const rowClass = isPlain
         ? 'airport-row airport-row-detail airport-row-plain'
         : 'airport-row airport-row-detail';
     const marksMode = typeof isFlightMarksMode === 'function' && isFlightMarksMode();
-    const timelineInner = `
-                ${noTafData ? '<div class="no-taf-data">没有有效的TAF数据</div>' : ''}
+    const plainElements = ['wind', 'visibility', 'weather', 'cloud'];
+    const forecastRows = isPlain
+        ? plainElements.map((element) => `
+                <div class="forecast-row plain-element-row${tafAlertClass}" data-element="${element}" data-track="long">
+                    ${createPlainElementForecast(tafData, element, 'long')}
+                </div>`).join('')
+          + plainElements.map((element) => `
+                <div class="forecast-row plain-element-row plain-tempo-row${tafAlertClass}" data-element="${element}" data-track="tempo">
+                    ${createPlainElementForecast(tafData, element, 'tempo')}
+                </div>`).join('')
+        : `
                 <div class="forecast-row main-forecast${tafAlertClass}">
                     ${createTafForecastRow(tafData, 'main')}
                 </div>
                 <div class="forecast-row change-forecast${tafAlertClass}">
                     ${createTafForecastRow(tafData, 'change')}
-                </div>
+                </div>`;
+    const timelineInner = `
+                ${noTafData ? '<div class="no-taf-data">没有有效的TAF数据</div>' : ''}
+                ${forecastRows}
                 <div class="forecast-row flight-row">
                     ${createFlightTimeline(flightData, tafData, airport.metar_data, airport)}
                 </div>`;
@@ -2566,6 +2646,23 @@ function parseIcaoCodes(input) {
     return codes;
 }
 
+// 搜索进行中。按钮文案固定恢复为「搜索」，不能回写点击时读到的文字：
+// 解析器检查是异步的，连点或回车会在按钮已变成「搜索中...」时再开一次请求，
+// 先结束的请求若把后一次读到的「搜索中...」写回去，结果已经出来按钮也会一直停在搜索中。
+let airportSearchInFlight = false;
+
+function setAirportSearchButtonState(searching) {
+    const searchBtn = document.getElementById('search-btn');
+    if (!searchBtn) return;
+    searchBtn.disabled = !!searching;
+    searchBtn.textContent = searching ? '搜索中...' : '搜索';
+}
+
+function endAirportSearch() {
+    airportSearchInFlight = false;
+    setAirportSearchButtonState(false);
+}
+
 /**
  * 搜索入口（含解析器状态检查）：逻辑与刷新按钮保持一致。
  * 若后端解析器正在执行，则显示等待提示并拦截本次搜索；
@@ -2573,15 +2670,14 @@ function parseIcaoCodes(input) {
  */
 function handleSearchClick(searchValue) {
     if (!searchValue) return;
+    if (airportSearchInFlight) return;
     if (typeof hasAccess === 'function' && !hasAccess('search', 'display')) return;
 
-    // 无激活权限时仍允许搜索读数，但不因解析占用而强拦（后端外呼可能仍受限）
-    const needActivateGate = typeof hasAccess !== 'function' || hasAccess('search', 'activate');
-    if (!needActivateGate) {
-        performSearch(searchValue);
-        return;
-    }
+    airportSearchInFlight = true;
+    setAirportSearchButtonState(true);
+
     checkRunningParsers((err, data) => {
+        if (!airportSearchInFlight) return;
         if (err) {
             performSearch(searchValue);
             return;
@@ -2589,6 +2685,7 @@ function handleSearchClick(searchValue) {
         const running = data.running || [];
         const queued  = data.queued  || [];
         if (running.length > 0 || queued.length > 0) {
+            endAirportSearch();
             showParserRunningMessage(buildParserStatusMessage(running, queued));
             startParserStatusPolling();
         } else {
@@ -2602,10 +2699,12 @@ function performSearch(searchValue) {
     const codes = parseIcaoCodes(searchValue);
 
     if (codes === null) {
+        endAirportSearch();
         alert('输入格式有误：只允许字母和分隔符（空格、逗号）');
         return;
     }
     if (codes.length === 0) {
+        endAirportSearch();
         alert('未识别到有效的四字代码（每个代码须为连续4个英文字母）');
         return;
     }
@@ -2615,6 +2714,7 @@ function performSearch(searchValue) {
         const existing = (typeof airportData !== 'undefined') &&
             airportData.find(a => a.airport_4code === codes[0]);
         if (existing) {
+            endAirportSearch();
             showAirportDetailModal(existing, 'search');
             return;
         }
@@ -2630,12 +2730,7 @@ function performSearch(searchValue) {
 // 注意：搜索不应影响主页当前已展示的内容，因此不调用 showLoading()/hideLoading()
 // （它们会清空 #content-main），仅在搜索按钮上给出轻量的加载中提示。
 function fetchAndShowAirportSearch(codes) {
-    const searchBtn = document.getElementById('search-btn');
-    const originalBtnText = searchBtn ? searchBtn.textContent : null;
-    if (searchBtn) {
-        searchBtn.disabled = true;
-        searchBtn.textContent = '搜索中...';
-    }
+    setAirportSearchButtonState(true);
 
     const headers = { 'Content-Type': 'application/json' };
     if (typeof currentToken !== 'undefined' && currentToken) {
@@ -2673,10 +2768,7 @@ function fetchAndShowAirportSearch(codes) {
             alert('搜索请求失败，请重试');
         })
         .finally(() => {
-            if (searchBtn) {
-                searchBtn.disabled = false;
-                searchBtn.textContent = originalBtnText;
-            }
+            endAirportSearch();
         });
 }
 
@@ -2972,6 +3064,7 @@ function loadParameterizedData(updateTypes) {
                 // 更新区域选项
                 if (data.data.area_options) {
                     currentAreaOptions = data.data.area_options;
+                    try{ if(Array.isArray(data.data.hidden_regions)){ window.__hiddenRegions = data.data.hidden_regions; } }catch(e){}
 
                     // 检查是否需要重置区域筛选（强制刷新或清除缓存时）
                     const needResetRegions = sessionStorage.getItem('mtws_reset_regions');
@@ -4167,13 +4260,13 @@ function updateAirportGridForModalInner(airportElement) {
         });
     }
 
-    // 创建横线
-    const horizontalPositions = calculateHorizontalLinePositions(airportHeight);
-    const lineData = [
-        { position: horizontalPositions.line2, className: 'forecast-bottom' },
-        { position: horizontalPositions.line3, className: 'flight-bottom' },
-        { position: horizontalPositions.line4, className: 'airport-bottom' }
-    ];
+    // 创建横线。翻译详情是长效四行 + 短时四行 + 航班，共 9 行
+    const plainRow = airportElement.classList.contains('airport-row-plain');
+    const rowCount = plainRow ? 9 : 3;
+    const lineData = [];
+    for (let i = 1; i <= rowCount; i++) {
+        lineData.push({ position: airportHeight * i / rowCount, className: 'forecast-bottom' });
+    }
 
     lineData.forEach((data) => {
         const line = document.createElement('div');
@@ -4196,7 +4289,7 @@ function updateAirportGridForModalInner(airportElement) {
     const hasTafData = tafRowContainer && !tafRowContainer.textContent.includes('没有有效的TAF数据');
 
     if (!hasTafData && tafRowContainer) {
-        const forecastHeight = airportHeight / 3;
+        const forecastHeight = plainRow ? airportHeight * 4 / 9 : airportHeight / 3;
         const overlay = document.createElement('div');
         overlay.className = 'no-taf-data-overlay';
         overlay.style.cssText = `
@@ -4265,7 +4358,7 @@ async function updateUnifiedAuth(token, userCode) {
             body: JSON.stringify({ token, userCode, source: 'MTWS' })
         });
     } catch (error) {
-        console.warn('同步 MTWS 登录态到 Nginx 失败', error);
+        console.warn('同步 FMSA 登录态到 Nginx 失败', error);
     }
 }
 
@@ -4282,7 +4375,7 @@ async function clearUnifiedAuth() {
 }
 
 // 监听控制台统一登录态：控制台后台会定期校验 token，过期时清空统一态。
-// MTWS 轮询发现统一态被清空（且自身仍认为已登录）时，自动登出并提示重新登录。
+// FMSA 轮询发现统一态被清空（且自身仍认为已登录）时，自动登出并提示重新登录。
 let unifiedAuthWatchTimer = null;
 function startUnifiedAuthWatch() {
     if (unifiedAuthWatchTimer) return;
@@ -4611,12 +4704,24 @@ function showUserInfo() {
     refreshSeatIdentity();
 }
 
+function canShowLoginUser() {
+    if (typeof hasAccess !== 'function' || !window.__accessIdentity) return true;
+    return hasAccess('login_user', 'display');
+}
+
 function paintSeatUserInfo() {
     const userCodeSpan = document.getElementById('user-code');
     const logoutBtn = document.getElementById('logout-btn');
     const ident = window.__seatIdentity || window.__accessIdentity;
     let role = ident && ident.role;
     if (!role) role = isLocalBrowserHost() ? 'local' : 'guest';
+
+    if (!canShowLoginUser()) {
+        const userInfoSection = document.getElementById('user-info-section');
+        if (userInfoSection) userInfoSection.style.display = 'none';
+        if (logoutBtn) logoutBtn.style.display = 'none';
+        return;
+    }
 
     if (role === 'local' || (ident && ident.is_local)) {
         if (userCodeSpan) userCodeSpan.textContent = currentUserCode || '未知用户';

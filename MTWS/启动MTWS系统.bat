@@ -1,13 +1,13 @@
 @echo off
 chcp 65001 >nul
-title MTWS系统启动器
+title FMSA系统启动器
 
 echo ========================================
-echo          MTWS系统启动器
+echo          FMSA系统启动器
 echo ========================================
 echo.
 
-echo 正在启动MTWS系统...
+echo 正在启动FMSA系统...
 echo.
 
 REM 进入Django项目目录

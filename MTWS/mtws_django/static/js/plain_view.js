@@ -370,13 +370,31 @@ function plainGanttText(taf, key) {
   const bars = cached && cached.translation ? cached.translation.bars : null;
   if (!bars) return '';
   const bar = bars[key];
-  return bar ? (bar.text || '') : '';
+  if (!bar) return '';
+  if (Object.prototype.hasOwnProperty.call(bar, 'gantt')) return bar.gantt || '';
+  return bar.text || '';
+}
+
+function plainElementTracks(taf) {
+  if (!taf) return null;
+  const cached = _plainTranslations[taf.airport_4code];
+  const tracks = cached && cached.translation ? cached.translation.tracks : null;
+  return tracks || null;
+}
+
+function plainTempoTracks(taf) {
+  if (!taf) return null;
+  const cached = _plainTranslations[taf.airport_4code];
+  const tracks = cached && cached.translation ? cached.translation.tempo_tracks : null;
+  return tracks || null;
 }
 
 window.startPlainView = startPlainView;
 window.stopPlainView = stopPlainView;
 window.renderPlainView = renderPlainView;
 window.plainGanttText = plainGanttText;
+window.plainElementTracks = plainElementTracks;
+window.plainTempoTracks = plainTempoTracks;
 window.plainDetailMetarRow = plainDetailMetarRow;
 window.paintPlainDetailMetar = paintPlainDetailMetar;
 window.refreshPlainTimezone = refreshPlainTimezone;

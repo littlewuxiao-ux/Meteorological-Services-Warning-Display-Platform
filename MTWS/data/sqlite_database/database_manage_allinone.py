@@ -230,7 +230,7 @@ class PagedEditDialog:
 class DatabaseViewer(tk.Tk):
     def _open_databases(self):
         found = []
-        for label, filename in (("配置库", "mtws_config.db"), ("生产库", "mtws_runtime.db")):
+        for label, filename in (("配置库", "mtws_config.db"), ("生产库", "mtws_runtime.db"), ("用户组库", "mtws_access.db")):
             path = os.path.join(DB_DIR, filename)
             if os.path.isfile(path):
                 found.append((label, sqlite3.connect(path)))

@@ -1327,6 +1327,9 @@ function showConfirmDialog(message) {
 // 检查并显示弹窗
 async function checkAndShowPopups() {
     try {
+        if (typeof ensurePopupDisplayPrefs === 'function') {
+            await ensurePopupDisplayPrefs();
+        }
         if (typeof hasAccess === 'function' && !hasAccess('metar_popup', 'display')) {
             dismissMetarPopupsForAccess();
             return;
@@ -1427,6 +1430,7 @@ function startPopupCheck() {
     if (snoozeRestoreBtn) {
         snoozeRestoreBtn.onclick = handleSnoozeRestore;
     }
+    bindPopupHistory();
 
     // 立即检查一次
     checkAndShowPopups();
@@ -1436,6 +1440,181 @@ function startPopupCheck() {
         clearInterval(popupCheckInterval);
     }
     popupCheckInterval = setInterval(checkAndShowPopups, 30000);
+}
+
+// ==================================
+// 处理记录（打开时读一次，不随轮询更新）
+// ==================================
+
+let popupHistoryPage = 1;
+let popupHistoryPages = 1;
+let popupHistoryBound = false;
+let popupHistoryCache = null;
+
+function escapeHtml(value) {
+    return String(value == null ? '' : value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
+function bindPopupHistory() {
+    const openBtn = document.getElementById('popup-history-btn');
+    if (openBtn && openBtn.dataset.historyBound !== '1') {
+        openBtn.dataset.historyBound = '1';
+        openBtn.addEventListener('click', function (event) {
+            event.preventDefault();
+            event.stopPropagation();
+            openPopupHistory(1);
+        });
+    }
+    if (popupHistoryBound) return;
+    popupHistoryBound = true;
+    const prev = document.getElementById('popup-history-prev');
+    const next = document.getElementById('popup-history-next');
+    if (prev) prev.addEventListener('click', () => openPopupHistory(popupHistoryPage - 1));
+    if (next) next.addEventListener('click', () => openPopupHistory(popupHistoryPage + 1));
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', bindPopupHistory);
+} else {
+    bindPopupHistory();
+}
+window.openPopupHistory = openPopupHistory;
+
+function historyBadgeHtml(badge) {
+    if (!badge || !badge.text) return '';
+    const level = badge.level === 'R' || badge.level === 'Y' || badge.level === 'G' ? badge.level : 'N';
+    return `<span class="warning-badge warning-${level}">${escapeHtml(badge.text)}</span>`;
+}
+
+function historyBadgeListHtml(badges) {
+    if (!Array.isArray(badges) || !badges.length) return '';
+    return badges.map(historyBadgeHtml).join('');
+}
+
+function historyBadgeTitle(badges) {
+    if (!Array.isArray(badges) || !badges.length) return '';
+    return badges.map((badge) => (badge && badge.text) || '').filter(Boolean).join(' ');
+}
+
+function historyTimeTitle(timestamp) {
+    if (!timestamp) return '';
+    const parts = formatTimestampPartsByMode(timestamp);
+    return [parts.date, parts.time].filter(Boolean).join(' ');
+}
+
+function historyKindHtml(text) {
+    if (!text) return '';
+    const cls = text === '拦截' ? 'popup-kind-block' : 'popup-kind-show';
+    return `<span class="popup-kind-mark ${cls}">${escapeHtml(text)}</span>`;
+}
+
+function historyTimeHtml(timestamp) {
+    if (!timestamp) return '';
+    const parts = formatTimestampPartsByMode(timestamp);
+    if (!parts.date && !parts.time) return '';
+    return `<div class="popup-history-time"><div>${escapeHtml(parts.date)}</div><div>${escapeHtml(parts.time)}</div></div>`;
+}
+
+function historyPeopleHtml(handlers, field) {
+    if (!Array.isArray(handlers) || !handlers.length) return '';
+    return handlers.map((person) => {
+        if (field === 'time') return historyTimeHtml(person.time);
+        return `<div>${escapeHtml(person.user || '')}</div>`;
+    }).join('');
+}
+
+async function openPopupHistory(page) {
+    const body = document.getElementById('popup-history-body');
+    const pageLabel = document.getElementById('popup-history-page');
+    if (!body) return;
+    if (typeof showModal === 'function') showModal('popup-history-modal');
+    body.innerHTML = '<div class="popup-history-empty">正在读取…</div>';
+    try {
+        const headers = { 'Content-Type': 'application/json' };
+        if (typeof currentToken !== 'undefined' && currentToken) {
+            headers['Authorization'] = `Bearer ${currentToken}`;
+        }
+        if (currentTimeMode === 'test') headers['X-User-Code'] = 'test';
+        else if (typeof currentUserCode !== 'undefined' && currentUserCode) {
+            headers['X-User-Code'] = currentUserCode;
+        }
+        const mode = currentTimeMode || 'current';
+        const response = await fetch(`/${mode}/api/popup-history/?page=${page || 1}`, { headers });
+        const result = await response.json();
+        if (!result.success) {
+            body.innerHTML = `<div class="popup-history-empty">${escapeHtml(result.error || '读取失败')}</div>`;
+            return;
+        }
+        popupHistoryPage = result.page || 1;
+        popupHistoryPages = result.pages || 1;
+        renderPopupHistory(result);
+    } catch (error) {
+        console.error('读取弹窗处理记录失败', error);
+        body.innerHTML = '<div class="popup-history-empty">读取失败</div>';
+    }
+    if (pageLabel) pageLabel.textContent = `${popupHistoryPage} / ${popupHistoryPages}`;
+    const prev = document.getElementById('popup-history-prev');
+    const next = document.getElementById('popup-history-next');
+    if (prev) prev.disabled = popupHistoryPage <= 1;
+    if (next) next.disabled = popupHistoryPage >= popupHistoryPages;
+}
+
+function historyCell(className, innerHtml, title) {
+    const cls = className ? ` class="${className}"` : '';
+    const tip = title ? ` title="${escapeHtml(title)}"` : '';
+    return `<td${cls}${tip}>${innerHtml || ''}</td>`;
+}
+
+function refreshPopupHistoryTimezone() {
+    const modal = document.getElementById('popup-history-modal');
+    if (!modal || modal.style.display !== 'block' || !popupHistoryCache) return;
+    renderPopupHistory(popupHistoryCache);
+}
+window.refreshPopupHistoryTimezone = refreshPopupHistoryTimezone;
+
+function renderPopupHistory(result) {
+    popupHistoryCache = result;
+    const body = document.getElementById('popup-history-body');
+    const rows = result.data || [];
+    if (!rows.length) {
+        body.innerHTML = '<div class="popup-history-empty">暂无实况弹窗记录</div>';
+        return;
+    }
+    const cols = ['c-airport', 'c-time', 'c-wind', 'c-vis', 'c-rvr', 'c-wx', 'c-cloud', 'c-temp', 'c-ws', 'c-trend', 'c-kind', 'c-kind', 'c-time', 'c-time', 'c-status', 'c-user'];
+    const head = ['机场', '报文发布时间', '风速', '能见度', 'RVR', '天气现象', '云高', '气温', '风切变', '趋势', '运行类', '停场类', '弹窗时间', '处理时间', '处理状态', '处理人'];
+    let html = '<table class="popup-history-table"><colgroup>';
+    cols.forEach((name) => { html += `<col class="${name}">`; });
+    html += '</colgroup><thead><tr>';
+    head.forEach((name) => { html += `<th>${name}</th>`; });
+    html += '</tr></thead><tbody>';
+    rows.forEach((row) => {
+        const badges = row.badges || {};
+        html += '<tr>';
+        const handlers = row.handlers || [];
+        html += historyCell('', escapeHtml(row.airport_4code || ''), row.airport_4code || '');
+        html += historyCell('', historyTimeHtml(row.metar_observation_time), historyTimeTitle(row.metar_observation_time));
+        html += historyCell('popup-history-badges', historyBadgeListHtml(badges.wsp), historyBadgeTitle(badges.wsp));
+        html += historyCell('popup-history-badges', historyBadgeListHtml(badges.vis), historyBadgeTitle(badges.vis));
+        html += historyCell('popup-history-badges', historyBadgeListHtml(badges.rvr), historyBadgeTitle(badges.rvr));
+        html += historyCell('popup-history-badges', historyBadgeListHtml(badges.ww), historyBadgeTitle(badges.ww));
+        html += historyCell('popup-history-badges', historyBadgeListHtml(badges.cld), historyBadgeTitle(badges.cld));
+        html += historyCell('popup-history-badges', historyBadgeListHtml(badges.t), historyBadgeTitle(badges.t));
+        html += historyCell('popup-history-badges', historyBadgeListHtml(badges.ws), historyBadgeTitle(badges.ws));
+        html += historyCell('popup-history-badges', historyBadgeListHtml(badges.tr), historyBadgeTitle(badges.tr));
+        html += historyCell('', historyKindHtml(row.operation), row.operation || '');
+        html += historyCell('', historyKindHtml(row.parking), row.parking || '');
+        html += historyCell('', historyTimeHtml(row.popup_time), historyTimeTitle(row.popup_time));
+        html += historyCell('', historyPeopleHtml(handlers, 'time'), handlers.map((person) => historyTimeTitle(person.time)).filter(Boolean).join('、'));
+        html += historyCell('', escapeHtml(row.status || ''), row.status || '');
+        html += historyCell('', historyPeopleHtml(handlers, 'user'), handlers.map((person) => person.user || '').filter(Boolean).join('、'));
+        html += '</tr>';
+    });
+    html += '</tbody></table>';
+    body.innerHTML = html;
 }
 
 // 停止弹窗检查
