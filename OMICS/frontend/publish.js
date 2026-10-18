@@ -148,6 +148,7 @@ const pbState = {
   specialConditionAirports: new Map(),
   specialConditionManual: false,
   noFlightAirports: new Set(),
+  manuallyEditedNoFlightNotes: new Set(),
   pendingSpecialConditions: new Map(),
   flightAirports: {},
   flightStatus: 'loading',
@@ -192,6 +193,7 @@ window.saveConfirmedDataToLocal = function() {
         specialConditionManual: pbState.specialConditionManual,
         manualAirportTypes: pbState.manualAirportTypes,
         manuallyRemovedAirports: Array.from(pbState.manuallyRemovedAirports || []) };
+    wrapper.manuallyEditedNoFlightNotes = Array.from(pbState.manuallyEditedNoFlightNotes || []);
     localStorage.setItem('sf_confirmed_forecasts_v3', JSON.stringify(wrapper));
     localStorage.setItem('sf_manually_removed_airports_v1', JSON.stringify(Array.from(pbState.manuallyRemovedAirports || [])));
 };
@@ -585,6 +587,7 @@ window.initPublishModule = async function() {
             pbState.specialConditionManual = !!savedWrapper.specialConditionManual;
             pbState.manualAirportTypes = savedWrapper.manualAirportTypes || {};
             if (Array.isArray(savedWrapper.manuallyRemovedAirports)) pbState.manuallyRemovedAirports = new Set(savedWrapper.manuallyRemovedAirports);
+            if (Array.isArray(savedWrapper.manuallyEditedNoFlightNotes)) pbState.manuallyEditedNoFlightNotes = new Set(savedWrapper.manuallyEditedNoFlightNotes);
             pbState.confirmedUser = savedWrapper.user;
             
             // 实时监听用户切换，如果变更则清空确认缓存
@@ -2027,7 +2030,8 @@ async function fetchActiveFlightAirports(startMs, endMs, setProgress) {
     const noFlightAirports = new Set(pbState.airportGroups.flatMap((group, index) =>
         pbState.selectedResidentGroups.has(String(index)) ? group.airports.filter(icao => !periodAirports.has(icao)) : []));
     pbState.noFlightAirports.forEach(icao => {
-        if (pbState.confirmedData[icao] || pbState.draftData[icao]) noFlightAirports.add(icao);
+        if (!pbState.manuallyEditedNoFlightNotes.has(icao)
+            && (pbState.confirmedData[icao] || pbState.draftData[icao])) noFlightAirports.add(icao);
     });
     pbState.noFlightAirports = noFlightAirports;
     setProgress?.(`匹配: 识别到 ${airports.length} 个运行机场`);
@@ -3141,7 +3145,8 @@ function renderPublishTableTriRow(apAnalysis, preserveDrafts = true) {
         const mainNoteInput = trEdit.querySelector('.edit-note-input');
         if (mainNoteInput) {
             const note = String(notesToRender[0] || '').replace(/(?:[，,；;\s]*无航班)/g, '').trim();
-            mainNoteInput.value = pbState.noFlightAirports.has(icao) ? [note === '/' ? '' : note, '无航班'].filter(Boolean).join('，') : note;
+            mainNoteInput.value = !pbState.manuallyEditedNoFlightNotes.has(icao) && pbState.noFlightAirports.has(icao)
+                ? [note === '/' ? '' : note, '无航班'].filter(Boolean).join('，') : note;
         }
         tbody.appendChild(trEdit);
         const natureCell = trEdit.querySelector('.col-airport-type');
@@ -3764,8 +3769,16 @@ function setupTableInteraction() {
       const noteInput = e.target.closest('.edit-note-input');
       if (noteInput) {
           const icao = noteInput.closest('tr')?.dataset.icao;
+          if (icao && noteInput.closest('tr')?.classList.contains('tr-edit')) {
+              const hasNoFlight = /(?:^|[，,；;\s])无航班(?:$|[，,；;\s])/.test(noteInput.value);
+              const previousNote = String(pbState.confirmedData[icao]?.notes?.[0] || pbState.draftData[icao]?.notes?.[0] || '');
+              const previouslyHadNoFlight = /(?:^|[，,；;\s])无航班(?:$|[，,；;\s])/.test(previousNote);
+              if (hasNoFlight && !previouslyHadNoFlight) pbState.manuallyEditedNoFlightNotes.delete(icao);
+              else if (!hasNoFlight && previouslyHadNoFlight) pbState.manuallyEditedNoFlightNotes.add(icao);
+          }
           if (noteInput.closest('tr')?.dataset.confirmed === 'true') persistConfirmedAirportFromDom(icao);
           else persistDraftAirportFromDom(icao);
+          window.saveConfirmedDataToLocal?.();
       }
   });
 
