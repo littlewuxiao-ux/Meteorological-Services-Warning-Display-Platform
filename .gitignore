@@ -31,21 +31,31 @@ backup/
 launcher_config.json
 OMICS/launcher_config.json
 MTWS/launcher_config.json
+FMSA/launcher_config.json
 config.json
 OMICS/config.json
 MTWS/config.json
+FMSA/config.json
 
 # ==== Local / sensitive runtime data ====
 personnel_mapping.json
 OMICS/personnel_mapping.json
 MTWS/data/sqlite_database/*.db
+FMSA/data/sqlite_database/*.db
 MTWS/data/sqlite_database/*.sqlite
+FMSA/data/sqlite_database/*.sqlite
 MTWS/data/sqlite_database/*.sqlite3
+FMSA/data/sqlite_database/*.sqlite3
 MTWS/data/sqlite_database/*.db-shm
+FMSA/data/sqlite_database/*.db-shm
 MTWS/data/sqlite_database/*.db-wal
+FMSA/data/sqlite_database/*.db-wal
 MTWS/.mtws_app_profile/
+FMSA/.mtws_app_profile/
 MTWS/logs/
+FMSA/logs/
 MTWS/mtws_django/response.json
+FMSA/fmsa_django/response.json
 
 # ==== IDE / OS ====
 .vscode/
@@ -58,9 +68,11 @@ Desktop.ini
 **/tools/nginx/logs/
 **/tools/nginx/temp/
 
-# ==== MTWS generated/runtime data ====
+# ==== FMSA generated/runtime data ====
 MTWS/data/raw/
+FMSA/data/raw/
 MTWS/mtws_django/staticfiles/
+FMSA/fmsa_django/staticfiles/
 
 # ==== IWBP seat-local runtime (do not upload; app code unchanged) ====
 IWBP/data/active-warnings.json

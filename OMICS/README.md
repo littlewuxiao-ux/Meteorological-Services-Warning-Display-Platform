@@ -72,7 +72,7 @@
 
 ### 运行方式
 - 统一启动器（推荐）：从交付根目录 `MTWS+OMICS` 双击 `MTWS+OMICS.bat`，或双击同目录的 `MTWS+OMICS.bat.lnk`。启动器同时管理 MTWS、OMICS 与后台 Nginx：MTWS 内部监听 `127.0.0.1:8001`，OMICS 内部监听 `127.0.0.1:8002`，Nginx 对外提供统一入口 `127.0.0.1:8000`。
-- 访问地址：MTWS 使用 `http://127.0.0.1:8000/mtws/`，OMICS 使用 `http://127.0.0.1:8000/omics/`。两个前端同源；扫码仍从各软件页面发起，但登录成功后的 token 统一交由 Nginx 管理，任一软件登录后其他软件可复用同一 token，减少不同 IP/入口重复登录导致的掉线。
+- 访问地址：FMSA 使用 `http://127.0.0.1:8000/fmsa/`，OMICS 使用 `http://127.0.0.1:8000/omics/`。两个前端同源；扫码仍从各软件页面发起，但登录成功后的 token 统一交由 Nginx 管理，任一软件登录后其他软件可复用同一 token，减少不同 IP/入口重复登录导致的掉线。
 - 启动器界面只显示两个业务面板：左侧 MTWS / 右侧 OMICS，各自状态灯 + 独立日志。Nginx 是基础设施服务，已隐藏单独监控面板，但仍会随「全部启动」「退出服务」和托盘右键退出一起启动/停止。
 - 中控台不再提供扫码登录功能；原登录入口改为说明框，只展示当前统一登录状态（目前谁登录、用户标识、登录来源/时间等）。
 - portable Nginx 随 OMICS 携带在 `OMICS/tools/nginx/nginx.exe`，目标电脑不需要额外安装 Nginx；运行时配置生成到 `%LOCALAPPDATA%/MTWS_OMICS_Nginx`，避免 Windows Nginx 中文路径问题。

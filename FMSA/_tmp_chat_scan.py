@@ -9,7 +9,7 @@ row = cur.execute(
 ).fetchone()
 data = json.loads(row[0])
 name = data.get("name") or ""
-open(r"D:\Projects\MTWS-OMICS\MTWS\_tmp_name.txt", "w", encoding="utf-8").write(name)
+open(r"D:\Projects\MTWS-OMICS\FMSA\_tmp_name.txt", "w", encoding="utf-8").write(name)
 print("name_len", len(name))
 print(name[:2000])
 print("--- keys ---")

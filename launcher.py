@@ -6,7 +6,7 @@
   ① FMSA 基于航班计划的气象监视告警系统   (Django, 内部端口 8001)
   ② OMICS 预报评定/发布工具 (Flask+Waitress, 内部端口 8002)
   ③ IWBP 气象智能业务工作台 (Node, 内部端口 8787)
-  ④ Nginx 统一入口          (对外端口 8000，/mtws/ /omics/ /iwbp/，局域网可访问)
+  ④ Nginx 统一入口          (对外端口 8000，/fmsa/ /omics/ /iwbp/，局域网可访问)
 
 设计要点：
   - 业务服务对称处理：subprocess.Popen + CREATE_NO_WINDOW（无黑框）+ 读 stdout
@@ -63,7 +63,8 @@ AUTH_BROKER_PORT = 19529     # Nginx 统一登录态接口后端（仅 127.0.0.1
 # SF 平台航班计划接口，用于轻量校验 token 是否仍然有效（与 MTWS validate-token 同源）。
 SF_FLIGHT_VALIDATE_URL = "http://sfa-wgw-inn.sf-airlines.com:1080/flight/flightSchedule/getByFlightDate"
 AUTH_VALIDATE_INTERVAL_MS = 60000   # 控制台后台校验 token 的间隔（毫秒）
-DEFAULT_MTWS_DIR = SCRIPT_DIR / "MTWS"
+
+DEFAULT_MTWS_DIR = SCRIPT_DIR / "FMSA"
 DEFAULT_OMICS_DIR = SCRIPT_DIR / "OMICS"
 DEFAULT_IWBP_DIR = SCRIPT_DIR / "IWBP"
 # 桌面/窗口图标（窗口标题栏、任务栏、桌面快捷方式）
@@ -284,11 +285,11 @@ OMICS_INLINE_CODE = 'import os, sys, argparse, logging\ntry:\n    sys.stdout.rec
 DEFAULT_CONFIG = {
     "mtws": {
         "name": "FMSA 监控系统",
-        "work_dir": str(DEFAULT_MTWS_DIR) if DEFAULT_MTWS_DIR.exists() else "",  # 指向 MTWS 程序根目录；兼容旧配置 manage_py
+        "work_dir": str(DEFAULT_MTWS_DIR) if DEFAULT_MTWS_DIR.exists() else "",
         "host": "127.0.0.1",
         "port": 8001,
         "home_path": "/current/",
-        "public_home_url": "http://127.0.0.1:8000/mtws/",
+        "public_home_url": "http://127.0.0.1:8000/fmsa/",
     },
     "omics": {
         "name": "OMICS 评定发布",
@@ -311,7 +312,7 @@ DEFAULT_CONFIG = {
         "host": "0.0.0.0",
         "port": 8000,
         "home_path": "/",
-        "public_home_url": "http://127.0.0.1:8000/mtws/",
+        "public_home_url": "http://127.0.0.1:8000/fmsa/",
         "exe_path": "",
     },
 }
@@ -341,6 +342,10 @@ def load_config():
     cfg["mtws"].pop("manage_py", None)
     if cfg["mtws"].get("name") in ("MTWS 监控系统", "MTWS"):
         cfg["mtws"]["name"] = "FMSA 监控系统"
+    nginx_port = int(cfg["nginx"].get("port", 8000) or 8000)
+    fmsa_home = f"http://127.0.0.1:{nginx_port}/fmsa/"
+    cfg["mtws"]["public_home_url"] = fmsa_home
+    cfg["nginx"]["public_home_url"] = fmsa_home
     # 兼容旧配置：如果已有 run_server 路径，自动折算为项目根目录
     if cfg["omics"].get("run_server") and not cfg["omics"].get("work_dir"):
         cfg["omics"]["work_dir"] = str(Path(cfg["omics"]["run_server"]).parent)
@@ -598,18 +603,18 @@ http {{
         server_name 127.0.0.1 localhost;
 
         location = / {{
-            return 302 /mtws/;
+            return 302 /fmsa/;
         }}
 
-        location /mtws/ {{
+        location /fmsa/ {{
             proxy_pass http://{mtws_host}:{mtws_port}/;
             proxy_http_version 1.1;
             proxy_set_header Host $host:$server_port;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
             proxy_set_header X-Forwarded-Proto $scheme;
-            proxy_redirect ~^(/.*)$ /mtws$1;
-            proxy_redirect http://{mtws_host}:{mtws_port}/ /mtws/;
+            proxy_redirect ~^(/.*)$ /fmsa$1;
+            proxy_redirect http://{mtws_host}:{mtws_port}/ /fmsa/;
         }}
 
         # 静态 JS/CSS 禁止浏览器缓存，避免席位电脑服务端更新后仍运行旧脚本。
@@ -691,16 +696,14 @@ http {{
 
 
 def resolve_mtws_manage_py(path):
-    """MTWS 配置既可指向 manage.py，也可指向 server_gui.py 所在的程序根目录。
+    """配置既可指向 manage.py，也可指向 server_gui.py 所在的程序根目录。
 
-    兼容交付目录结构：OMICS 项目目录与 MTWS 目录平级摆放时，即使未手动配置
-    MTWS 路径，也会自动尝试 ../MTWS/fmsa_django/manage.py（旧目录名 mtws_django 仍可用）。
+    OMICS 与 FMSA 平级时，未手动配置也会尝试 ../FMSA/fmsa_django/manage.py。
     """
     raw = (path or "").strip()
     paths = []
     if raw:
         paths.append(Path(raw))
-    # 默认交付结构：预报质量评定工具5.6(测试版) 与 MTWS 在同一上级目录
     paths.append(DEFAULT_MTWS_DIR)
 
     seen = set()
@@ -720,10 +723,8 @@ def resolve_mtws_manage_py(path):
         if p.is_dir():
             candidates = [
                 p / "fmsa_django" / "manage.py",
-                p / "mtws_django" / "manage.py",
                 p / "manage.py",
-                p.parent / "MTWS" / "fmsa_django" / "manage.py",
-                p.parent / "MTWS" / "mtws_django" / "manage.py",
+                p.parent / "FMSA" / "fmsa_django" / "manage.py",
             ]
             for c in candidates:
                 if c.exists():
@@ -737,7 +738,7 @@ def mtws_root_from_path(path):
         return None
     p = Path(path)
     if p.is_file() and p.name.lower() == "manage.py":
-        if p.parent.name.lower() in ("fmsa_django", "mtws_django"):
+        if p.parent.name.lower() == "fmsa_django":
             return p.parent.parent
         return p.parent
     if p.is_file() and p.name.lower() == "server_gui.py":
@@ -958,7 +959,7 @@ class ServicePanel:
                 nginx_port = int(self.cfg.get("port", 8000))
                 if lan_ip:
                     self.log(
-                        f"局域网入口 → http://{lan_ip}:{nginx_port}/mtws/  /omics/  /iwbp/（需放行 TCP {nginx_port}）",
+                        f"局域网入口 → http://{lan_ip}:{nginx_port}/fmsa/  /omics/  /iwbp/（需放行 TCP {nginx_port}）",
                         "info",
                     )
                 # Windows 版 nginx.exe 通常会拉起后台进程后立即返回；
@@ -2361,7 +2362,7 @@ class PathConfigDialog(ctk.CTkToplevel):
             self.hint.configure(text="⚠ 端口必须是数字。"); return
         nginx_port = self.cfg["nginx"]["port"]
         self.cfg["mtws"]["work_dir"] = mtws_path
-        self.cfg["mtws"]["public_home_url"] = f"http://127.0.0.1:{nginx_port}/mtws/"
+        self.cfg["mtws"]["public_home_url"] = f"http://127.0.0.1:{nginx_port}/fmsa/"
         self.cfg["mtws"].pop("manage_py", None)
         self.cfg["omics"]["work_dir"] = omics_path or str(SCRIPT_DIR)
         self.cfg["omics"]["public_home_url"] = f"http://127.0.0.1:{nginx_port}/omics/"
@@ -2374,7 +2375,7 @@ class PathConfigDialog(ctk.CTkToplevel):
         self.cfg["iwbp"]["public_home_url"] = f"http://127.0.0.1:{nginx_port}/iwbp/"
         self.cfg["nginx"].setdefault("name", "Nginx 统一入口")
         self.cfg["nginx"]["host"] = "0.0.0.0"
-        self.cfg["nginx"]["public_home_url"] = f"http://127.0.0.1:{nginx_port}/mtws/"
+        self.cfg["nginx"]["public_home_url"] = f"http://127.0.0.1:{nginx_port}/fmsa/"
         self.cfg["nginx"]["exe_path"] = self.nginx_entry.get().strip()
         self.app.apply_config(self.cfg, autostart=True)
         self.hint.configure(text="✓ 已保存，正在启动未运行的服务。", text_color=COLOR_GREEN)
