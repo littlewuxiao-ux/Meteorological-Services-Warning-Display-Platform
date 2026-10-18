@@ -289,7 +289,7 @@ DEFAULT_CONFIG = {
         "host": "127.0.0.1",
         "port": 8001,
         "home_path": "/current/",
-        "public_home_url": "http://127.0.0.1:8000/fmsa/current/",
+        "public_home_url": "http://127.0.0.1:8000/fmsa/",
     },
     "omics": {
         "name": "OMICS 评定发布",
@@ -312,7 +312,7 @@ DEFAULT_CONFIG = {
         "host": "0.0.0.0",
         "port": 8000,
         "home_path": "/",
-        "public_home_url": "http://127.0.0.1:8000/fmsa/current/",
+        "public_home_url": "http://127.0.0.1:8000/fmsa/",
         "exe_path": "",
     },
 }
@@ -343,7 +343,7 @@ def load_config():
     if cfg["mtws"].get("name") in ("MTWS 监控系统", "MTWS"):
         cfg["mtws"]["name"] = "FMSA 监控系统"
     nginx_port = int(cfg["nginx"].get("port", 8000) or 8000)
-    fmsa_home = f"http://127.0.0.1:{nginx_port}/fmsa/current/"
+    fmsa_home = f"http://127.0.0.1:{nginx_port}/fmsa/"
     cfg["mtws"]["public_home_url"] = fmsa_home
     cfg["nginx"]["public_home_url"] = fmsa_home
     # 兼容旧配置：如果已有 run_server 路径，自动折算为项目根目录
@@ -603,24 +603,7 @@ http {{
         server_name 127.0.0.1 localhost;
 
         location = / {{
-            return 302 /fmsa/current/;
-        }}
-
-        location = /fmsa {{
-            return 302 /fmsa/current/;
-        }}
-
-        location = /fmsa/ {{
-            return 302 /fmsa/current/;
-        }}
-
-        # 改名前的书签：/mtws/current → /fmsa/current
-        location = /mtws {{
-            return 302 /fmsa/current/;
-        }}
-
-        location /mtws/ {{
-            rewrite ^/mtws/(.*)$ /fmsa/$1 redirect;
+            return 302 /fmsa/;
         }}
 
         location /fmsa/ {{
@@ -863,7 +846,7 @@ class ServicePanel:
         if self.running:
             return
 
-        # 端口已被占用 → 接管模式。Nginx 先重写并重载配置，旧书签 /mtws/current 才会跳到 /fmsa/current/。
+        # 端口已被占用 → 接管模式。Nginx 先按当前代码重载，避免继续用旧配置。
         if is_port_in_use(self.port):
             if self.key == "nginx":
                 self._reload_running_nginx()
@@ -1000,7 +983,7 @@ class ServicePanel:
                 nginx_port = int(self.cfg.get("port", 8000))
                 if lan_ip:
                     self.log(
-                        f"局域网入口 → http://{lan_ip}:{nginx_port}/fmsa/current/  /omics/  /iwbp/（需放行 TCP {nginx_port}）",
+                        f"局域网入口 → http://{lan_ip}:{nginx_port}/fmsa/  /omics/  /iwbp/（需放行 TCP {nginx_port}）",
                         "info",
                     )
                 # Windows 版 nginx.exe 通常会拉起后台进程后立即返回；
@@ -2403,7 +2386,7 @@ class PathConfigDialog(ctk.CTkToplevel):
             self.hint.configure(text="⚠ 端口必须是数字。"); return
         nginx_port = self.cfg["nginx"]["port"]
         self.cfg["mtws"]["work_dir"] = mtws_path
-        self.cfg["mtws"]["public_home_url"] = f"http://127.0.0.1:{nginx_port}/fmsa/current/"
+        self.cfg["mtws"]["public_home_url"] = f"http://127.0.0.1:{nginx_port}/fmsa/"
         self.cfg["mtws"].pop("manage_py", None)
         self.cfg["omics"]["work_dir"] = omics_path or str(SCRIPT_DIR)
         self.cfg["omics"]["public_home_url"] = f"http://127.0.0.1:{nginx_port}/omics/"
@@ -2416,7 +2399,7 @@ class PathConfigDialog(ctk.CTkToplevel):
         self.cfg["iwbp"]["public_home_url"] = f"http://127.0.0.1:{nginx_port}/iwbp/"
         self.cfg["nginx"].setdefault("name", "Nginx 统一入口")
         self.cfg["nginx"]["host"] = "0.0.0.0"
-        self.cfg["nginx"]["public_home_url"] = f"http://127.0.0.1:{nginx_port}/fmsa/current/"
+        self.cfg["nginx"]["public_home_url"] = f"http://127.0.0.1:{nginx_port}/fmsa/"
         self.cfg["nginx"]["exe_path"] = self.nginx_entry.get().strip()
         self.app.apply_config(self.cfg, autostart=True)
         self.hint.configure(text="✓ 已保存，正在启动未运行的服务。", text_color=COLOR_GREEN)
