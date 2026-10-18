@@ -286,14 +286,13 @@ class MarksAlertCalculator:
         end_ms = self._ddhh_to_ms(end_str)
         if start_ms is None or end_ms is None:
             return
-        end_bound = end_ms + HOUR_MS
         for m in range(5):
             if expand:
                 lo = start_ms - m * HOUR_MS
-                hi = end_bound + m * HOUR_MS
+                hi = end_ms + m * HOUR_MS
             else:
                 lo = start_ms
-                hi = end_bound
+                hi = end_ms
             out[m].append((lo, hi, alert, False, 'taf'))
 
     def _add_becmg_gaps(self, out, taf, change_groups: List[Dict]):

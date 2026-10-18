@@ -266,19 +266,16 @@ MTWS_CONFIG = {
             'url_prefix': 'current',
         },
         'test': {
-            'name': '测试时间模式', 
-            'description': '使用固定测试时间进行处理',
+            'name': '测试时间模式',
+            'description': '按有航班机场 min(at)+1.5h 自动识别；无数据时用 fixed_time_utc',
             'url_prefix': 'test',
-            'fixed_time_utc': '2025-09-23 21:40:00',  # UTC时间
+            'fixed_time_utc': '2025-09-23 21:40:00',  # 无航班数据时的 UTC 回退
         }
     },
     
     # 数据源配置
     'DATA_SOURCE': {
-        'type': 'api',  # 'api'
-        'csv_config': {
-            'data_path': BASE_DIR.parent / 'data' / 'raw'
-        },
+        'type': 'api',
         'api_config': {
             'flight_endpoint': '',
             'metar_endpoint': '',

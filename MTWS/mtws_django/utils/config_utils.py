@@ -131,7 +131,6 @@ class ConfigManager:
         """
         return {
             'type': self.get_config('data_source', 'type', 'api'),
-            'csv_path': self.get_config('data_source', 'csv_path', './data/raw'),
             'api_endpoints': self.get_config('data_source', 'api_endpoints', {}),
             'api_auth_token': self.get_config('data_source', 'api_auth_token', ''),
             'api_timeout': self.get_config('data_source', 'api_timeout', 30),

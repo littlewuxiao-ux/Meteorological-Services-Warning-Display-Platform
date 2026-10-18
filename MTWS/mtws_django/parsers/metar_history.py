@@ -7,7 +7,7 @@ import re
 import logging
 import requests
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger('mtws.parsers')
 
@@ -27,13 +27,73 @@ _FT_RVR_FACTOR = 1 / 3  # 英尺 RVR → 米（与现有 _parse_rvr_min_value �
 # ------------------------------------------------------------------
 
 def _build_headers(time_mode: str, token: Optional[str]) -> dict:
-    """构造与 api_adapter.py 一致的请求头。"""
-    if time_mode == 'current':
-        return {'token': token or '', 'Content-Type': 'application/json'}
+    """内网历史接口请求头。"""
+    return {'token': token or '', 'Content-Type': 'application/json'}
+
+
+def history_items_from_db(
+    airport_code: str,
+    ws_types=None,
+    start_ms: Optional[int] = None,
+    end_ms: Optional[int] = None,
+    limit: int = 200,
+) -> List[Dict[str, Any]]:
+    """test 模式：从本地 metar/taf 表组装与历史接口相同的报文列表。"""
+    from parsers.models import Metar, Taf
+
+    code = str(airport_code or '').strip().upper()
+    wanted = {str(t).upper() for t in (ws_types or ['SA', 'SP', 'FC', 'FT'])}
+    items = []
+    if not code:
+        return items
+
+    if wanted & {'SA', 'SP'}:
+        qs = Metar.objects.filter(airport_4code=code)
+        if start_ms is not None:
+            qs = qs.filter(metar_observation_time__gte=start_ms)
+        if end_ms is not None:
+            qs = qs.filter(metar_observation_time__lte=end_ms)
+        for row in qs.order_by('-metar_observation_time')[:limit]:
+            wtype = str(row.metar_type or 'SA').upper().strip()
+            if wtype not in ('SA', 'SP'):
+                wtype = 'SA'
+            if wtype not in wanted:
+                continue
+            ts = row.metar_observation_time or row.created_at or 0
+            items.append({
+                'content': row.metar_content or '',
+                'wtype': wtype,
+                'receiveTime': ts,
+            })
+
+    if wanted & {'FC', 'FT'}:
+        qs = Taf.objects.filter(airport_4code=code)
+        if start_ms is not None:
+            qs = qs.filter(taf_observation_time__gte=start_ms)
+        if end_ms is not None:
+            qs = qs.filter(taf_observation_time__lte=end_ms)
+        for row in qs.order_by('-taf_observation_time')[:limit]:
+            wtype = str(row.taf_type or 'FT').upper().strip()
+            if wtype not in ('FC', 'FT'):
+                wtype = 'FT'
+            if wtype not in wanted:
+                continue
+            ts = row.taf_observation_time or 0
+            items.append({
+                'content': row.taf_content or '',
+                'wtype': wtype,
+                'receiveTime': ts,
+            })
+
+    items.sort(key=lambda x: x.get('receiveTime') or 0, reverse=True)
+    return items
+
+
+def history_reports_from_db(airport_code: str, metar_taf_num: int = 3) -> Dict[str, List[Dict]]:
+    items = history_items_from_db(airport_code, ws_types=['SA', 'SP', 'FC', 'FT'])
     return {
-        'systemKey': '629dd582-f044-41ec-aebb-1f352e26ca92',
-        'accessKey': 'api2_935b8fc3-a8dc-41d5-a6d0-1c91b1d3e209',
-        'Content-Type': 'application/json',
+        'metar_reports': [x for x in items if x.get('wtype') in ('SA', 'SP')][:metar_taf_num],
+        'taf_reports': [x for x in items if x.get('wtype') in ('FC', 'FT')][:metar_taf_num],
     }
 
 
@@ -223,13 +283,22 @@ def _fetch_history_obj(
     调用与趋势图相同的原始历史报文接口（airportMetList），返回 (obj列表, now_ms, 是否成功)。
     失败时 obj 为空列表且成功标志为 False。可传入 start_ms/end_ms 覆盖默认的近 72 小时窗口。
     """
-    now_ms = int(datetime.now(tz=timezone.utc).timestamp() * 1000)
+    if time_mode == 'test':
+        from utils.time_manager import TimeManager
+        now_ms = int(TimeManager.get_current_time_utc('test').timestamp() * 1000)
+    else:
+        now_ms = int(datetime.now(tz=timezone.utc).timestamp() * 1000)
     end = int(end_ms if end_ms is not None else now_ms)
     start = int(start_ms if start_ms is not None else end - 72 * 3_600_000)
     if start > end:
         start, end = end, start
     if not ws_types:
         ws_types = ['SA', 'SP']
+
+    if time_mode == 'test':
+        obj = history_items_from_db(airport_code, ws_types=ws_types, start_ms=start, end_ms=end)
+        logger.info('test 模式历史报文读库 [%s] %s: %s 条', airport_code, ws_types, len(obj))
+        return obj, now_ms, True
 
     payload = {
         'code4s': airport_code,

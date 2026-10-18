@@ -62,6 +62,36 @@ class ParsingManager:
         with self._cas_log_context(), self._settings_context():
             return self._run_all_parsers_impl(time_mode)
 
+    def _local_db_only(self) -> bool:
+        return self.time_mode == 'test'
+
+    def _skip_external_ingest_result(self, start_time, mode, update_types=None) -> Dict[str, Any]:
+        msg = 'test模式只读本地数据库，未请求外部数据'
+        logger.info(msg)
+        skip = {'success': True, 'message': msg, 'record_count': 0, 'skipped_external': True}
+        types = list(update_types) if update_types else ['aircraft_parking', 'flight', 'metar', 'taf']
+        parsers = {}
+        for name in types:
+            if name == 'nwp':
+                parsers[name] = dict(skip)
+                continue
+            parsers[name] = dict(skip)
+        results = {
+            'success': True,
+            'start_time': start_time,
+            'parsers': parsers,
+            'mode': mode,
+            'message': msg,
+        }
+        if update_types is not None:
+            results['update_types'] = update_types
+        try:
+            from utils.airport_scope import get_monitored_airport_codes
+            results['active_airports'] = get_monitored_airport_codes()
+        except Exception:
+            results['active_airports'] = []
+        return self._finalize_results(results, start_time)
+
     def _run_all_parsers_impl(self, time_mode=None) -> Dict[str, Any]:
         """
         运行所有解析器 - 保留原有接口兼容性
@@ -78,6 +108,8 @@ class ParsingManager:
         logger.info(f"{'='*20} 整体更新  时间：{current_time} {'='*20}")
         
         start_time = datetime.now()
+        if self._local_db_only():
+            return self._skip_external_ingest_result(start_time, 'all')
         
         results = {
             'success': True,
@@ -181,6 +213,8 @@ class ParsingManager:
         logger.info(f"{'='*20} 更新时间：{current_time} 更新内容：【停场解析】【航班】【实况】【预报】 {'='*20}")
         
         start_time = datetime.now()
+        if self._local_db_only():
+            return self._skip_external_ingest_result(start_time, 'sequential')
         
         results = {
             'success': True,
@@ -413,6 +447,13 @@ class ParsingManager:
             Dict: 解析结果
         """
         logger.info(f"开始运行{parser_type}解析器")
+        if self._local_db_only():
+            return {
+                'success': True,
+                'message': 'test模式只读本地数据库，未请求外部数据',
+                'record_count': 0,
+                'skipped_external': True,
+            }
         
         try:
             if parser_type == 'flight':
@@ -485,6 +526,8 @@ class ParsingManager:
         logger.info(f"{'='*20} 更新时间：{current_time} 更新内容：{update_content} {'='*20}")
         
         start_time = datetime.now()
+        if self._local_db_only():
+            return self._skip_external_ingest_result(start_time, 'selective', update_types)
         
         results = {
             'success': True,

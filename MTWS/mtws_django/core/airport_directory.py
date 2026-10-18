@@ -145,6 +145,27 @@ def ensure_flight_airports(codes, time_mode='current', token=None):
     if not wanted:
         return
     rules = prefix_rules()
+    if time_mode == 'test':
+        existing = {
+            row.airport_4code: row
+            for row in AirportInfo.objects.filter(airport_4code__in=wanted)
+        }
+        for code in wanted:
+            airport = existing.get(code)
+            if airport is None:
+                airport = AirportInfo(airport_4code=code, catalog_only=False)
+                apply_prefix_if_blank(airport, rules)
+                airport.save()
+                continue
+            updates = []
+            if airport.catalog_only:
+                airport.catalog_only = False
+                updates.append('catalog_only')
+            if apply_prefix_if_blank(airport, rules):
+                updates.extend(['classification', 'area'])
+            if updates:
+                airport.save(update_fields=list(dict.fromkeys(updates)))
+        return
     existing = {
         row.airport_4code: row
         for row in AirportInfo.objects.filter(airport_4code__in=wanted)

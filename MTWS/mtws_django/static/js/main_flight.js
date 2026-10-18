@@ -186,6 +186,27 @@ function marksWarningColor(level) {
     return 'rgba(149, 165, 166, 0.8)';
 }
 
+/** 聚合框按各航班自身告警分段填色，交界约 5px 渐变。 */
+function marksClusterFillCss(members, boxLeftPx, boxWidthPx) {
+    const colors = (members || []).map((m) => marksWarningColor(marksEventWarning(m.event)));
+    const fallback = colors[0] || marksWarningColor('N');
+    if (colors.length <= 1 || colors.every((c) => c === fallback)) {
+        return { color: fallback, image: 'none' };
+    }
+    const w = Math.max(Number(boxWidthPx) || 0, 1);
+    const left = Number(boxLeftPx) || 0;
+    const stops = [`${colors[0]} 0%`];
+    for (let i = 0; i < members.length - 1; i++) {
+        if (colors[i] === colors[i + 1]) continue;
+        const midPx = (members[i].centerPx + members[i + 1].centerPx) / 2;
+        const p = Math.max(0, Math.min(100, ((midPx - left) / w) * 100)).toFixed(4);
+        stops.push(`${colors[i]} calc(${p}% - 2.5px)`);
+        stops.push(`${colors[i + 1]} calc(${p}% + 2.5px)`);
+    }
+    stops.push(`${colors[colors.length - 1]} 100%`);
+    return { color: fallback, image: `linear-gradient(to right, ${stops.join(', ')})` };
+}
+
 function marksWarningRank(level) {
     return ({ R: 4, Y: 3, G: 2, N: 1 }[level] || 1);
 }
@@ -698,7 +719,6 @@ function createMarksFlightTimeline(flightData, airportCode) {
                 leftPct = ((center - boxW / 2) / axisPx) * 100;
                 widthPct = (boxW / axisPx) * 100;
             }
-            const color = marksWarningColor(cl.warning);
             const tipPayload = eventsIn.map((ev) => marksTooltipPayload(ev, track));
             const tipAttr = _marksEscHtml(JSON.stringify(tipPayload));
             const trackClass = track === 'dep'
@@ -707,6 +727,7 @@ function createMarksFlightTimeline(flightData, airportCode) {
             // 簇内每个航班在对应时刻各画上下短线；单票则居中一根
             const boxLeftPx = (leftPct / 100) * axisPx;
             const boxWidthPx = Math.max((widthPct / 100) * axisPx, 1);
+            const fill = marksClusterFillCss(cl.members, boxLeftPx, boxWidthPx);
             const ticksHtml = cl.members.map((m) => {
                 const rel = ((m.centerPx - boxLeftPx) / boxWidthPx) * 100;
                 const left = Math.max(0, Math.min(100, rel));
@@ -715,7 +736,7 @@ function createMarksFlightTimeline(flightData, airportCode) {
             }).join('');
             return `
                 <div class="flight-mark ${trackClass}${cl.members.length > 1 ? ' flight-mark-cluster' : ''}"
-                     style="left:${leftPct}%;width:${widthPct}%;--mark-bg:${color};background-color:${color};"
+                     style="left:${leftPct}%;width:${widthPct}%;--mark-bg:${fill.color};background-color:${fill.color};background-image:${fill.image};"
                      data-airport="${_marksEscHtml(airportCode || '')}"
                      data-marks-tip="${tipAttr}">
                     ${ticksHtml}

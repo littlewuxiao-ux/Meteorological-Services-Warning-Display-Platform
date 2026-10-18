@@ -442,30 +442,31 @@ def airport_history_reports(request, airport_code, time_mode='current'):
                         'error': '未找到认证token，请先在本机登录'
                     }, status=401)
         
-        # 获取API适配器
         user_code = request.headers.get('X-User-Code')
         with cas_user_context(user_code):
-            adapter = AdapterFactory.create_adapter(time_mode=time_mode, token=token)
-
-            # 调用历史报文接口，增加重试机制
             history_data = None
-            max_retries = 3
-            for attempt in range(max_retries):
-                try:
-                    history_data = adapter.get_history_reports(airport_code)
-                    if history_data and (history_data.get('metar_reports') or history_data.get('taf_reports')):
-                        break  # 成功获取到数据，退出重试
-                    elif attempt < max_retries - 1:
-                        logger.warning(f"第{attempt + 1}次尝试获取历史报文数据为空，将重试")
-                        import time
-                        time.sleep(0.5)  # 等待0.5秒后重试
-                except Exception as e:
-                    logger.error(f"第{attempt + 1}次尝试获取历史报文失败: {e}")
-                    if attempt < max_retries - 1:
-                        import time
-                        time.sleep(0.5)  # 等待0.5秒后重试
-                    else:
-                        history_data = {'metar_reports': [], 'taf_reports': []}
+            if time_mode == 'test':
+                from parsers.metar_history import history_reports_from_db
+                history_data = history_reports_from_db(airport_code)
+            else:
+                adapter = AdapterFactory.create_adapter(time_mode=time_mode, token=token)
+                max_retries = 3
+                for attempt in range(max_retries):
+                    try:
+                        history_data = adapter.get_history_reports(airport_code)
+                        if history_data and (history_data.get('metar_reports') or history_data.get('taf_reports')):
+                            break
+                        elif attempt < max_retries - 1:
+                            logger.warning(f"第{attempt + 1}次尝试获取历史报文数据为空，将重试")
+                            import time
+                            time.sleep(0.5)
+                    except Exception as e:
+                        logger.error(f"第{attempt + 1}次尝试获取历史报文失败: {e}")
+                        if attempt < max_retries - 1:
+                            import time
+                            time.sleep(0.5)
+                        else:
+                            history_data = {'metar_reports': [], 'taf_reports': []}
 
         if not history_data:
             history_data = {'metar_reports': [], 'taf_reports': []}
@@ -1685,9 +1686,10 @@ def _get_system_airport_search_data(code, time_mode='current', token=None):
         logger.error(f"补齐机场 {code} 资料失败: {exc}")
     airport = AirportInfo.objects.filter(airport_4code=code).first()
 
-    flight_data = Flight.objects.filter(
-        airport_4code=code, has_flight=True
-    ).order_by('-created_at').first()
+    flight_qs = Flight.objects.filter(airport_4code=code)
+    if time_mode != 'test':
+        flight_qs = flight_qs.filter(has_flight=True)
+    flight_data = flight_qs.order_by('-created_at').first()
 
     metar_qs = Metar.objects.filter(
         airport_4code=code, data_status__in=['N', 'C']
@@ -1892,7 +1894,7 @@ def airport_search(request, time_mode='current'):
             for code in codes:
                 try:
                     is_system = Flight.objects.filter(airport_4code=code, has_flight=True).exists()
-                    if is_system:
+                    if time_mode == 'test' or is_system:
                         data = _get_system_airport_search_data(code, time_mode, token)
                     else:
                         data = _get_external_airport_search_data(code, time_mode, token)
@@ -1924,6 +1926,8 @@ def _ingest_carrier_airports(request, time_mode, user_code, airports):
     from parsers.taf_parser import TafParser
     from utils.user_settings import use_settings_user
 
+    if time_mode == 'test':
+        return
     token = _request_token(request, time_mode)
     try:
         with use_settings_user(user_code):

@@ -22,7 +22,7 @@ class AdapterFactory:
     }
     
     @classmethod
-    def create_adapter(cls, adapter_type: str = None, config: Dict[str, Any] = None, time_mode: str = 'test', token: str = None) -> BaseDataAdapter:
+    def create_adapter(cls, adapter_type: str = None, config: Dict[str, Any] = None, time_mode: str = 'current', token: str = None) -> BaseDataAdapter:
         """
         创建数据适配器实例
         
@@ -54,12 +54,11 @@ class AdapterFactory:
         if adapter_type not in cls.ADAPTER_TYPES:
             raise ValueError(f"不支持的适配器类型: {adapter_type}")
         
-        # 创建适配器实例
+        if time_mode == 'test':
+            raise ValueError('test 模式只读本地数据库，不创建外部数据适配器')
+
         adapter_class = cls.ADAPTER_TYPES[adapter_type]
-        
-        # 创建API适配器实例
         adapter = adapter_class(config, time_mode, token)
-        
         logger.info(f"创建数据适配器成功: {adapter_type}, 时间模式: {time_mode}")
         return adapter
     

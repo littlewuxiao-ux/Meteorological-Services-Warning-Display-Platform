@@ -20,13 +20,13 @@ logger = logging.getLogger('mtws.data_adapters')
 class APIDataAdapter(BaseDataAdapter):
     """API数据源适配器"""
     
-    def __init__(self, config: Dict[str, Any] = None, time_mode: str = 'test', token: str = None):
+    def __init__(self, config: Dict[str, Any] = None, time_mode: str = 'current', token: str = None):
         """
         初始化API数据适配器
         
         Args:
             config: 配置参数（暂时使用硬编码配置）
-            time_mode: 时间模式，'test' 或 'current'
+            time_mode: 仅 current 使用本适配器
             token: current模式下的认证token
         """
         super().__init__(config or {})
@@ -35,22 +35,11 @@ class APIDataAdapter(BaseDataAdapter):
         self.token = token
         self.timeout = 30
         
-        # 根据时间模式设置不同的API配置
-        if time_mode == 'current':
-            # current模式：使用内网域名和token认证
-            self.base_url = "http://sfa-wgw-inn.sf-airlines.com:1080"
-            self.headers = {
-                'token': token or '',
-                'Content-Type': 'application/json'
-            }
-        else:
-            # test模式：使用原有配置
-            self.base_url = "https://mock.apipost.net/mock/4fd54a79241c000"
-            self.headers = {
-                'systemKey': '629dd582-f044-41ec-aebb-1f352e26ca92',
-                'accessKey': 'api2_935b8fc3-a8dc-41d5-a6d0-1c91b1d3e209',
-                'Content-Type': 'application/json'
-            }
+        self.base_url = "http://sfa-wgw-inn.sf-airlines.com:1080"
+        self.headers = {
+            'token': token or '',
+            'Content-Type': 'application/json'
+        }
         
         # API端点
         self.endpoints = {

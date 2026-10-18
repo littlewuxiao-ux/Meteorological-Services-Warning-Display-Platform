@@ -13,25 +13,59 @@ logger = logging.getLogger('mtws.utils')
 
 class TimeManager:
     """统一时间管理器"""
+
+    _TEST_MIN_AT_OFFSET = timedelta(hours=1.5)
+
+    @staticmethod
+    def _fallback_test_time_utc():
+        try:
+            time_str = settings.MTWS_CONFIG['TIME_MODES']['test']['fixed_time_utc']
+            naive_dt = datetime.fromisoformat(time_str)
+            return naive_dt.replace(tzinfo=dt_timezone.utc)
+        except (KeyError, ValueError) as e:
+            logger.error(f"获取测试时间配置失败: {e}")
+            naive_dt = datetime(2025, 5, 10, 3, 25, 0)
+            return naive_dt.replace(tzinfo=dt_timezone.utc)
+
+    @staticmethod
+    def _test_time_from_flights():
+        """has_flight=True 的全库 min(at)，再加 1.5 小时。"""
+        from parsers.models import Flight
+
+        min_at = None
+        for events in Flight.objects.filter(has_flight=True).values_list('events', flat=True):
+            if not isinstance(events, list):
+                continue
+            for ev in events:
+                if not isinstance(ev, dict):
+                    continue
+                try:
+                    at = int(ev.get('at'))
+                except (TypeError, ValueError):
+                    continue
+                if at <= 0:
+                    continue
+                if min_at is None or at < min_at:
+                    min_at = at
+        if min_at is None:
+            return None
+        return datetime.fromtimestamp(
+            min_at / 1000.0, tz=dt_timezone.utc
+        ) + TimeManager._TEST_MIN_AT_OFFSET
     
     @staticmethod
     def get_test_time_utc():
         """
-        获取测试模式的UTC时间
-        
-        Returns:
-            datetime: UTC时间对象（aware datetime）
+        获取测试模式的UTC时间：有航班机场 events.at 的最小值 + 1.5 小时。
+        库中取不到时回退到配置里的 fixed_time_utc。
         """
         try:
-            time_str = settings.MTWS_CONFIG['TIME_MODES']['test']['fixed_time_utc']
-            naive_dt = datetime.fromisoformat(time_str)
-            # 将 naive datetime 转换为 aware datetime（UTC时区）
-            return naive_dt.replace(tzinfo=dt_timezone.utc)
-        except (KeyError, ValueError) as e:
-            logger.error(f"获取测试时间配置失败: {e}")
-            # 返回默认测试时间（aware datetime）
-            naive_dt = datetime(2025, 5, 10, 3, 25, 0)
-            return naive_dt.replace(tzinfo=dt_timezone.utc)
+            derived = TimeManager._test_time_from_flights()
+            if derived is not None:
+                return derived
+        except Exception as e:
+            logger.warning(f"从航班数据推导测试时间失败，改用配置: {e}")
+        return TimeManager._fallback_test_time_utc()
     
     @staticmethod
     def get_test_time_beijing():

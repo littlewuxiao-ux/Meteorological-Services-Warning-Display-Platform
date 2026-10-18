@@ -1569,7 +1569,7 @@ class TafParser:
                 return result
             
             # 2. 获取数据适配器并读取数据
-            adapter = AdapterFactory.get_adapter('taf')
+            adapter = AdapterFactory.create_adapter(time_mode=self.time_mode, token=self.token)
             taf_data = adapter.get_taf_data(active_airports)
             
             # 2. 识别API中缺失的机场并删除其数据库记录
