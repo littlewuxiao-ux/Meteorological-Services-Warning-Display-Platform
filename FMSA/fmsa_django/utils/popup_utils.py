@@ -9,7 +9,8 @@ import logging
 from typing import Dict, List, Optional
 
 from django.conf import settings
-from django.db.models import Q
+from django.db import transaction
+from django.db.models import Max, Q
 from django.utils import timezone
 
 from core.models import AirportInfo, AircraftParkingInfo, WeatherTypeInfo, PopupSettings
@@ -308,6 +309,56 @@ def classify_popup_record(operation_popup, parking_popup, records, popup_time, n
     return '已过期', []
 
 
+def _latest_parking_codes() -> set:
+    """最新一条停场记录里的机场代码。全列表共用这一次查询。"""
+    latest = AircraftParkingInfo.objects.order_by('-parse_time').first()
+    if not latest or not latest.airport_4code:
+        return set()
+    parking_list = latest.airport_4code
+    if isinstance(parking_list, str):
+        try:
+            parking_list = json.loads(parking_list)
+        except (TypeError, ValueError):
+            return set()
+    if not isinstance(parking_list, (list, tuple, set)):
+        return set()
+    return {str(code) for code in parking_list if code}
+
+
+def _latest_metar_identity(airport_codes: List[str]) -> Dict[str, tuple]:
+    """每个机场最新一份实况的观测时间和 sqc，含未形成弹窗的报文。"""
+    if not airport_codes:
+        return {}
+    obs_rows = (
+        Metar.objects.filter(airport_4code__in=airport_codes)
+        .values('airport_4code')
+        .annotate(latest_obs=Max('metar_observation_time'))
+    )
+    obs_map = {
+        row['airport_4code']: row['latest_obs']
+        for row in obs_rows
+        if row['latest_obs'] is not None
+    }
+    if not obs_map:
+        return {}
+    matched = None
+    for code, obs in obs_map.items():
+        clause = Q(airport_4code=code, metar_observation_time=obs)
+        matched = clause if matched is None else (matched | clause)
+    identity = {}
+    rows = (
+        Metar.objects.filter(matched)
+        .order_by('-sqc')
+        .values('airport_4code', 'sqc', 'metar_observation_time')
+    )
+    for row in rows:
+        identity.setdefault(
+            row['airport_4code'],
+            (row['metar_observation_time'], row['sqc']),
+        )
+    return identity
+
+
 class PopupManager:
     """弹窗管理器"""
 
@@ -335,27 +386,37 @@ class PopupManager:
                 for t in WeatherTypeInfo.objects.all()
             }
 
-            result = []
+            kept = []
             for metar in popups:
                 if metar.popup_time:
                     time_diff = current_time_ms - metar.popup_time
                     if time_diff > validity_threshold_ms:
                         continue
-                airport_info = AirportInfo.objects.filter(airport_4code=metar.airport_4code).first()
+                kept.append(metar)
+            if not kept:
+                return []
 
-                flight = Flight.objects.filter(airport_4code=metar.airport_4code).first()
+            codes = list({metar.airport_4code for metar in kept if metar.airport_4code})
+            airport_infos = {
+                info.airport_4code: info
+                for info in AirportInfo.objects.filter(airport_4code__in=codes)
+            }
+            flights = {}
+            for flight in Flight.objects.filter(airport_4code__in=codes):
+                flights.setdefault(flight.airport_4code, flight)
+            parking_codes = _latest_parking_codes()
+            latest_identity = _latest_metar_identity(codes)
+
+            result = []
+            for metar in kept:
+                airport_info = airport_infos.get(metar.airport_4code)
+                flight = flights.get(metar.airport_4code)
                 en_route = bool(flight.en_route) if flight else False
                 closest_departure_time_of_arriving_flight = flight.closest_departure_time_of_arriving_flight if flight else None
                 closest_landing_time_of_arriving_flight = flight.closest_landing_time_of_arriving_flight if flight else None
                 closest_departure_time_at_this_airport = flight.closest_departure_time_at_this_airport if flight else None
-
-                has_parking = False
-                latest_parking = AircraftParkingInfo.objects.order_by('-parse_time').first()
-                if latest_parking and latest_parking.airport_4code:
-                    parking_list = latest_parking.airport_4code
-                    if isinstance(parking_list, str):
-                        parking_list = json.loads(parking_list)
-                    has_parking = (metar.airport_4code in parking_list)
+                has_parking = metar.airport_4code in parking_codes
+                latest_obs, latest_sqc = latest_identity.get(metar.airport_4code, (None, None))
 
                 metar_weather_type_cn = {}
                 if metar.metar_weather_type:
@@ -382,34 +443,12 @@ class PopupManager:
                     except Exception:
                         metar_weather_type_cn = {}
 
-                metar_data = []
-                if metar.metar_observation_time:
-                    history_start_time = metar.metar_observation_time - 72 * 3600000
-                    history_metars = Metar.objects.filter(
-                        airport_4code=metar.airport_4code,
-                        metar_observation_time__gt=history_start_time,
-                        metar_observation_time__lte=metar.metar_observation_time
-                    ).order_by('metar_observation_time')
-
-                    for hist_metar in history_metars:
-                        metar_data.append({
-                            'metar_observation_time': hist_metar.metar_observation_time,
-                            'metar_wind_speed_val': hist_metar.metar_wind_speed_val,
-                            'metar_gust_val': hist_metar.metar_gust_val,
-                            'metar_visibility_val': hist_metar.metar_visibility_val,
-                            'rvr_min_val': hist_metar.rvr_min_val,
-                            'metar_min_cloud_height': hist_metar.metar_min_cloud_height,
-                            'metar_temp_val': hist_metar.metar_temp_val,
-                            'data_status': hist_metar.data_status or 'H'
-                        })
-
                 popup_data = {
                     'sqc': metar.sqc,
                     'airport_4code': metar.airport_4code,
                     'airport_name': airport_info.airport_name if airport_info else '',
                     'metar_type': metar.metar_type or '',
                     'metar_observation_time': metar.metar_observation_time,
-                    'metar_content': metar.metar_content or '',
                     'en_route': en_route,
                     'closest_departure_time_of_arriving_flight': closest_departure_time_of_arriving_flight,
                     'closest_landing_time_of_arriving_flight': closest_landing_time_of_arriving_flight,
@@ -427,8 +466,8 @@ class PopupManager:
                     'metar_ws_warning': metar.metar_ws_warning or 'N',
                     'metar_change_trend_warning': metar.metar_change_trend_warning or 'N',
                     'metar_weather_type': metar_weather_type_cn,
-                    'metar_weather_pre': metar.metar_weather_pre or '',
-                    'metar_data': metar_data,
+                    'latest_obs': latest_obs,
+                    'latest_sqc': latest_sqc,
                 }
                 result.append(popup_data)
 
@@ -467,8 +506,8 @@ class PopupManager:
             return {'written': False, 'updated': 0}
 
         current_time_ms = int(timezone.now().timestamp() * 1000)
-        updated_count = 0
-        for metar in Metar.objects.filter(sqc__in=sqc_list):
+        to_update = []
+        for metar in Metar.objects.filter(sqc__in=list(sqc_list)):
             rec = metar.popup_handle_records
             if not isinstance(rec, dict):
                 rec = {}
@@ -481,8 +520,11 @@ class PopupManager:
                 'popup_handle_time': current_time_ms,
             }
             metar.popup_handle_records = rec
-            metar.save(update_fields=['popup_handle_records'])
-            updated_count += 1
+            to_update.append(metar)
+        if to_update:
+            with transaction.atomic(using='runtime'):
+                Metar.objects.bulk_update(to_update, ['popup_handle_records'])
+        updated_count = len(to_update)
         logger.info(
             f"弹窗处理写库: method={method} updated={updated_count} User={uid} IP={get_client_ip(request)}"
         )

@@ -510,18 +510,129 @@ function generateFlightInfoCardsHTML(popupData) {
     `;
 }
 
+// 上次画上屏幕的弹窗内容指纹。30 秒列表没引起可见变化时不拆掉重画。
+let _popupRenderSignature = '';
+// 各机场已显示的 3 行原文。key 为该机场最新实况的观测时间与 sqc。
+const _popupTextCache = {};
+
+function airportLatestMetarKey(airportCode) {
+    const rows = popupAirports[airportCode] || [];
+    const row = rows[0];
+    if (!row) return '';
+    if (row.latest_obs == null && (row.latest_sqc == null || row.latest_sqc === '')) return '';
+    return String(row.latest_obs) + ':' + String(row.latest_sqc);
+}
+
+function cachedPopupMetarText(airportCode) {
+    const key = airportLatestMetarKey(airportCode);
+    const cached = _popupTextCache[airportCode];
+    if (!cached || !key || cached.key !== key) return '';
+    return cached.html;
+}
+
+function flightTimeBucket(timestamp, now) {
+    if (!timestamp) return '';
+    if (timestamp <= now) return 'past';
+    if (timestamp <= now + 1800000) return 'soon';
+    return 'future';
+}
+
+function homepageMetarStamp(airportCode) {
+    if (typeof airportData === 'undefined' || !airportData) return '';
+    const airport = airportData.find(item => item.airport_4code === airportCode);
+    const metar = airport && airport.metar_data && airport.metar_data[0];
+    if (!metar) return '';
+    return [
+        metar.metar_observation_time,
+        metar.sqc,
+        metar.metar_wind_warning,
+        metar.metar_visibility_warning,
+        metar.metar_rvr_warning,
+        metar.metar_cloud_warning,
+        metar.metar_temperature_warning,
+        metar.metar_ws_warning,
+        metar.metar_change_trend_warning,
+        JSON.stringify(metar.metar_weather_type || {}),
+    ].join(',');
+}
+
+function popupRowStamp(popup) {
+    return [
+        popup.sqc,
+        popup.popup_time,
+        popup.operation_popup,
+        popup.parking_popup,
+        popup.metar_observation_time,
+        popup.metar_type,
+        popup.metar_warning,
+        popup.metar_wind_warning,
+        popup.metar_visibility_warning,
+        popup.metar_rvr_warning,
+        popup.metar_cloud_warning,
+        popup.metar_temperature_warning,
+        popup.metar_ws_warning,
+        popup.metar_change_trend_warning,
+        JSON.stringify(popup.metar_weather_type || {}),
+    ].join(':');
+}
+
+// 弹窗留不留、徽章、航班卡是否和屏幕上一致。不含底部「弹窗时间」，那一项每秒单独刷新。
+function popupViewSignature() {
+    const airports = Object.keys(popupAirports).sort((a, b) => {
+        const latestA = getLatestPopup(popupAirports[a]);
+        const latestB = getLatestPopup(popupAirports[b]);
+        return (latestB && latestB.popup_time || 0) - (latestA && latestA.popup_time || 0);
+    });
+    const chunks = [currentActiveAirport || ''];
+    airports.forEach(airport => {
+        const rows = popupAirports[airport] || [];
+        const latest = rows[0] || {};
+        const now = Number(latest.current_time) || Date.now();
+        chunks.push([
+            airport,
+            latest.airport_name || '',
+            latest.en_route ? 1 : 0,
+            latest.has_parking ? 1 : 0,
+            latest.closest_departure_time_of_arriving_flight || '',
+            flightTimeBucket(latest.closest_departure_time_of_arriving_flight, now),
+            latest.closest_landing_time_of_arriving_flight || '',
+            flightTimeBucket(latest.closest_landing_time_of_arriving_flight, now),
+            latest.closest_departure_time_at_this_airport || '',
+            flightTimeBucket(latest.closest_departure_time_at_this_airport, now),
+            airportLatestMetarKey(airport),
+            homepageMetarStamp(airport),
+            rows.map(popupRowStamp).join(';'),
+        ].join('|'));
+    });
+    return chunks.join('\n');
+}
+
+function rememberPopupRenderSignature() {
+    _popupRenderSignature = popupViewSignature();
+}
+
 // 生成报文内容HTML（同源原始历史实况，最新3条，告警着色后填入）
 function generateMetarContentHTML(airportCode) {
-    // 返回一个占位符，将在异步获取历史报文后更新
+    const cached = cachedPopupMetarText(airportCode);
+    if (cached) {
+        return `<span class="popup-value" id="metar-content-${airportCode}">${cached}</span>`;
+    }
     return `<span class="popup-value" id="metar-content-${airportCode}">
         <span style="color: #999;">加载中...</span>
     </span>`;
 }
 
-// 加载并显示历史报文
+// 加载并显示历史报文。该机场最新实况未变时沿用已显示的原文，不再打内网。
 function loadAndDisplayHistoryMetarContent(airportCode) {
     const contentElement = document.getElementById(`metar-content-${airportCode}`);
     if (!contentElement) return;
+
+    const key = airportLatestMetarKey(airportCode);
+    const cached = _popupTextCache[airportCode];
+    if (cached && cached.key === key && key) {
+        contentElement.innerHTML = cached.html;
+        return;
+    }
 
     // 获取时间模式
     const currentPath = window.location.pathname;
@@ -544,18 +655,24 @@ function loadAndDisplayHistoryMetarContent(airportCode) {
     })
         .then(response => response.json())
         .then(data => {
+            const live = document.getElementById(`metar-content-${airportCode}`);
+            if (!live || airportLatestMetarKey(airportCode) !== key) return;
+            let html = '<span style="color: #999;">暂无历史报文</span>';
             if (data.success && Array.isArray(data.data) && data.data.length > 0) {
-                contentElement.innerHTML = data.data.map(report => {
-                    const html = report.html || report.content || '';
-                    return `<span class="metar-content-item">${html}</span>`;
+                html = data.data.map(report => {
+                    const body = report.html || report.content || '';
+                    return `<span class="metar-content-item">${body}</span>`;
                 }).join('');
-            } else {
-                contentElement.innerHTML = '<span style="color: #999;">暂无历史报文</span>';
             }
+            live.innerHTML = html;
+            _popupTextCache[airportCode] = { key: key, html: html };
         })
         .catch(error => {
             console.error('加载历史报文失败:', error);
-            contentElement.innerHTML = '<span style="color: #999;">加载失败</span>';
+            const live = document.getElementById(`metar-content-${airportCode}`);
+            if (live && airportLatestMetarKey(airportCode) === key) {
+                live.innerHTML = '<span style="color: #999;">加载失败</span>';
+            }
         });
 }
 
@@ -730,6 +847,7 @@ function renderPopup() {
         _popupDragLeft = null;
         _popupDragTop = null;
         updatePopupAlert();
+        rememberPopupRenderSignature();
         return;
     }
 
@@ -777,6 +895,7 @@ function renderPopup() {
 
     // 更新页面提示状态
     updatePopupAlert();
+    rememberPopupRenderSignature();
 }
 
 // 绑定弹窗按钮事件
@@ -1033,11 +1152,57 @@ function scrollTabsRight() {
 // 按钮操作处理
 // ==================================
 
+function popupWriteHeaders() {
+    const headers = { 'Content-Type': 'application/json' };
+    if (currentToken) {
+        headers['Authorization'] = `Bearer ${currentToken}`;
+    }
+    if (currentUserCode) {
+        headers['X-User-Code'] = currentUserCode;
+    }
+    return headers;
+}
+
+function focusLatestPopupAirport() {
+    tabScrollOffset = 0;
+    const airports = Object.keys(popupAirports);
+    if (airports.length === 0) {
+        currentActiveAirport = null;
+        return;
+    }
+    const sorted = airports.sort((a, b) => {
+        const latestA = getLatestPopup(popupAirports[a]);
+        const latestB = getLatestPopup(popupAirports[b]);
+        return latestB.popup_time - latestA.popup_time;
+    });
+    currentActiveAirport = sorted[0];
+}
+
+function removeAirportPopup(airport) {
+    delete popupAirports[airport];
+    focusLatestPopupAirport();
+    renderPopup();
+}
+
+// 界面先按本机已读收起。写库失败不把弹窗再打开，只提示并再写一次。
+function writePopupHandle(path, sqcList) {
+    const body = JSON.stringify({ sqc_list: sqcList });
+    const post = () => fetch(`/${currentTimeMode}/api/${path}/`, {
+        method: 'POST',
+        headers: popupWriteHeaders(),
+        body: body,
+    }).then(response => {
+        if (!response.ok) throw new Error(String(response.status));
+    });
+
+    post().catch(() => post().catch(error => {
+        console.error('弹窗处理记录写入失败:', error);
+        showInfoDialog('处理记录没有写上，弹窗已在本机关闭');
+    }));
+}
+
 // 处理批量忽略所有机场
 async function handleBatchIgnoreAll() {
-    console.log('handleBatchIgnoreAll called');
-
-    // 收集所有机场的所有sqc
     const allSqc = [];
     Object.values(popupAirports).forEach(airportPopups => {
         airportPopups.forEach(popup => {
@@ -1047,37 +1212,13 @@ async function handleBatchIgnoreAll() {
 
     if (allSqc.length === 0) return;
 
-    console.log('Total sqc count:', allSqc.length);
-
     const confirmed = await showConfirmDialog('全部弹窗的报文将视作已处理且不再弹出');
-    console.log('User confirmed:', confirmed);
-
     if (!confirmed) return;
 
     if (window.markPopupsDismissedLocally) {
         window.markPopupsDismissedLocally(allSqc);
     }
-
-    try {
-        const headers = {
-            'Content-Type': 'application/json'
-        };
-
-        if (currentToken) {
-            headers['Authorization'] = `Bearer ${currentToken}`;
-        }
-        if (currentUserCode) {
-            headers['X-User-Code'] = currentUserCode;
-        }
-
-        const response = await fetch(`/${currentTimeMode}/api/popup-batch-ignore/`, {
-            method: 'POST',
-            headers: headers,
-            body: JSON.stringify({ sqc_list: allSqc })
-        });
-    } catch (error) {
-        console.error('批量忽略出错:', error);
-    }
+    writePopupHandle('popup-batch-ignore', allSqc);
 
     popupAirports = {};
     currentActiveAirport = null;
@@ -1087,175 +1228,49 @@ async function handleBatchIgnoreAll() {
 
 // 处理批量忽略（单个机场）
 async function handleBatchIgnore(airport, sqcList) {
-    console.log('handleBatchIgnore called', airport, sqcList);
-
-    // 显示确认对话框
     const confirmed = await showConfirmDialog('全部弹窗的报文将视作已处理且不再弹出');
-    console.log('User confirmed:', confirmed);
-
     if (!confirmed) return;
 
-    try {
-        const headers = {
-            'Content-Type': 'application/json'
-        };
-
-        if (currentToken) {
-            headers['Authorization'] = `Bearer ${currentToken}`;
-        }
-        if (currentUserCode) {
-            headers['X-User-Code'] = currentUserCode;
-        }
-
-        const response = await fetch(`/${currentTimeMode}/api/popup-batch-ignore/`, {
-            method: 'POST',
-            headers: headers,
-            body: JSON.stringify({ sqc_list: sqcList })
-        });
-
-        if (response.ok) {
-            // 移除该机场的弹窗数据
-            delete popupAirports[airport];
-
-            // 重置滚动偏移
-            tabScrollOffset = 0;
-
-            // 切换到最新的机场
-            const airports = Object.keys(popupAirports);
-            if (airports.length > 0) {
-                const sorted = airports.sort((a, b) => {
-                    const latestA = getLatestPopup(popupAirports[a]);
-                    const latestB = getLatestPopup(popupAirports[b]);
-                    return latestB.popup_time - latestA.popup_time;
-                });
-                currentActiveAirport = sorted[0];
-            } else {
-                currentActiveAirport = null;
-            }
-
-            renderPopup();
-        } else {
-            console.error('批量忽略失败:', response.status);
-        }
-    } catch (error) {
-        console.error('批量忽略出错:', error);
+    if (window.markPopupsDismissedLocally) {
+        window.markPopupsDismissedLocally(sqcList);
     }
+    writePopupHandle('popup-batch-ignore', sqcList);
+    removeAirportPopup(airport);
 }
 
 // 处理批量收到
-async function handleBatchReceived(airport, sqcList) {
+function handleBatchReceived(airport, sqcList) {
     if (window.markPopupsDismissedLocally) {
         window.markPopupsDismissedLocally(sqcList);
     }
-    try {
-        const headers = {
-            'Content-Type': 'application/json'
-        };
-
-        if (currentToken) {
-            headers['Authorization'] = `Bearer ${currentToken}`;
-        }
-        if (currentUserCode) {
-            headers['X-User-Code'] = currentUserCode;
-        }
-
-        await fetch(`/${currentTimeMode}/api/popup-batch-received/`, {
-            method: 'POST',
-            headers: headers,
-            body: JSON.stringify({ sqc_list: sqcList })
-        });
-    } catch (error) {
-        console.error('批量收到出错:', error);
-    }
-
-    delete popupAirports[airport];
-    tabScrollOffset = 0;
-    const airports = Object.keys(popupAirports);
-    if (airports.length > 0) {
-        const sorted = airports.sort((a, b) => {
-            const latestA = getLatestPopup(popupAirports[a]);
-            const latestB = getLatestPopup(popupAirports[b]);
-            return latestB.popup_time - latestA.popup_time;
-        });
-        currentActiveAirport = sorted[0];
-    } else {
-        currentActiveAirport = null;
-    }
-    renderPopup();
+    writePopupHandle('popup-batch-received', sqcList);
+    removeAirportPopup(airport);
 }
 
 // 处理批量去处理
-async function handleBatchHandle(airport, sqcList) {
+function handleBatchHandle(airport, sqcList) {
     if (window.markPopupsDismissedLocally) {
         window.markPopupsDismissedLocally(sqcList);
     }
-    try {
-        const headers = {
-            'Content-Type': 'application/json'
-        };
-
-        if (currentToken) {
-            headers['Authorization'] = `Bearer ${currentToken}`;
-        }
-        if (currentUserCode) {
-            headers['X-User-Code'] = currentUserCode;
-        }
-
-        await fetch(`/${currentTimeMode}/api/popup-batch-received/`, {
-            method: 'POST',
-            headers: headers,
-            body: JSON.stringify({ sqc_list: sqcList })
-        });
-    } catch (error) {
-        console.error('批量去处理出错:', error);
-    }
+    writePopupHandle('popup-batch-received', sqcList);
 
     window._openDetailAboveMetarPopup = true;
-    await showAirportDetail(airport);
-
-    delete popupAirports[airport];
-    tabScrollOffset = 0;
-    const airports = Object.keys(popupAirports);
-    if (airports.length > 0) {
-        const sorted = airports.sort((a, b) => {
-            const latestA = getLatestPopup(popupAirports[a]);
-            const latestB = getLatestPopup(popupAirports[b]);
-            return latestB.popup_time - latestA.popup_time;
-        });
-        currentActiveAirport = sorted[0];
-    } else {
-        currentActiveAirport = null;
+    if (typeof showAirportDetail === 'function') {
+        showAirportDetail(airport);
     }
-
-    setTimeout(() => {
-        renderPopup();
-    }, 50);
+    removeAirportPopup(airport);
 }
 
 // 处理稍后处理
 async function handleSnooze() {
-    // 获取配置的延迟时间（分钟）
-    let snoozeDuration = 10; // 默认10分钟
-
-    try {
-        const response = await fetch(`/${currentTimeMode}/api/timer-configs/`, {
-            method: 'GET',
-            headers: {
-                'Content-Type': 'application/json'
-            }
-        });
-
-        if (response.ok) {
-            const result = await response.json();
-            if (result.success && result.data && result.data.popup_snooze_duration) {
-                snoozeDuration = result.data.popup_snooze_duration;
-            }
-        }
-    } catch (error) {
-        console.error('获取配置失败:', error);
+    let snoozeDuration = 10;
+    const configured = (typeof timerConfigs !== 'undefined' && timerConfigs)
+        ? Number(timerConfigs.popup_snooze_duration)
+        : NaN;
+    if (Number.isFinite(configured) && configured > 0) {
+        snoozeDuration = configured;
     }
 
-    // 显示确认对话框
     const confirmed = await showConfirmDialog(
         `以上弹窗及新弹窗${snoozeDuration}分钟内不再显示，${snoozeDuration}分钟后一并弹出`
     );
@@ -1406,6 +1421,13 @@ async function checkAndShowPopups() {
                     return latestB.popup_time - latestA.popup_time;
                 });
                 currentActiveAirport = airports.length > 0 ? airports[0] : null;
+            }
+
+            const signature = popupViewSignature();
+            const overlay = document.querySelector('.metar-popup-overlay');
+            const expectOverlay = Object.keys(popupAirports).length > 0;
+            if (signature === _popupRenderSignature && expectOverlay === !!overlay) {
+                return;
             }
 
             renderPopup();
