@@ -23,8 +23,34 @@ DB_CONFIG = "default"
 DB_RUNTIME = "runtime"
 DB_ACCESS = "access"
 DB_TITLES = {DB_CONFIG: "配置库", DB_RUNTIME: "生产库", DB_ACCESS: "口令库"}
+MANAGE_TIMEOUT = 120
 
 sys.path.insert(0, str(DJANGO_DIR))
+
+_django_ready = False
+_django_lock = threading.Lock()
+
+
+def ensure_django():
+    """只在判断目标库时初始化 Django，用完立刻关掉连接，避免卡住子进程。"""
+    global _django_ready
+    if _django_ready:
+        return
+    with _django_lock:
+        if _django_ready:
+            return
+        import django
+        django.setup()
+        close_django_connections()
+        _django_ready = True
+
+
+def close_django_connections():
+    try:
+        from django.db import connections
+        connections.close_all()
+    except Exception:
+        return
 
 
 def list_migration_files():
@@ -98,15 +124,17 @@ def _model_names(operation):
 
 
 def databases_for_migration(app, name):
-    """读迁移操作里的模型，对照分库名单。没有模型名时，parsers 归生产库，core 在配置库和生产库执行。"""
+    """读迁移操作里的模型，对照分库名单。"""
+    ensure_django()
     from fmsa_system.db_router import database_for
 
     module = importlib.import_module(f"fmsa_migrations.{app}.{name}")
     names = []
     for operation in module.Migration.operations:
         names.extend(_model_names(operation))
+    close_django_connections()
     if not names:
-        return [DB_RUNTIME] if app == "parsers" else [DB_CONFIG, DB_RUNTIME]
+        return [DB_RUNTIME] if app == "parsers" else [DB_CONFIG]
     targets = []
     for model_name in names:
         target = database_for(app, model_name)
@@ -128,13 +156,13 @@ class MigrateApp(tk.Tk):
         self.selected = tk.StringVar()
         self.status = tk.StringVar(value="准备就绪")
         self._build()
-        self.refresh()
+        self.after(50, self.refresh)
 
     def _build(self):
         pad = {"padx": 10, "pady": 6}
         tk.Label(
             self,
-            text="迁移文件在 fmsa_migrations 的 core、parsers 子目录。执行前按模型判断写入哪个库。",
+            text="迁移文件在 fmsa_migrations 的 core、parsers 子目录。执行前按模型判断写入哪个库。请先退出 FMSA 主程序。",
             anchor="w",
             justify="left",
         ).pack(fill="x", **pad)
@@ -166,7 +194,18 @@ class MigrateApp(tk.Tk):
         else:
             self.after(0, _write)
 
+    def _set_busy(self, busy, status=None):
+        self._busy = busy
+        try:
+            self.ok_btn.state(["disabled"] if busy else ["!disabled"])
+        except tk.TclError:
+            pass
+        if status is not None:
+            self.status.set(status)
+
     def refresh(self):
+        if self._busy:
+            return
         self.files = list_migration_files()
         self._target_cache = {}
         labels = [label_of(app, name) for app, name, _path in self.files]
@@ -179,17 +218,18 @@ class MigrateApp(tk.Tk):
             return
         newest = max(self.files, key=lambda item: (migration_number(item[1]), item[2].stat().st_mtime))
         self.selected.set(label_of(newest[0], newest[1]))
-        self.status.set(f"已选最新：{self.selected.get()}")
-        self._load_django_status()
+        self._set_busy(True, "正在读取各库状态…")
+        threading.Thread(target=self._load_django_status, args=(True,), daemon=True).start()
 
     def _load_django_status(self, replace=True):
         if not MANAGE_PY.is_file():
             self.append_log(f"未找到 {MANAGE_PY}\n")
+            self.after(0, lambda: self._set_busy(False, "未找到 manage.py"))
             return
         self.status_by_db = {}
         lines = []
         for alias in DB_TITLES:
-            code, out = self._run_manage(["showmigrations", "--database", alias])
+            code, out = self._run_manage(["showmigrations", "--database", alias, "--skip-checks"])
             if code != 0:
                 lines.append(f"{database_title(alias)} 状态读取失败：")
                 lines.append(out)
@@ -201,9 +241,15 @@ class MigrateApp(tk.Tk):
                 mark = self._mark(alias, app, name, applied, pending)
                 suffix = "  ← 默认" if label_of(app, name) == self.selected.get() else ""
                 lines.append(f"  {mark}  {label_of(app, name)}{suffix}")
-        if replace:
-            self.log.delete("1.0", "end")
-        self.append_log("\n".join(lines) + "\n")
+        text = "\n".join(lines) + "\n"
+
+        def done():
+            if replace:
+                self.log.delete("1.0", "end")
+            self.append_log(text)
+            self._set_busy(False, f"已选最新：{self.selected.get()}")
+
+        self.after(0, done)
 
     def _mark(self, alias, app, name, applied, pending):
         if alias not in self._targets_cached(app, name):
@@ -250,47 +296,56 @@ class MigrateApp(tk.Tk):
             prompt = f"{label_of(app, name)} 将作用于{where}。\n编号低于该库已应用的迁移，可能改表或丢数据。确定继续？"
             title = "将回退迁移"
         else:
-            prompt = f"{label_of(app, name)}\n写入：{where}"
+            prompt = f"{label_of(app, name)}\n写入：{where}\n请确认本机 FMSA 主程序已退出。"
             title = "确认执行"
         if not messagebox.askyesno(title, prompt):
             return
-        self._busy = True
-        self.ok_btn.state(["disabled"])
-        self.status.set("正在迁移…")
+        self._set_busy(True, "正在迁移…")
         threading.Thread(target=self._migrate, args=(app, name, targets), daemon=True).start()
 
     def _migrate(self, app, name, targets):
         code = 0
         for alias in targets:
             self.append_log(f"\n>>> migrate {app} {name} --database {alias}\n")
-            code, out = self._run_manage(["migrate", app, name, "--database", alias])
+            code, out = self._run_manage(
+                ["migrate", app, name, "--database", alias, "--skip-checks"]
+            )
             self.append_log(out if out.endswith("\n") else out + "\n")
             if code != 0:
                 break
 
         def done():
-            self._busy = False
-            self.ok_btn.state(["!disabled"])
-            self.status.set("完成" if code == 0 else f"失败（退出码 {code}）")
             if code == 0:
                 messagebox.showinfo("完成", "迁移已执行。")
             else:
                 messagebox.showerror("失败", "迁移未成功，请看下方日志。")
             self._target_cache = {}
-            self._load_django_status(replace=False)
+            self.status.set("正在读取各库状态…")
+            threading.Thread(target=self._load_django_status, args=(False,), daemon=True).start()
 
         self.after(0, done)
 
     def _run_manage(self, args):
+        close_django_connections()
+        env = os.environ.copy()
+        env["FMSA_SKIP_SCHEDULER"] = "1"
+        env["DJANGO_SETTINGS_MODULE"] = "fmsa_system.settings"
         cmd = [sys.executable, str(MANAGE_PY), *args]
         try:
             proc = subprocess.run(
                 cmd,
                 cwd=str(DJANGO_DIR),
+                env=env,
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
                 errors="replace",
+                timeout=MANAGE_TIMEOUT,
+            )
+        except subprocess.TimeoutExpired:
+            return (
+                1,
+                "等待超时。请先完全退出正在运行的 FMSA 主程序（含托盘），再点刷新。\n",
             )
         except OSError as exc:
             return 1, str(exc)
@@ -298,7 +353,4 @@ class MigrateApp(tk.Tk):
 
 
 if __name__ == "__main__":
-    import django
-
-    django.setup()
     MigrateApp().mainloop()
