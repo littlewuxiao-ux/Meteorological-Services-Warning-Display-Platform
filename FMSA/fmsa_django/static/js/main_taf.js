@@ -98,7 +98,8 @@ function createPlainTransitionBar(seg) {
 
 function ganttBarContent(taf, key, raw) {
     const fallback = raw || '';
-    if (window._viewMode !== 'plain') return fallback;
+    const plain = typeof usePlainReports === 'function' ? usePlainReports() : (window._viewMode === 'plain');
+    if (!plain) return fallback;
     if (typeof plainGanttText !== 'function') return fallback;
     return plainGanttText(taf, key) || fallback;
 }

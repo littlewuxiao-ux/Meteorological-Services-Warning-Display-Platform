@@ -31,84 +31,110 @@ OPTIONAL_KEYS = (
     'contact',
 )
 
+# 机场详情、搜索结果用原文还是中文。与视图勾选分开。
+REPORT_LANG_ORIGINAL = 'original'  # 原文优先：仅翻译视图显示中文
+REPORT_LANG_CHINESE = 'chinese'    # 中文优先：仅主页视图显示原文
+
 MODULE_META = [
     {
         'key': 'core',
         'name': '核心数据组',
         'locked': True,
-        'data': '获取实况、预报、航班、停场，四类捆绑入库，不能取消。地图上的机场也来自这组数据。',
-        'writes': '程序入库。人的处置无。配置：数据更新、机场信息、机场区域、天气类型、告警阈值、天气告警等级。',
+        'data': '获取实况、预报、航班、停场，四类捆绑入库。地图上的机场也来自这组。',
+        'program': '入库',
+        'human': '无',
+        'config': '数据更新、机场信息、机场区域、天气类型、告警阈值、天气告警等级',
     },
     {
         'key': 'home',
         'name': '主页视图',
         'locked': False,
-        'data': '不另取数据，展示核心数据。',
-        'writes': '写入无。',
+        'data': '不另取数据，用核心数据做列表展示。',
+        'program': '无',
+        'human': '无',
+        'config': '无',
     },
     {
         'key': 'nwp',
         'name': 'NWP 温度',
         'locked': False,
         'parent': 'home',
-        'data': '主页附加。获取 open-meteo 温度，只留在内存。主页未勾时不能单独勾。',
-        'writes': '人不写入。缺坐标时可能写回机场坐标。配置无。',
+        'data': '主页附加。取 open-meteo 温度，只留内存。主页未勾时不能单独勾。',
+        'program': '缺坐标时可能写回机场坐标',
+        'human': '无',
+        'config': '无',
     },
     {
         'key': 'plain',
         'name': '翻译视图',
         'locked': False,
-        'data': '不另取数据，展示核心报文的中文。',
-        'writes': '写入无，配置无。',
+        'data': '不另取数据，列表展示核心报文的中文。',
+        'program': '无',
+        'human': '无',
+        'config': '无',
     },
     {
         'key': 'popup',
         'name': '实况弹窗',
         'locked': False,
         'data': '用核心实况、航班和停场规则计算运行类、停场类。',
-        'writes': '程序写入弹窗状态。人用本次登录的工号写处理记录。配置：弹窗设置。',
+        'program': '弹窗状态',
+        'human': '用本次登录工号写处理记录',
+        'config': '弹窗设置',
     },
     {
         'key': 'import_alert',
         'name': '入库告警',
         'locked': False,
         'data': '检查实况、预报是否按时入库。',
-        'writes': '程序打告警标记。人标已处理。配置：预报入库告警。',
+        'program': '告警标记',
+        'human': '标已处理',
+        'config': '预报入库告警',
     },
     {
         'key': 'trend',
         'name': '实况趋势',
         'locked': False,
         'data': '对实况再计算。',
-        'writes': '程序写入趋势结果。人标已处理。配置：实况趋势告警。',
+        'program': '趋势结果',
+        'human': '标已处理',
+        'config': '实况趋势告警',
     },
     {
         'key': 'radar',
         'name': '雷达',
         'locked': False,
-        'data': '获取雷达回波并做反演。',
-        'writes': '程序写入告警。人标已处理。配置：雷达告警。显示在地图图层和导航数量。',
+        'data': '获取雷达回波并做反演。显示在地图图层和导航数量。',
+        'program': '告警',
+        'human': '标已处理',
+        'config': '雷达告警',
     },
     {
         'key': 'satellite',
         'name': '卫星云图',
         'locked': False,
-        'data': '浏览器直接取葵花红外、水汽、可见光。服务器不入库。',
-        'writes': '写入无，配置无。显示在地图图层。',
+        'data': '浏览器直接取葵花红外、水汽、可见光。服务器不入库。显示在地图图层。',
+        'program': '无',
+        'human': '无',
+        'config': '无',
     },
     {
         'key': 'awc',
         'name': 'AWC 机场资料',
         'locked': False,
         'data': '按需查询坐标、跑道、日出日落。',
-        'writes': '缺坐标时写回机场坐标。配置无，机场信息编辑仍在核心里。',
+        'program': '缺坐标时写回机场坐标',
+        'human': '无',
+        'config': '无（机场信息编辑仍在核心里）',
     },
     {
         'key': 'contact',
         'name': '其他',
         'locked': False,
-        'data': '只控制联系方式是否在详情和搜索中展示。',
-        'writes': '写入无。不勾时展示位置隐藏。机场信息设置里的电话字段仍可编辑。',
+        'data': '控制联系方式是否在详情和搜索中展示。不勾时隐藏展示位置。',
+        'program': '无',
+        'human': '无',
+        'config': '无（机场信息里的电话仍可编辑）',
     },
 ]
 
@@ -119,6 +145,10 @@ def default_modules() -> Dict[str, bool]:
         data[key] = True
     data['nwp'] = True
     return data
+
+
+def default_options() -> Dict[str, str]:
+    return {'report_lang': REPORT_LANG_ORIGINAL}
 
 
 def _normalize(raw: dict) -> Dict[str, bool]:
@@ -135,29 +165,59 @@ def _normalize(raw: dict) -> Dict[str, bool]:
     return base
 
 
+def _normalize_options(raw) -> Dict[str, str]:
+    base = default_options()
+    if not isinstance(raw, dict):
+        return base
+    lang = raw.get('report_lang')
+    if lang in (REPORT_LANG_ORIGINAL, REPORT_LANG_CHINESE):
+        base['report_lang'] = lang
+    return base
+
+
 _cache_mtime: float | None = None
-_cache_data: Dict[str, bool] | None = None
+_cache_profile: dict | None = None
 
 
-def load_modules() -> Dict[str, bool]:
-    """文件不存在或损坏时按全部启用，避免主程序空转却没有界面。"""
-    global _cache_mtime, _cache_data
+def _default_profile() -> dict:
+    return {'modules': default_modules(), 'options': default_options()}
+
+
+def load_profile() -> dict:
+    """文件不存在或损坏时按全部启用 + 原文优先。"""
+    global _cache_mtime, _cache_profile
     try:
         mtime = PROFILE_PATH.stat().st_mtime
     except OSError:
-        return default_modules()
-    if _cache_data is not None and _cache_mtime == mtime:
-        return dict(_cache_data)
+        return _default_profile()
+    if _cache_profile is not None and _cache_mtime == mtime:
+        return {
+            'modules': dict(_cache_profile['modules']),
+            'options': dict(_cache_profile['options']),
+        }
     try:
         payload = json.loads(PROFILE_PATH.read_text(encoding='utf-8'))
     except (OSError, json.JSONDecodeError, UnicodeError):
-        return default_modules()
+        return _default_profile()
     if not isinstance(payload, dict):
-        return default_modules()
+        return _default_profile()
     data = _normalize(payload)
+    options = _normalize_options(payload.get('options'))
     _cache_mtime = mtime
-    _cache_data = data
-    return dict(data)
+    _cache_profile = {'modules': data, 'options': options}
+    return {'modules': dict(data), 'options': dict(options)}
+
+
+def load_modules() -> Dict[str, bool]:
+    return load_profile()['modules']
+
+
+def load_options() -> Dict[str, str]:
+    return load_profile()['options']
+
+
+def report_lang() -> str:
+    return load_options().get('report_lang') or REPORT_LANG_ORIGINAL
 
 
 def module_enabled(key: str) -> bool:
@@ -177,15 +237,17 @@ def validate_selection(modules: Dict[str, bool]) -> str:
     return ''
 
 
-def save_modules(modules: Dict[str, bool]) -> str:
+def save_profile(modules: Dict[str, bool], options=None) -> str:
     """校验后原子写入。成功返回空字符串。"""
     message = validate_selection(modules)
     if message:
         return message
     chosen = _normalize({'modules': modules})
+    chosen_options = _normalize_options(options if options is not None else default_options())
     payload = {
         'version': 1,
         'modules': chosen,
+        'options': chosen_options,
     }
     PROFILE_PATH.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp_name = tempfile.mkstemp(dir=str(PROFILE_PATH.parent), suffix='.tmp')
@@ -200,10 +262,14 @@ def save_modules(modules: Dict[str, bool]) -> str:
         except OSError:
             pass
         raise
-    global _cache_mtime, _cache_data
+    global _cache_mtime, _cache_profile
     _cache_mtime = None
-    _cache_data = None
+    _cache_profile = None
     return ''
+
+
+def save_modules(modules: Dict[str, bool]) -> str:
+    return save_profile(modules, load_options())
 
 
 def permissions_for_runtime() -> Dict[str, dict]:

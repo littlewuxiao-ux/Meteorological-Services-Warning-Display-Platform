@@ -2519,7 +2519,7 @@ function createAirportRowForDetailUnforced(airport) {
     const noTafData = (!tafData || tafData.length === 0) || (tafData[0].data_status === 'C');
     const tafAlertClass = (tafData && tafData.length > 0 && tafData[0].import_alert === 'Y') ? ' taf-import-alerted' : '';
 
-    const isPlain = window._viewMode === 'plain';
+    const isPlain = typeof usePlainReports === 'function' ? usePlainReports() : (window._viewMode === 'plain');
     const weatherBox = isPlain
         ? ''
         : buildWeatherInfoDiv(airport.airport_4code, latestMetar);
@@ -4160,7 +4160,8 @@ function displayAirportDetailData(airportData) {
         paintPlainDetailMetar(airportData);
     }
 
-    if (window._viewMode === 'plain' && typeof ensurePlainForAirports === 'function') {
+    if ((typeof usePlainReports === 'function' ? usePlainReports() : window._viewMode === 'plain')
+        && typeof ensurePlainForAirports === 'function') {
         ensurePlainForAirports([airportData]);
     }
 

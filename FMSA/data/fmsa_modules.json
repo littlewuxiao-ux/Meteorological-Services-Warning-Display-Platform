@@ -1,5 +1,8 @@
 {
   "version": 1,
+  "options": {
+    "report_lang": "original"
+  },
   "modules": {
     "core": true,
     "home": true,

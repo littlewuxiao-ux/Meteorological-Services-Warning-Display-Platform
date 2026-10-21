@@ -292,20 +292,24 @@ body.map-mode .view-nav {
 }
 
 /* 中文详情/搜索：不要历史报文区，时间轴标题不再给左侧实况格留位 */
-body.plain-mode .airport-reports-section {
+body.plain-mode .airport-reports-section,
+body.plain-reports .airport-reports-section {
   display: none;
 }
 
 /* 中文详情：时间轴左侧与三行说明同宽（固定像素，不随「北京时」三字缩窄） */
-body.plain-mode {
+body.plain-mode,
+body.plain-reports {
   --plain-row-label-width: 100px;
 }
 
-body.plain-mode .airport-detail-title-row {
+body.plain-mode .airport-detail-title-row,
+body.plain-reports .airport-detail-title-row {
   border-top: 1px solid rgba(255, 255, 255, 0.45);
 }
 
-body.plain-mode .airport-detail-title-row .title-weather {
+body.plain-mode .airport-detail-title-row .title-weather,
+body.plain-reports .airport-detail-title-row .title-weather {
   width: var(--plain-row-label-width);
   min-width: var(--plain-row-label-width);
   max-width: var(--plain-row-label-width);

@@ -136,8 +136,12 @@ function _airportByCode(code) {
   return null;
 }
 
+function _plainReportsOn() {
+  return typeof usePlainReports === 'function' ? usePlainReports() : (window._viewMode === 'plain');
+}
+
 function ensurePlainForAirports(airports) {
-  if (window._viewMode !== 'plain' || !airports || !airports.length) return;
+  if (!_plainReportsOn() || !airports || !airports.length) return;
   const staleTaf = [];
   const staleMetar = [];
   airports.forEach((airport) => {
@@ -155,7 +159,7 @@ function ensurePlainForAirports(airports) {
 function paintPlainDetailMetar(airport) {
   const wrap = document.getElementById('airport-detail-plain-metar');
   if (!wrap) return;
-  if (window._viewMode !== 'plain' || !airport || typeof plainDetailMetarRow !== 'function') {
+  if (!_plainReportsOn() || !airport || typeof plainDetailMetarRow !== 'function') {
     wrap.hidden = true;
     wrap.innerHTML = '';
     return;
@@ -167,7 +171,7 @@ function paintPlainDetailMetar(airport) {
 function paintSearchBlockMetar(code, airport) {
   const wrap = document.getElementById(`search-block-metar-${code}`);
   if (!wrap) return;
-  if (window._viewMode !== 'plain' || !airport || typeof plainDetailMetarRow !== 'function') {
+  if (!_plainReportsOn() || !airport || typeof plainDetailMetarRow !== 'function') {
     wrap.hidden = true;
     wrap.innerHTML = '';
     return;
@@ -177,7 +181,7 @@ function paintSearchBlockMetar(code, airport) {
 }
 
 function _repaintAirportRow(code) {
-  if (window._viewMode !== 'plain' || typeof createAirportRowForDetail !== 'function') return;
+  if (!_plainReportsOn() || typeof createAirportRowForDetail !== 'function') return;
   const airport = _airportByCode(code);
   if (!airport) return;
 
@@ -218,8 +222,7 @@ function refreshPlainTimezone() {
   Object.keys(_plainMetars).forEach((code) => {
     if (_plainMetars[code]) _plainMetars[code].tz = '';
   });
-  if (window._viewMode !== 'plain') return;
-  if (_plainActive && typeof filteredAirportData !== 'undefined') {
+  if (_plainActive && typeof filteredAirportData !== 'undefined' && window._viewMode === 'plain') {
     renderPlainView(filteredAirportData);
   }
   const openCodes = [];

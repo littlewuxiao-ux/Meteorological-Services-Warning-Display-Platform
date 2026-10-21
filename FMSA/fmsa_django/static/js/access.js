@@ -6,6 +6,20 @@
 
   window.__accessIdentity = null;
   window.__modules = null;
+  window.__profileOptions = { report_lang: 'original' };
+
+  function usePlainReports() {
+    const lang = (window.__profileOptions && window.__profileOptions.report_lang) || 'original';
+    const view = window._viewMode || 'list';
+    if (lang === 'chinese') return view !== 'list';
+    return view === 'plain';
+  }
+  window.usePlainReports = usePlainReports;
+
+  function syncPlainReportsClass() {
+    document.body.classList.toggle('plain-reports', usePlainReports());
+  }
+  window.syncPlainReportsClass = syncPlainReportsClass;
 
   function hasAccess(moduleCode, action) {
     const id = window.__accessIdentity;
@@ -116,6 +130,7 @@
     }
     window.__accessIdentity = data.data.identity;
     window.__modules = data.data.modules || {};
+    window.__profileOptions = data.data.options || { report_lang: 'original' };
     paintAdminUnlock(data.data.admin_unlocked);
     applyAccessUi();
     return data.data;

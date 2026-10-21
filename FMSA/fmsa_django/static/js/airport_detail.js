@@ -12,6 +12,19 @@ let currentDetailAirportCode = null;
 // 联系方式权限上下文：点四字码进详情为 'detail'；搜索打开（含单机场详情弹窗）为 'search'
 let headerInfoContext = 'detail';
 
+function reportsArePlain() {
+  return typeof usePlainReports === 'function' ? usePlainReports() : (window._viewMode === 'plain');
+}
+
+function ensurePlainScriptIfNeeded() {
+  if (typeof syncPlainReportsClass === 'function') syncPlainReportsClass();
+  if (!reportsArePlain()) return Promise.resolve();
+  if (typeof ensureViewScript !== 'function') return Promise.resolve();
+  return ensureViewScript('js/plain_view.js').catch((err) => {
+    console.error(err);
+  });
+}
+
 function headerInfoMode() {
   return window._viewMode === 'plain' ? 'plain' : 'home';
 }
@@ -24,7 +37,7 @@ function canShowContactInfo() {
 }
 
 function airportDetailTimelineCornerLabel() {
-  if (window._viewMode === 'plain') {
+  if (reportsArePlain()) {
     return window.displayTimezone === 'UTC' ? '世界时' : '北京时';
   }
   return '实况信息';
@@ -91,7 +104,8 @@ async function fetchNonHomepageAirportDetail(airportCode) {
 }
 
 // 显示机场详细信息弹窗
-function showAirportDetailModal(airportData, source) {
+async function showAirportDetailModal(airportData, source) {
+  await ensurePlainScriptIfNeeded();
   // 主页数据是扁平结构，直接使用airportData
   const airport = airportData;
   headerInfoContext = source === 'search' ? 'search' : 'detail';
@@ -177,7 +191,7 @@ function showAirportDetailModal(airportData, source) {
   }
 
   const reportsSection = document.querySelector('#airport-detail-modal .airport-reports-section');
-  if (window._viewMode === 'plain') {
+  if (reportsArePlain()) {
     if (reportsSection) reportsSection.style.display = 'none';
   } else {
     if (reportsSection) reportsSection.style.display = '';
@@ -277,7 +291,7 @@ function loadHistoryReports(airportCode) {
   }
 
   // 中文模式下详情页的实况/预报区一并中文化（实况趋势不变）
-  const url = (window._viewMode === 'plain')
+  const url = reportsArePlain()
     ? `/${currentTimeMode}/api/plain/airport/${airportCode}/report-text/`
     : `/${currentTimeMode}/api/airport/${airportCode}/report-text/`;
 
@@ -1140,13 +1154,13 @@ function _buildSearchAirportDataSection(airport) {
     ? createAirportRowForDetail(airport, { marksScope: 'search:' + String(code).toUpperCase() })
     : '<div class="airport-search-empty">无法生成数据行</div>';
 
-  const metarHTML = (window._viewMode === 'plain' && typeof plainDetailMetarRow === 'function')
+  const metarHTML = (reportsArePlain() && typeof plainDetailMetarRow === 'function')
     ? plainDetailMetarRow(airport)
     : '';
 
   return `
     <div class="airport-data-section">
-      <div id="search-block-metar-${code}" class="plain-detail-metar-wrap"${window._viewMode === 'plain' ? '' : ' hidden'}>${metarHTML}</div>
+      <div id="search-block-metar-${code}" class="plain-detail-metar-wrap"${reportsArePlain() ? '' : ' hidden'}>${metarHTML}</div>
       <div class="title-row airport-detail-title-row">
         <div class="title-weather"><span class="title-text">${airportDetailTimelineCornerLabel()}</span></div>
         <div class="title-timeline">
@@ -1169,9 +1183,10 @@ function _buildSearchAirportDataSection(airport) {
  * 多机场搜索结果展示。
  * 在 airport-search-modal 中逐一渲染各机场的 header + data section。
  */
-function showAirportSearchMulti(airports) {
+async function showAirportSearchMulti(airports) {
   const container = document.getElementById('airport-search-list');
   if (!container) return;
+  await ensurePlainScriptIfNeeded();
 
   headerInfoContext = 'search';
 
@@ -1221,7 +1236,7 @@ function showAirportSearchMulti(airports) {
       // 异步加载日出日落/跑道信息
       _loadSearchExtraInfo(code);
     });
-    if (window._viewMode === 'plain' && typeof ensurePlainForAirports === 'function') {
+    if (reportsArePlain() && typeof ensurePlainForAirports === 'function') {
       ensurePlainForAirports(airports);
     }
     if (typeof ensureModalMarksPastHandles === 'function') {

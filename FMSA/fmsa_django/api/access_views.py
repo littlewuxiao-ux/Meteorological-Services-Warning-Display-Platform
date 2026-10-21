@@ -23,7 +23,7 @@ from utils.access_control import (
     set_superuser_password,
     verify_superuser_password,
 )
-from utils.module_profile import load_modules
+from utils.module_profile import load_modules, load_options
 
 
 def _json_body(request):
@@ -58,6 +58,7 @@ def access_bootstrap(request, time_mode='current'):
         'data': {
             'identity': identity,
             'modules': load_modules(),
+            'options': load_options(),
             'admin_unlocked': is_admin_unlocked(request),
         },
     })

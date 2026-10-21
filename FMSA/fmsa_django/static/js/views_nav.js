@@ -87,6 +87,7 @@
     });
     return _scripts[file];
   }
+  window.ensureViewScript = ensureScript;
 
   function ensureViewAssets(view) {
     const cssList = view.css || [];
@@ -442,6 +443,7 @@
       localStorage.setItem(STORAGE_KEY, key);
       syncUrl(key);
       paintNav();
+      if (typeof syncPlainReportsClass === 'function') syncPlainReportsClass();
       if (typeof syncAirportDetailTimelineLabel === 'function') {
         syncAirportDetailTimelineLabel();
       }

@@ -13,6 +13,7 @@ from django.http import JsonResponse
 from django.views.decorators.http import require_http_methods
 
 from utils.access_control import has_perm, resolve_access_identity
+from utils.module_profile import REPORT_LANG_CHINESE, report_lang
 
 logger = logging.getLogger('fmsa.api')
 
@@ -26,9 +27,11 @@ PLAIN_MODULE = 'view_plain'
 
 def _deny_if_no_access(request):
     identity = resolve_access_identity(request)
-    if not has_perm(identity, PLAIN_MODULE, 'display'):
-        return JsonResponse({'success': False, 'error': '无权访问中文模式'}, status=403)
-    return None
+    if has_perm(identity, PLAIN_MODULE, 'display'):
+        return None
+    if report_lang() == REPORT_LANG_CHINESE:
+        return None
+    return JsonResponse({'success': False, 'error': '无权访问中文模式'}, status=403)
 
 
 def _latest_taf_elements(codes: list) -> dict:
