@@ -2777,6 +2777,9 @@ function showModal(modalId) {
             } else {
                 modal.style.zIndex = '';
             }
+            if (typeof syncDetailPastHandleStacking === 'function') {
+                syncDetailPastHandleStacking();
+            }
         }
     }
 }
@@ -2808,6 +2811,9 @@ function restoreDetailBelowMetarPopup() {
     const modal = document.getElementById('airport-detail-modal');
     if (modal) {
         modal.style.zIndex = '';
+    }
+    if (typeof syncDetailPastHandleStacking === 'function') {
+        syncDetailPastHandleStacking();
     }
 }
 

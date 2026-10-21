@@ -1257,6 +1257,15 @@ function ensureMarksPastHandle(scope) {
     }
     syncFlightMarksCssVars();
     positionMarksPastHandle(sc);
+    if (sc === 'detail') syncDetailPastHandleStacking();
+}
+
+function syncDetailPastHandleStacking() {
+    const wrap = document.getElementById(marksPastHandleId('detail'));
+    if (!wrap) return;
+    const modal = document.getElementById('airport-detail-modal');
+    const z = modal && modal.style.zIndex ? parseInt(modal.style.zIndex, 10) : 0;
+    wrap.style.zIndex = Number.isFinite(z) && z > 0 ? String(z + 10) : '';
 }
 
 function ensureFlightPastHandleFloat() {

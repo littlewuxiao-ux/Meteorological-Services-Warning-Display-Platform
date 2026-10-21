@@ -176,24 +176,29 @@ def _run_parsing_job(update_types: list, time_mode: str) -> None:
                 success=pr.get('success', False),
                 message=pr.get('message', '') or ('' if pr.get('success') else '解析失败'),
             )
-        # NWP 与 TAF 同频：当 TAF 调度任务运行且 NWP 开关开启时附带执行
-        if _nwp_enabled and 'taf' in update_types:
-            from utils.module_profile import module_enabled
-            if module_enabled('nwp'):
-                set_parser_exec_status('nwp', 'running')
-                try:
-                    from parsers.NWP import NwpParser
-                    NwpParser().fetch_and_filter()
-                    logger.info("NWP 调度解析完成")
-                except Exception as nwp_err:
-                    logger.error(f"NWP 调度解析失败：{nwp_err}")
-                finally:
-                    set_parser_exec_status('nwp', 'done')
 
     except Exception as e:
         logger.error(f"调度任务异常：{update_types}，{e}", exc_info=True)
         for data_type in update_types:
             update_parsing_status(data_type, success=False, message=str(e))
+
+
+def _run_nwp_job() -> None:
+    """每小时整点拉一次外网 NWP。开关关闭时不请求。"""
+    if not _nwp_enabled:
+        return
+    from utils.module_profile import module_enabled
+    if not module_enabled('nwp'):
+        return
+    set_parser_exec_status('nwp', 'running')
+    try:
+        from parsers.NWP import NwpParser
+        NwpParser().fetch_and_filter()
+        logger.info("NWP 整点解析完成")
+    except Exception as nwp_err:
+        logger.error(f"NWP 整点解析失败：{nwp_err}")
+    finally:
+        set_parser_exec_status('nwp', 'done')
 
 
 def _timer_rows():
@@ -211,6 +216,7 @@ def _timer_rows():
 
 
 def _register_jobs(scheduler, time_mode='current'):
+    from apscheduler.triggers.cron import CronTrigger
     from apscheduler.triggers.interval import IntervalTrigger
     from config_db.models import RadarAlertConfig
     from utils.radar.config_defaults import merge_config
@@ -234,6 +240,17 @@ def _register_jobs(scheduler, time_mode='current'):
             f"调度任务注册：{data_name}，间隔 {interval_minutes} 分钟，"
             f"首次执行 {first_run.strftime('%H:%M:%S')}"
         )
+
+    scheduler.add_job(
+        func=_run_nwp_job,
+        trigger=CronTrigger(minute=0, second=0),
+        id='scheduled_nwp',
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=300,
+    )
+    logger.info("调度任务注册：nwp，每小时整点执行（开关关闭时跳过）")
 
     row = json_config_row(RadarAlertConfig, active_job_user())
     cfg = merge_config(row.config if row else None)
