@@ -37,6 +37,10 @@ class Command(BaseCommand):
             database='runtime',
             verbosity=1, interactive=False,
         )
+        from config_db.cleanup import drop_unused_config_tables
+        dropped = drop_unused_config_tables()
+        if dropped:
+            self.stdout.write('配置库已删除无用表：' + '、'.join(dropped))
         self.stdout.write(self.style.SUCCESS('已按库接上新的初始迁移。'))
 
     def _delete_runtime_files(self):

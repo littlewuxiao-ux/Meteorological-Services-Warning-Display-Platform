@@ -2,7 +2,9 @@
 
 ACCESS_DB = 'access'
 
-DJANGO_APPS = {'admin', 'auth', 'contenttypes', 'sessions'}
+# 扫码登录还用 Django session。admin/auth/contenttypes 已从项目卸掉，禁止再迁进配置库。
+DJANGO_APPS = {'sessions'}
+DROPPED_DJANGO_APPS = {'admin', 'auth', 'contenttypes'}
 
 APP_DATABASE = {
     'config_db': 'default',
@@ -30,6 +32,8 @@ class FmsaRouter:
         )
 
     def allow_migrate(self, db, app_label, model_name=None, **hints):
+        if app_label in DROPPED_DJANGO_APPS:
+            return False
         if app_label in DJANGO_APPS:
             return db == 'default'
         target = APP_DATABASE.get(app_label)

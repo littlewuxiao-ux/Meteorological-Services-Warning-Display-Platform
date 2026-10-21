@@ -300,20 +300,20 @@ class RadarAlertConfig(models.Model):
         return f'RadarAlertConfig#{self.pk}'
 
 
-class MapStyleConfig(models.Model):
-    """地图样式可配置参数（单行有效，JSON 存整表）。"""
+class StyleConfig(models.Model):
+    """界面样式等配置（单行有效，JSON 存整表）。地图样式目前写在同一份 JSON 里。"""
 
     config = models.JSONField(default=dict, verbose_name='配置JSON')
     updated_at = models.DateTimeField(auto_now=True, verbose_name='更新时间')
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')
 
     class Meta:
-        db_table = 'map_style_config'
-        verbose_name = '地图样式配置'
-        verbose_name_plural = '地图样式配置'
+        db_table = 'style_config'
+        verbose_name = '样式配置'
+        verbose_name_plural = '样式配置'
 
     def __str__(self):
-        return f'MapStyleConfig#{self.pk}'
+        return f'StyleConfig#{self.pk}'
 
 
 class TrendAlertConfig(models.Model):

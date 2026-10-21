@@ -8,7 +8,7 @@ from config_db.models import (
     AirportTafImportConfig,
     Carrier,
     DataRefreshTimer,
-    MapStyleConfig,
+    StyleConfig,
     PopupSettings,
     RadarAlertConfig,
     SystemConfig,
@@ -16,6 +16,8 @@ from config_db.models import (
     WeatherAlertLevels,
     WeatherTypeInfo,
 )
+MapStyleConfig = StyleConfig
+
 from runtime_db.models import (
     AircraftParkingInfo,
     AirportRadarAlert,
@@ -37,6 +39,7 @@ __all__ = [
     'Carrier',
     'DataRefreshTimer',
     'MapStyleConfig',
+    'StyleConfig',
     'PopupSettings',
     'RadarAlertConfig',
     'RadarJobRun',

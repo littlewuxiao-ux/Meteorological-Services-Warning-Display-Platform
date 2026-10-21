@@ -777,9 +777,7 @@ def check_login_status(request, time_mode='current'):
             # 清除二维码信息
             del request.session['qr_id']
             del request.session['routing']
-            if request.session.get('seat_pending_group_id'):
-                request.session['seat_scanned_user_id'] = scan_result.get('userCode')
-            
+
             return JsonResponse({
                 'success': True,
                 'data': {

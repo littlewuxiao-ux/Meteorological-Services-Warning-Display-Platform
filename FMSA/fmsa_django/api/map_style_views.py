@@ -20,11 +20,11 @@ def _json_body(request):
 @require_http_methods(['GET', 'PUT'])
 @csrf_exempt
 def map_style_config(request, time_mode='current'):
-    from config_db.models import MapStyleConfig
+    from config_db.models import StyleConfig
     from api.settings_views import _deny_settings_write
     from utils.access_control import has_perm, resolve_access_identity
 
-    row = MapStyleConfig.objects.order_by('id').first()
+    row = StyleConfig.objects.order_by('id').first()
     if request.method == 'GET':
         identity = resolve_access_identity(request)
         if not (
@@ -55,7 +55,7 @@ def map_style_config(request, time_mode='current'):
         row.config = cfg
         row.save(update_fields=['config', 'updated_at'])
     else:
-        MapStyleConfig.objects.create(config=cfg)
+        StyleConfig.objects.create(config=cfg)
     return JsonResponse({
         'success': True,
         'config': cfg,

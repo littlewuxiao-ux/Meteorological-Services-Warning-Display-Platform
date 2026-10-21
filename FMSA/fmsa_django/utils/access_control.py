@@ -65,8 +65,10 @@ def _move_legacy_superuser_hash():
 def ensure_bootstrap_data():
     """确保超级用户口令哈希存在。"""
     from access_db.models import AccessSetting
+    from config_db.cleanup import drop_unused_config_tables
 
     ensure_access_database()
+    drop_unused_config_tables()
     AccessSetting.objects.get_or_create(
         key=SUPERUSER_CONFIG_KEY,
         defaults={'value': make_password(DEFAULT_SUPERUSER_PASSWORD)},
