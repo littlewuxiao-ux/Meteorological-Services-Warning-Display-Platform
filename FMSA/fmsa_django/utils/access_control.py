@@ -42,14 +42,15 @@ def ensure_access_database():
         from django.core.management import call_command
         from fmsa_system.db_router import ACCESS_DB
 
-        call_command('migrate', 'core', database=ACCESS_DB, verbosity=0, interactive=False)
+        call_command('migrate', 'access_db', database=ACCESS_DB, verbosity=0, interactive=False)
         _move_legacy_superuser_hash()
         _access_db_ready = True
 
 
 def _move_legacy_superuser_hash():
     """旧版口令哈希在配置库 system_config：口令库没有时搬入，配置库里的旧记录删除。"""
-    from core.models import AccessSetting, SystemConfig
+    from access_db.models import AccessSetting
+    from config_db.models import SystemConfig
 
     legacy = SystemConfig.objects.filter(
         config_type=SUPERUSER_CONFIG_TYPE, config_key=SUPERUSER_CONFIG_KEY
@@ -63,7 +64,7 @@ def _move_legacy_superuser_hash():
 
 def ensure_bootstrap_data():
     """确保超级用户口令哈希存在。"""
-    from core.models import AccessSetting
+    from access_db.models import AccessSetting
 
     ensure_access_database()
     AccessSetting.objects.get_or_create(
@@ -73,14 +74,14 @@ def ensure_bootstrap_data():
 
 
 def get_superuser_hash() -> str:
-    from core.models import AccessSetting
+    from access_db.models import AccessSetting
     ensure_bootstrap_data()
     row = AccessSetting.objects.filter(key=SUPERUSER_CONFIG_KEY).first()
     return row.value if row else ''
 
 
 def set_superuser_password(raw_password: str) -> None:
-    from core.models import AccessSetting
+    from access_db.models import AccessSetting
     ensure_access_database()
     AccessSetting.objects.update_or_create(
         key=SUPERUSER_CONFIG_KEY,

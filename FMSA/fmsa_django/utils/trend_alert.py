@@ -1086,7 +1086,7 @@ def max_lookback_ms(groups: list) -> int:
 
 
 def load_config_row(user_code=None):
-    from core.models import TrendAlertConfig
+    from config_db.models import TrendAlertConfig
     from utils.user_settings import active_job_user, json_config_row
     return json_config_row(TrendAlertConfig, user_code or active_job_user())
 
@@ -1106,7 +1106,7 @@ def read_config(user_code=None) -> dict:
 
 
 def save_config(payload: dict, user_code=None) -> tuple:
-    from core.models import TrendAlertConfig
+    from config_db.models import TrendAlertConfig
     from utils.user_settings import active_job_user, save_json_config
     user = user_code or active_job_user()
     before = read_config(user)
@@ -1203,7 +1203,7 @@ def _active_universe(now_ms: int) -> set:
 
 
 def clear_airports(codes) -> None:
-    from core.models import AirportTrendAlert
+    from runtime_db.models import AirportTrendAlert
     wanted = sorted({str(code).upper() for code in codes or [] if code})
     if wanted:
         AirportTrendAlert.objects.filter(airport_4code__in=wanted).delete()
@@ -1212,8 +1212,8 @@ def clear_airports(codes) -> None:
 def refresh_airports(codes, now_ms: Optional[int] = None, *, backfill: bool = True) -> None:
     """只重算给定机场。不在有航班或起降窗口全集里的机场直接清掉结果。"""
     import logging
-    from core.models import AirportTrendAlert
-    from parsers.models import Metar
+    from runtime_db.models import AirportTrendAlert
+    from runtime_db.models import Metar
 
     logger = logging.getLogger('fmsa.trend')
     wanted = sorted({str(code).upper() for code in codes or [] if code})
@@ -1300,7 +1300,7 @@ def refresh_active_airports(now_ms: Optional[int] = None) -> None:
 
 def build_results(scope: str, now_ms: Optional[int] = None, future_hours: int = 2) -> dict:
     """只返回当前选中集合里的机场。已离开该集合的，不论是否已处理，都不进入表格和导航数字。"""
-    from core.models import AirportTrendAlert
+    from runtime_db.models import AirportTrendAlert
 
     now_ms = int(now_ms if now_ms is not None else time.time() * 1000)
     universe = airport_universe(scope, now_ms, future_hours)

@@ -27,7 +27,7 @@ def _normalize_codes(codes):
 
 def _read_local_coords(codes):
     """返回 {code: (lat, lon)}。查询失败时抛出 DatabaseError。"""
-    from core.models import AirportInfo
+    from config_db.models import AirportInfo
 
     rows = AirportInfo.objects.filter(airport_4code__in=codes).values(
         'airport_4code', 'latitude', 'longitude'
@@ -85,7 +85,7 @@ def fetch_aviationweather_airport(code):
 def store_airport_coord(code, lat, lon, name=None):
     """没有坐标时写入 airport_info。已有中文名称不被接口英文名覆盖。"""
     from core.airport_directory import apply_prefix_if_blank
-    from core.models import AirportInfo
+    from config_db.models import AirportInfo
 
     obj = AirportInfo.objects.filter(airport_4code=code).first()
     created = obj is None

@@ -13,9 +13,9 @@ import logging
 from django.utils import timezone
 from django.conf import settings
 from django.db import connection
-from core.models import AirportAlertThresholds, WeatherAlertLevels
+from config_db.models import AirportAlertThresholds, WeatherAlertLevels
 from parsers.cloud_amount import lowest_height_in_cloud_strings, normalize_cloud_amt
-from parsers.models import Metar
+from runtime_db.models import Metar
 from data_adapters.adapter_factory import AdapterFactory
 from utils.time_manager import TimeManager
 
@@ -878,7 +878,7 @@ class MetarParser:
             tuple: (alert_level, [type1, type2, type3]) 或 ('N', [])
         """
         try:
-            from core.models import WeatherAlertLevels
+            from config_db.models import WeatherAlertLevels
             
             from utils.user_settings import bound_or, weather_row
             weather_alert = weather_row(bound_or(self.user_code, self.time_mode), weather_code)
@@ -1261,7 +1261,7 @@ class MetarParser:
     def _get_popup_settings(self):
         """获取弹窗配置"""
         try:
-            from core.models import PopupSettings
+            from config_db.models import PopupSettings
             
             # 确定查找的user_code
             if self.time_mode == 'test':
@@ -1310,7 +1310,7 @@ class MetarParser:
             是否满足运行类弹窗条件
         """
         try:
-            from parsers.models import Flight
+            from runtime_db.models import Flight
             
             # 1. 检查告警等级
             alert_met = False
@@ -1389,7 +1389,7 @@ class MetarParser:
             是否满足停场类弹窗条件
         """
         try:
-            from core.models import AircraftParkingInfo
+            from runtime_db.models import AircraftParkingInfo
             from django.conf import settings
             import json
             
@@ -1442,7 +1442,7 @@ class MetarParser:
                 parking_condition_met = (airport_4code in parking_list)
             
             # 3. 检查en_route条件
-            from parsers.models import Flight
+            from runtime_db.models import Flight
             en_route_condition_met = False
             flight = Flight.objects.filter(airport_4code=airport_4code).first()
             if flight:

@@ -30,7 +30,7 @@ class TimeManager:
     @staticmethod
     def _test_time_from_flights():
         """has_flight=True 的全库 min(at)，再加 1.5 小时。"""
-        from parsers.models import Flight
+        from runtime_db.models import Flight
 
         min_at = None
         for events in Flight.objects.filter(has_flight=True).values_list('events', flat=True):

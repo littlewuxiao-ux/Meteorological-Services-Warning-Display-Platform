@@ -39,7 +39,7 @@ def history_items_from_db(
     limit: int = 200,
 ) -> List[Dict[str, Any]]:
     """test 模式：从本地 metar/taf 表组装与历史接口相同的报文列表。"""
-    from parsers.models import Metar, Taf
+    from runtime_db.models import Metar, Taf
 
     code = str(airport_code or '').strip().upper()
     wanted = {str(t).upper() for t in (ws_types or ['SA', 'SP', 'FC', 'FT'])}

@@ -33,7 +33,7 @@ def _deny_if_no_access(request):
 
 def _latest_taf_elements(codes: list) -> dict:
     """每个机场最新一份 TAF 的 taf_elements：先取每场最大 id，再回表取列。"""
-    from parsers.models import Taf
+    from runtime_db.models import Taf
 
     if not codes:
         return {}
@@ -51,7 +51,7 @@ def _latest_taf_elements(codes: list) -> dict:
 
 def _latest_metar_elements(codes: list) -> dict:
     """每个机场当前 N 行的 metar_elements。"""
-    from parsers.models import Metar
+    from runtime_db.models import Metar
 
     if not codes:
         return {}

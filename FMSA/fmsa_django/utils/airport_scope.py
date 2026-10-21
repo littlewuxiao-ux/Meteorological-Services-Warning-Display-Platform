@@ -83,7 +83,7 @@ def event_in_operation_window(events, now_ms: int, future_hours: int, carriers=N
 
 
 def get_parking_airport_codes() -> set:
-    from core.models import AircraftParkingInfo
+    from runtime_db.models import AircraftParkingInfo
 
     latest = AircraftParkingInfo.objects.order_by('-parse_time').first()
     if not latest or not latest.airport_4code:
@@ -110,7 +110,7 @@ def get_flight_airport_codes() -> set:
 
 def get_monitored_airport_codes() -> list:
     """有航班机场 ∪ 停场名单，去重；有航班顺序在前，停场-only 按代码排序补在后面。"""
-    from parsers.models import Flight
+    from runtime_db.models import Flight
 
     flight_list = list(
         Flight.objects.filter(has_flight=True)
@@ -132,7 +132,7 @@ def airport_codes_for_scope(scope: str, future_hours=FUTURE_HOURS_DEFAULT, now_m
     has_flight：has_flight 为真（至少一条不是已起飞 off/dst 或已落地 lnd）。
     recent2h：起降窗口，过去 2 小时到未来 future_hours 小时。
     """
-    from parsers.models import Flight
+    from runtime_db.models import Flight
 
     chosen = (scope or 'has_flight').strip()
     if chosen != 'recent2h':

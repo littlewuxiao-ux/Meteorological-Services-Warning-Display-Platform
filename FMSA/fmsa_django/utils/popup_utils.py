@@ -13,8 +13,8 @@ from django.db import transaction
 from django.db.models import Max, Q
 from django.utils import timezone
 
-from core.models import AirportInfo, AircraftParkingInfo, WeatherTypeInfo, PopupSettings
-from parsers.models import Metar, Flight
+from config_db.models import AirportInfo, WeatherTypeInfo, PopupSettings
+from runtime_db.models import AircraftParkingInfo, Metar, Flight
 
 logger = logging.getLogger('fmsa.popup')
 

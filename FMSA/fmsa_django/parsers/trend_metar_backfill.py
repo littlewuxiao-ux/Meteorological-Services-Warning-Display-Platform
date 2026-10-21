@@ -180,7 +180,7 @@ def _parse_row_for_store(
 
 
 def _existing_sa_times(airport: str, since_ms: int, now_ms: int) -> list[int]:
-    from parsers.models import Metar
+    from runtime_db.models import Metar
 
     rows = Metar.objects.filter(
         airport_4code=airport,
@@ -204,7 +204,7 @@ def _backfill_airport(
     parser,
 ) -> int:
     from parsers.metar_history import fetch_raw_met_list
-    from parsers.models import Metar
+    from runtime_db.models import Metar
 
     if not missing:
         return 0

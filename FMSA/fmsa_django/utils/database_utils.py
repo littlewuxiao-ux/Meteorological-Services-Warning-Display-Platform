@@ -9,8 +9,8 @@ from django.core.exceptions import ObjectDoesNotExist
 from typing import List, Dict, Any, Optional, Type
 import logging
 
-from core.models import AirportInfo, AirportAlertThresholds, WeatherAlertLevels, Carrier, SystemConfig
-from parsers.models import Flight, Metar, Taf
+from config_db.models import AirportInfo, AirportAlertThresholds, WeatherAlertLevels, Carrier, SystemConfig
+from runtime_db.models import Flight, Metar, Taf
 
 logger = logging.getLogger('fmsa.database')
 

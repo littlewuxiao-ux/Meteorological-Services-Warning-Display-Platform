@@ -99,7 +99,7 @@ def airport_flags_from_events(events: list) -> dict:
 
 def visible_airport_codes(user_code=None) -> set:
     """按指定用户的承运人，从航班事件算出当前有航班的机场。"""
-    from parsers.models import Flight
+    from runtime_db.models import Flight
 
     selected = selected_carrier_codes(user_code)
     found = set()
@@ -111,7 +111,7 @@ def visible_airport_codes(user_code=None) -> set:
 
 def distinct_flight_carriers() -> list:
     """flight.events 里出现过的二字代码。"""
-    from parsers.models import Flight
+    from runtime_db.models import Flight
 
     found = set()
     for raw in Flight.objects.values_list('events', flat=True):
@@ -124,7 +124,7 @@ def distinct_flight_carriers() -> list:
 
 def replace_carrier_codes(codes, time_mode='current', user_code=None) -> list:
     """用确认后的整份清单替换该用户的承运人，并重算航班标记和告警。"""
-    from core.models import Carrier
+    from config_db.models import Carrier
     from utils.user_settings import TEMPLATE, TEST, active_job_user
 
     owner = user_code or TEMPLATE
@@ -156,7 +156,7 @@ def replace_carrier_codes(codes, time_mode='current', user_code=None) -> list:
 
 def apply_carrier_change(action: str, code: str, time_mode='current', user_code=None) -> list:
     """写入当前用户的承运人清单。超级用户编辑模板时才会写到 default。"""
-    from core.models import Carrier
+    from config_db.models import Carrier
     from utils.user_settings import TEMPLATE, TEST, active_job_user, carrier_codes
 
     cleaned = carrier_code_or_blank(code)
@@ -191,7 +191,7 @@ def apply_carrier_change(action: str, code: str, time_mode='current', user_code=
 
 def recompute_selected_flight_state(time_mode='current', user_code=None) -> None:
     """按指定用户的承运人重写有航班、在途、三个特殊时刻和航班告警。"""
-    from parsers.models import Flight
+    from runtime_db.models import Flight
 
     selected = selected_carrier_codes(user_code)
     changed = []

@@ -32,7 +32,7 @@ def _json_body(request):
 @require_http_methods(['GET', 'PUT'])
 @csrf_exempt
 def radar_alert_config(request, time_mode='current'):
-    from core.models import RadarAlertConfig
+    from config_db.models import RadarAlertConfig
     from api.settings_views import _deny_settings_write
     from utils.user_settings import json_config_row, save_json_config, scope_meta, settings_subject
 
@@ -60,7 +60,7 @@ def radar_alert_config(request, time_mode='current'):
     except Exception:
         logger.exception('雷达配置保存后重载调度失败')
     # 配置变更后清瓦片索引指纹，下次任务重建
-    from core.models import RadarTileIndex
+    from runtime_db.models import RadarTileIndex
     RadarTileIndex.objects.all().delete()
     return JsonResponse({'success': True, 'config': cfg})
 
@@ -85,7 +85,7 @@ def radar_alert_run(request, time_mode='current'):
         hours = clamp_future_hours(data.get('future_hours'))
         codes = airport_codes_for_scope(scope, hours)
         if data.get('only_missing'):
-            from core.models import AirportRadarAlert
+            from runtime_db.models import AirportRadarAlert
             have = set(
                 AirportRadarAlert.objects.filter(airport_4code__in=codes)
                 .values_list('airport_4code', flat=True)
@@ -103,8 +103,8 @@ def radar_alert_run(request, time_mode='current'):
 @require_http_methods(['POST'])
 @csrf_exempt
 def radar_rebuild_tile_index(request, time_mode='current'):
-    from core.models import RadarTileIndex, RadarAlertConfig
-    from parsers.models import Flight
+    from config_db.models import RadarAlertConfig
+    from runtime_db.models import Flight, RadarTileIndex
     from utils.radar.tiles import build_airport_tile_index
     from api.settings_views import _deny_settings_write
 
@@ -143,7 +143,8 @@ def radar_rebuild_tile_index(request, time_mode='current'):
 
 def _radar_overlay_meta():
     """最近一次任务的 RainViewer 帧信息，供地图 z3 铺图。"""
-    from core.models import RadarJobRun, RadarAlertConfig
+    from config_db.models import RadarAlertConfig
+    from runtime_db.models import RadarJobRun
 
     row = RadarJobRun.objects.order_by('-id').first()
     from utils.user_settings import active_job_user, json_config_row
@@ -167,7 +168,7 @@ def _radar_overlay_meta():
 @csrf_exempt
 def radar_alert_handle(request, time_mode='current'):
     """把当前雷达告警标为已处理。告警等级变化后会重新变为未处理。"""
-    from core.models import AirportRadarAlert
+    from runtime_db.models import AirportRadarAlert
 
     denied = _deny(request, 'map_radar', 'write', '无雷达告警写入权限')
     if denied:
@@ -188,7 +189,8 @@ def radar_alert_handle(request, time_mode='current'):
 @require_http_methods(['GET'])
 def radar_alerts(request, time_mode='current'):
     """返回当前雷达告警列表，供地图悬浮层使用。只含当前清单内的机场。"""
-    from core.models import AirportRadarAlert, RadarAlertConfig
+    from runtime_db.models import AirportRadarAlert
+    from config_db.models import RadarAlertConfig
     from utils.access_control import has_perm, resolve_access_identity
 
     identity = resolve_access_identity(request)
@@ -282,7 +284,7 @@ def radar_echo(request, time_mode='current'):
     denied = _deny(request, 'map_radar', 'display', '无雷达回波查看权限')
     if denied:
         return denied
-    from core.models import RadarAlertConfig
+    from config_db.models import RadarAlertConfig
     from utils.radar.config_defaults import merge_config
     from utils.radar.echo import (
         EchoError, EchoWaiting, cache_get, cache_put, compose_echo, tiles_for_pixel_box,

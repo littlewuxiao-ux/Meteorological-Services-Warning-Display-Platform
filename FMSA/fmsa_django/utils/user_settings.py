@@ -126,7 +126,7 @@ def _fallback(user_code):
 
 
 def get_threshold_row(user_code, airport_4code):
-    from core.models import AirportAlertThresholds
+    from config_db.models import AirportAlertThresholds
 
     code = str(airport_4code or '').strip().upper()
     if not code:
@@ -168,7 +168,7 @@ def threshold_dict(row):
 
 
 def weather_row(user_code, weather_code):
-    from core.models import WeatherAlertLevels
+    from config_db.models import WeatherAlertLevels
 
     weather = str(weather_code or '').strip().upper()
     if not weather:
@@ -183,7 +183,7 @@ def weather_row(user_code, weather_code):
 
 def weather_rows_for(user_code):
     """该用户改过的天气优先，其余用模板。"""
-    from core.models import WeatherAlertLevels
+    from config_db.models import WeatherAlertLevels
 
     own = list(WeatherAlertLevels.objects.filter(user_code=user_code))
     if not _fallback(user_code):
@@ -211,7 +211,7 @@ def _json_row(model, user_code):
 
 
 def carrier_codes(user_code=None):
-    from core.models import Carrier
+    from config_db.models import Carrier
     from utils.flight_selection import carrier_code_or_blank, sort_carrier_codes
 
     user = user_code or current_settings_user()
@@ -221,7 +221,7 @@ def carrier_codes(user_code=None):
 
 
 def timer_config(user_code=None):
-    from core.models import DataRefreshTimer
+    from config_db.models import DataRefreshTimer
 
     user = user_code or active_job_user()
     row = _json_row(DataRefreshTimer, user)
@@ -249,7 +249,7 @@ def save_json_config(model, user_code, config):
 
 
 def restore_group(user_code, group):
-    from core.models import (
+    from config_db.models import (
         AirportAlertThresholds, Carrier, DataRefreshTimer, PopupSettings,
         RadarAlertConfig, TrendAlertConfig, WeatherAlertLevels,
     )

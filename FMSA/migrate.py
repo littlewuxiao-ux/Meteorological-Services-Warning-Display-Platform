@@ -1,6 +1,5 @@
 """选择迁移文件后执行。按文件里的模型判断写入配置库、生产库、口令库。"""
 
-import importlib
 import os
 import re
 import subprocess
@@ -17,7 +16,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 DJANGO_DIR = SCRIPT_DIR / "fmsa_django"
 MANAGE_PY = DJANGO_DIR / "manage.py"
 MIGRATIONS_ROOT = DJANGO_DIR / "fmsa_migrations"
-APPS = ("core", "parsers")
+APPS = ("config_db", "runtime_db", "access_db")
 FILE_RE = re.compile(r"^(\d{4})_.+\.py$")
 DB_CONFIG = "default"
 DB_RUNTIME = "runtime"
@@ -106,41 +105,15 @@ def parse_showmigrations(text):
     return applied, pending
 
 
-def _model_names(operation):
-    names = []
-    model_name = getattr(operation, "model_name", None)
-    if isinstance(model_name, str) and model_name:
-        names.append(model_name.lower())
-    elif isinstance(getattr(operation, "name", None), str) and operation.name:
-        names.append(operation.name.lower())
-    for attr in ("old_name", "new_name"):
-        value = getattr(operation, attr, None)
-        if isinstance(value, str) and value:
-            names.append(value.lower())
-    for attr in ("operations", "database_operations", "state_operations"):
-        for nested in getattr(operation, attr, None) or []:
-            names.extend(_model_names(nested))
-    return names
-
-
 def databases_for_migration(app, name):
-    """读迁移操作里的模型，对照分库名单。"""
+    """一个应用对应一个库。"""
     ensure_django()
-    from fmsa_system.db_router import database_for
-
-    module = importlib.import_module(f"fmsa_migrations.{app}.{name}")
-    names = []
-    for operation in module.Migration.operations:
-        names.extend(_model_names(operation))
+    from fmsa_system.db_router import APP_DATABASE
     close_django_connections()
-    if not names:
-        return [DB_RUNTIME] if app == "parsers" else [DB_CONFIG]
-    targets = []
-    for model_name in names:
-        target = database_for(app, model_name)
-        if target and target not in targets:
-            targets.append(target)
-    return targets or ([DB_RUNTIME] if app == "parsers" else [DB_CONFIG])
+    target = APP_DATABASE.get(app)
+    if target:
+        return [target]
+    return []
 
 
 class MigrateApp(tk.Tk):
@@ -162,7 +135,7 @@ class MigrateApp(tk.Tk):
         pad = {"padx": 10, "pady": 6}
         tk.Label(
             self,
-            text="迁移文件在 fmsa_migrations 的 core、parsers 子目录。执行前按模型判断写入哪个库。请先退出 FMSA 主程序。",
+            text="迁移按应用写入对应库：config_db→配置库，runtime_db→生产库，access_db→口令库。请先退出 FMSA 主程序。",
             anchor="w",
             justify="left",
         ).pack(fill="x", **pad)

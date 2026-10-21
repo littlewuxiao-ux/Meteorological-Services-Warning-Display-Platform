@@ -20,7 +20,7 @@ def _json_body(request):
 @require_http_methods(['GET', 'PUT'])
 @csrf_exempt
 def map_style_config(request, time_mode='current'):
-    from core.models import MapStyleConfig
+    from config_db.models import MapStyleConfig
     from api.settings_views import _deny_settings_write
     from utils.access_control import has_perm, resolve_access_identity
 

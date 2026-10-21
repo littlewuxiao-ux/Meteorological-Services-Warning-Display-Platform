@@ -100,8 +100,11 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     
     # 项目应用
+    'config_db',
+    'runtime_db',
+    'access_db',
     'core',
-    'parsers', 
+    'parsers',
     'api',
     'web',
 ]
@@ -185,8 +188,9 @@ DATABASES = {
 }
 DATABASE_ROUTERS = ['fmsa_system.db_router.FmsaRouter']
 MIGRATION_MODULES = {
-    'core': 'fmsa_migrations.core',
-    'parsers': 'fmsa_migrations.parsers',
+    'config_db': 'fmsa_migrations.config_db',
+    'runtime_db': 'fmsa_migrations.runtime_db',
+    'access_db': 'fmsa_migrations.access_db',
 }
 
 # Password validation

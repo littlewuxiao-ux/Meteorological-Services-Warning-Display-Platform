@@ -126,7 +126,7 @@ def _run_job_safe(codes: Optional[List[str]] = None) -> None:
 
 class RadarAlertPipeline:
     def __init__(self, config: Optional[dict] = None):
-        from core.models import RadarAlertConfig
+        from config_db.models import RadarAlertConfig
         from utils.user_settings import active_job_user, json_config_row
 
         if config is None:
@@ -288,7 +288,7 @@ class RadarAlertPipeline:
         ]
 
     def _ensure_tile_index(self, airports: List[dict]) -> dict:
-        from core.models import RadarTileIndex
+        from runtime_db.models import RadarTileIndex
 
         cfg = self.cfg
         zooms = [int(cfg['overview_z']), int(cfg['mid_z']), int(cfg['final_z'])]
@@ -439,7 +439,7 @@ class RadarAlertPipeline:
         }
 
     def _persist_results(self, results: List[dict], frame_ts: int, host: str, path: str) -> None:
-        from core.models import AirportRadarAlert, RadarJobRun
+        from runtime_db.models import AirportRadarAlert, RadarJobRun
         from utils.sqlite_retry import retry_if_locked
 
         now = timezone.now()
@@ -467,7 +467,7 @@ class RadarAlertPipeline:
     @staticmethod
     def _trim_radar_job_runs() -> None:
         """超过 1000 行时删最旧的，留到 900 行。规则与实况水位线相同。"""
-        from core.models import RadarJobRun
+        from runtime_db.models import RadarJobRun
 
         max_records = 1000
         current_count = RadarJobRun.objects.count()
@@ -499,7 +499,7 @@ class RadarAlertPipeline:
         )
 
     def _persist_one_airport(self, r: dict, frame_ts: int, old, now) -> None:
-        from core.models import AirportRadarAlert
+        from runtime_db.models import AirportRadarAlert
 
         alert_33 = r.get('alert_33') or 'N'
         alert_41 = r.get('alert_41') or 'N'

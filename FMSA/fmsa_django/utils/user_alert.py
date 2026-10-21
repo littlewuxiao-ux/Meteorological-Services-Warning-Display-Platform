@@ -49,7 +49,7 @@ def _weather_level(*codes):
 
 
 def _save(user_code, airport, kind, source_key, warnings):
-    from parsers.models import UserAirportAlert
+    from runtime_db.models import UserAirportAlert
 
     UserAirportAlert.objects.update_or_create(
         user_code=user_code,
@@ -60,7 +60,7 @@ def _save(user_code, airport, kind, source_key, warnings):
 
 
 def _load(user_code, airport, kind, source_key):
-    from parsers.models import UserAirportAlert
+    from runtime_db.models import UserAirportAlert
 
     row = UserAirportAlert.objects.filter(
         user_code=user_code, airport_4code=airport, kind=kind

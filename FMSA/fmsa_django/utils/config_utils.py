@@ -8,7 +8,7 @@ from typing import Dict, Any, Optional
 import json
 import logging
 
-from core.models import SystemConfig
+from config_db.models import SystemConfig
 
 logger = logging.getLogger('fmsa.config')
 

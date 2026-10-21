@@ -13,11 +13,11 @@ from datetime import datetime, timedelta, timezone
 import json
 import logging
 
-from core.models import (
+from config_db.models import (
     AirportInfo, AirportAlertThresholds, AirportTafImportConfig,
     WeatherAlertLevels, DataRefreshTimer,
 )
-from parsers.models import Flight, Metar, Taf
+from runtime_db.models import Flight, Metar, Taf
 from parsers.taf_parser import calc_taf_expected_issue_ms
 from parsers.parsing_manager import ParsingManager
 from utils.time_manager import TimeManager
@@ -74,7 +74,7 @@ def get_overview_auth_status(time_mode):
 def _hidden_prefix_areas():
     try:
         import json
-        from core.models import SystemConfig
+        from config_db.models import SystemConfig
         row = SystemConfig.objects.filter(config_type='default_template', config_key='hidden_prefix_regions').first()
         if row and row.config_value:
             return set(str(x) for x in json.loads(row.config_value))
@@ -86,7 +86,7 @@ def _hidden_prefix_areas():
 def get_cached_area_options():
     """主页筛选用的区域。来自前缀行上的序号、性质和区域名称。"""
     try:
-        from core.models import AirportPrefixArea
+        from config_db.models import AirportPrefixArea
         seen = set()
         domestic = []
         international = []
@@ -1981,7 +1981,7 @@ def get_airport_flight_status(request, time_mode='current'):
                               closest_departure_time_at_this_airport, en_route, has_parking } }
     """
     try:
-        from core.models import AircraftParkingInfo
+        from runtime_db.models import AircraftParkingInfo
 
         flights = Flight.objects.all()
 

@@ -10,7 +10,7 @@ import logging
 
 from django.utils import timezone
 from django.conf import settings
-from parsers.models import Flight
+from runtime_db.models import Flight
 from data_adapters.adapter_factory import AdapterFactory
 from utils.flight_selection import airport_flags_from_events, selected_carrier_codes, selected_events
 from utils.time_manager import TimeManager

@@ -15,8 +15,8 @@ from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional, Tuple
 
 from django.conf import settings
-from parsers.models import Taf
-from core.models import AirportAlertThresholds, AirportTafImportConfig, WeatherAlertLevels
+from runtime_db.models import Taf
+from config_db.models import AirportAlertThresholds, AirportTafImportConfig, WeatherAlertLevels
 from parsers.cloud_amount import (
     cloud_amount_qualifies,
     cloud_object_amount,

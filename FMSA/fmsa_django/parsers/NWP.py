@@ -67,7 +67,7 @@ class NwpParser:
 
         # ── Step 1: 获取有航班机场代码 ──
         try:
-            from parsers.models import Flight
+            from runtime_db.models import Flight
             airport_codes = list(
                 Flight.objects.filter(has_flight=True)
                 .values_list('airport_4code', flat=True)

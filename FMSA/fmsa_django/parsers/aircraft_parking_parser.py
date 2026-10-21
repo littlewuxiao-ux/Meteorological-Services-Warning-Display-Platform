@@ -10,7 +10,7 @@ import logging
 
 from django.utils import timezone
 from django.conf import settings
-from core.models import AircraftParkingInfo
+from runtime_db.models import AircraftParkingInfo
 from data_adapters.adapter_factory import AdapterFactory
 from utils.time_manager import TimeManager
 

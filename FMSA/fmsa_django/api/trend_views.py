@@ -50,7 +50,7 @@ def trend_alert_config(request, time_mode='current'):
 @csrf_exempt
 def trend_alert_handle(request, time_mode='current'):
     """把当前趋势告警标为已处理。告警颜色变化后会重新变为未处理。"""
-    from core.models import AirportTrendAlert
+    from runtime_db.models import AirportTrendAlert
 
     identity = resolve_access_identity(request)
     if not has_perm(identity, 'view_trend', 'write'):

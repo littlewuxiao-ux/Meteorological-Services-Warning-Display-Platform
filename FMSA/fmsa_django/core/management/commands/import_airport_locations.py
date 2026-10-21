@@ -13,7 +13,7 @@ from pathlib import Path
 from django.core.management.base import BaseCommand, CommandError
 
 from core.airport_directory import apply_prefix_if_blank
-from core.models import AirportInfo
+from config_db.models import AirportInfo
 
 
 _CSV_PATH = (

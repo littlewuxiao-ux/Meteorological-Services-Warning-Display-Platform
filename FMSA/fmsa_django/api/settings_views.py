@@ -11,7 +11,7 @@ from django.http import JsonResponse
 from django.views.decorators.http import require_http_methods
 from django.views.decorators.csrf import csrf_exempt
 
-from core.models import (
+from config_db.models import (
     AirportInfo, AirportPrefixArea, AirportTafImportConfig, DataRefreshTimer, PopupSettings,
     AirportAlertThresholds, WeatherTypeInfo, WeatherAlertLevels,
 )
@@ -125,7 +125,7 @@ def _use_global_template(request):
 
 
 def _save_template(key, rows):
-    from core.models import SystemConfig
+    from config_db.models import SystemConfig
     text = json.dumps(rows, ensure_ascii=False)
     obj, created = SystemConfig.objects.get_or_create(
         config_type='default_template',
@@ -138,7 +138,7 @@ def _save_template(key, rows):
 
 
 def _template_list(key, dump):
-    from core.models import SystemConfig
+    from config_db.models import SystemConfig
     row = SystemConfig.objects.filter(config_type='default_template', config_key=key).first()
     if row and row.config_value:
         try:
@@ -272,7 +272,7 @@ def _restore_global(group):
 
 
 def _hidden_prefix_regions():
-    from core.models import SystemConfig
+    from config_db.models import SystemConfig
     row = SystemConfig.objects.filter(
         config_type='default_template', config_key='hidden_prefix_regions'
     ).first()
@@ -504,7 +504,7 @@ def settings_data_refresh_timer_detail(request, timer_id, time_mode='current'):
 def prefix_area_visibility(request, time_mode='current'):
     from django.http import JsonResponse
     import json
-    from core.models import SystemConfig
+    from config_db.models import SystemConfig
     from utils.user_settings import TEMPLATE
     from utils.access_control import is_admin_unlocked
     if request.method != 'POST':

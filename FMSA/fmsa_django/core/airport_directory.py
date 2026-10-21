@@ -4,7 +4,7 @@ import logging
 
 import requests
 
-from core.models import AirportInfo, AirportPrefixArea, AirportTafImportConfig
+from config_db.models import AirportInfo, AirportPrefixArea, AirportTafImportConfig
 
 logger = logging.getLogger('fmsa.core')
 

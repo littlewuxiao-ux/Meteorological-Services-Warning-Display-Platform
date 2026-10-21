@@ -212,7 +212,7 @@ def _timer_rows():
 
 def _register_jobs(scheduler, time_mode='current'):
     from apscheduler.triggers.interval import IntervalTrigger
-    from core.models import RadarAlertConfig
+    from config_db.models import RadarAlertConfig
     from utils.radar.config_defaults import merge_config
     from utils.user_settings import active_job_user, json_config_row
 

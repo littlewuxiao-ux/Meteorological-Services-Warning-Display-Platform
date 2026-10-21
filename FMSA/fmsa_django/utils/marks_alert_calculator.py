@@ -9,7 +9,7 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Set
 
 from django.utils import timezone
 
-from parsers.models import Flight, Metar, Taf
+from runtime_db.models import Flight, Metar, Taf
 from utils.time_manager import TimeManager
 
 logger = logging.getLogger('fmsa.marks_alert')

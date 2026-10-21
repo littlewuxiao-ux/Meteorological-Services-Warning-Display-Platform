@@ -1,61 +1,20 @@
-"""配置库 default，生产库 runtime，口令库 access。"""
-
-CONFIG_MODELS = {
-    'airportinfo',
-    'airportalertthresholds',
-    'areaoptions',
-    'weatheralertlevels',
-    'carrier',
-    'systemconfig',
-    'datarefreshtimer',
-    'popupsettings',
-    'weathertypeinfo',
-    'airporttafimportconfig',
-    'airportprefixarea',
-    'radaralertconfig',
-    'mapstyleconfig',
-    'trendalertconfig',
-}
-
-RUNTIME_CORE_MODELS = {
-    'aircraftparkinginfo',
-    'wxmsgimportalert',
-    'nonlocalqrauthloginrecord',
-    'radartileindex',
-    'airportradaralert',
-    'radarjobrun',
-    'airporttrendalert',
-}
-
-ACCESS_MODELS = {
-    'accesssetting',
-}
-# 已删除的用户组表。迁移删表时仍要允许在口令库执行。
-_LEGACY_ACCESS_MODELS = {
-    'accessgroup',
-    'accessgrouppermission',
-    'nonlocalqrblacklist',
-}
+"""配置库 default，生产库 runtime，口令库 access。按应用整库路由。"""
 
 ACCESS_DB = 'access'
 
 DJANGO_APPS = {'admin', 'auth', 'contenttypes', 'sessions'}
 
+APP_DATABASE = {
+    'config_db': 'default',
+    'runtime_db': 'runtime',
+    'access_db': ACCESS_DB,
+}
+
 
 def database_for(app_label: str, model_name: str | None) -> str | None:
-    """返回模型所在库。model_name 为空时，无法从单个模型判断。"""
-    if app_label in DJANGO_APPS or app_label not in ('core', 'parsers'):
+    if app_label in DJANGO_APPS:
         return 'default'
-    if app_label == 'parsers':
-        return 'runtime'
-    name = (model_name or '').lower()
-    if name in CONFIG_MODELS:
-        return 'default'
-    if name in RUNTIME_CORE_MODELS:
-        return 'runtime'
-    if name in ACCESS_MODELS or name in _LEGACY_ACCESS_MODELS:
-        return ACCESS_DB
-    return None
+    return APP_DATABASE.get(app_label)
 
 
 class FmsaRouter:
@@ -71,18 +30,9 @@ class FmsaRouter:
         )
 
     def allow_migrate(self, db, app_label, model_name=None, **hints):
-        if db == ACCESS_DB:
-            name = (model_name or '').lower()
-            allowed = ACCESS_MODELS | _LEGACY_ACCESS_MODELS
-            return app_label == 'core' and name in allowed
         if app_label in DJANGO_APPS:
             return db == 'default'
-        if app_label == 'parsers':
-            return db == 'runtime'
-        if app_label == 'core':
-            if not model_name:
-                # 无模型名的数据脚本只跑配置库，避免在生产库重建配置表。
-                return db == 'default'
-            target = database_for('core', model_name)
-            return target == db
-        return db == 'default'
+        target = APP_DATABASE.get(app_label)
+        if target:
+            return db == target
+        return False
