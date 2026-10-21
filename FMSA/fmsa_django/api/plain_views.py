@@ -13,6 +13,7 @@ from django.http import JsonResponse
 from django.views.decorators.http import require_http_methods
 
 from utils.access_control import has_perm, resolve_access_identity
+from utils.cas_api_log import cas_user_context
 from utils.module_profile import REPORT_LANG_CHINESE, report_lang
 
 logger = logging.getLogger('fmsa.api')
@@ -50,6 +51,104 @@ def _latest_taf_elements(codes: list) -> dict:
         'airport_4code', 'taf_elements', 'data_status', 'import_alert'
     )
     return {row['airport_4code']: row for row in rows}
+
+
+def _soft_token(request, time_mode: str):
+    """批量翻译缺库时补拉实时报文用。没有 token 就跳过，不把整批打成 401。"""
+    if time_mode != 'current':
+        return None
+    auth_header = request.headers.get('Authorization', '')
+    if auth_header.startswith('Bearer '):
+        return auth_header[7:]
+    try:
+        from parsers.scheduler import get_scheduler_token
+        return get_scheduler_token()
+    except Exception:
+        return None
+
+
+def _df_for_code(df, code: str):
+    if df is None or getattr(df, 'empty', True):
+        return None
+    if 'airport4Code' not in df.columns:
+        return None
+    matched = df[df['airport4Code'].astype(str).str.strip().str.upper() == code]
+    if matched is None or matched.empty:
+        return None
+    return matched
+
+
+def _live_taf_row(code: str, time_mode: str, token):
+    """清单外机场不入库，按搜索同一路实时解析出 taf_elements。"""
+    try:
+        from data_adapters.adapter_factory import AdapterFactory
+        from parsers.taf_parser import TafParser
+
+        adapter = AdapterFactory.create_adapter(time_mode=time_mode, token=token)
+        taf_df = _df_for_code(adapter.get_taf_data([code]), code)
+        if taf_df is None:
+            return None
+        row = taf_df.iloc[0]
+        taf_content = str(row.get('content', '')).strip()
+        if not taf_content:
+            return None
+        parser = TafParser(time_mode=time_mode, token=token)
+        if not parser.parse_taf(taf_content, code):
+            return None
+        raw_obs_time = row.get('observationTime', '')
+        try:
+            parser.observation_time = int(float(raw_obs_time)) if raw_obs_time not in ('', None) else None
+        except (TypeError, ValueError):
+            parser.observation_time = None
+        data = parser.to_database_dict()
+        return {
+            'airport_4code': code,
+            'taf_elements': data.get('taf_elements'),
+            'data_status': 'N',
+            'import_alert': 'N',
+        }
+    except Exception as exc:
+        logger.warning(f'实时预报明语失败 [{code}]: {exc}')
+        return None
+
+
+def _live_metar_row(code: str, time_mode: str, token):
+    """清单外机场不入库，按搜索同一路实时解析出 metar_elements。"""
+    try:
+        from data_adapters.adapter_factory import AdapterFactory
+        from parsers.metar_parser import MetarParser
+
+        adapter = AdapterFactory.create_adapter(time_mode=time_mode, token=token)
+        metar_df = _df_for_code(adapter.get_metar_data([code]), code)
+        if metar_df is None:
+            return None
+        parser = MetarParser(time_mode=time_mode, token=token)
+        for _, row in metar_df.iterrows():
+            try:
+                parsed = parser._parse_metar_content(row)
+            except Exception as exc:
+                logger.debug(f'实时实况解析失败 [{code}]: {exc}')
+                continue
+            if not parsed or not parsed.get('metar_elements'):
+                continue
+            return {
+                'airport_4code': code,
+                'metar_elements': parsed.get('metar_elements'),
+                'data_status': 'N',
+                'sqc': str(row.get('sqc', '')).strip() or None,
+            }
+        return None
+    except Exception as exc:
+        logger.warning(f'实时实况明语失败 [{code}]: {exc}')
+        return None
+
+
+def _elements_ready(row: dict | None, field: str) -> bool:
+    if not row:
+        return False
+    if row.get('data_status') == 'C':
+        return True
+    return bool(row.get(field))
 
 
 def _latest_metar_elements(codes: list) -> dict:
@@ -92,6 +191,15 @@ def plain_taf_batch(request, time_mode='current'):
             return JsonResponse({'success': True, 'data': {}})
 
         rows = _latest_taf_elements(codes)
+        missing = [c for c in codes if not _elements_ready(rows.get(c), 'taf_elements')]
+        if missing:
+            from .airport_extra_views import _cas_user_from_request
+            token = _soft_token(request, time_mode)
+            with cas_user_context(_cas_user_from_request(request)):
+                for code in missing:
+                    live = _live_taf_row(code, time_mode, token)
+                    if live:
+                        rows[code] = live
         result = {}
         with plain_display_timezone(tz):
             for code in codes:
@@ -136,6 +244,15 @@ def plain_metar_batch(request, time_mode='current'):
             return JsonResponse({'success': True, 'data': {}})
 
         rows = _latest_metar_elements(codes)
+        missing = [c for c in codes if not _elements_ready(rows.get(c), 'metar_elements')]
+        if missing:
+            from .airport_extra_views import _cas_user_from_request
+            token = _soft_token(request, time_mode)
+            with cas_user_context(_cas_user_from_request(request)):
+                for code in missing:
+                    live = _live_metar_row(code, time_mode, token)
+                    if live:
+                        rows[code] = live
         result = {}
         with plain_display_timezone(tz):
             for code in codes:

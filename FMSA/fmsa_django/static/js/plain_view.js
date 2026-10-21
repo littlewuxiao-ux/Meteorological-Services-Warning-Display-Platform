@@ -348,11 +348,18 @@ function plainDetailMetarRow(airport) {
   const code = airport && airport.airport_4code;
   const latestMetar = airport && airport.metar_data && airport.metar_data[0];
   const cached = code ? _plainMetars[code] : null;
-  const inner = (cached && cached.translation && cached.translation.html)
-    ? cached.translation.html
-    : (latestMetar
-      ? '<span class="plain-empty">翻译中...</span>'
-      : '<span class="plain-empty">无METAR数据</span>');
+  let inner;
+  if (cached && cached.translation && cached.translation.html) {
+    inner = cached.translation.html;
+  } else if (cached && cached.tz === _plainTz()) {
+    inner = latestMetar
+      ? '<span class="plain-empty">没有有效的METAR数据</span>'
+      : '<span class="plain-empty">无METAR数据</span>';
+  } else if (latestMetar) {
+    inner = '<span class="plain-empty">翻译中...</span>';
+  } else {
+    inner = '<span class="plain-empty">无METAR数据</span>';
+  }
   const isAlerted = typeof alertedAirports !== 'undefined' && alertedAirports.has(code);
   const alertClass = isAlerted ? ' import-alerted' : '';
   const alertTitle = isAlerted ? ' title="【过期实况数据，注意提醒】"' : '';
