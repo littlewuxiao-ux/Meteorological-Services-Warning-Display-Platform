@@ -143,7 +143,7 @@ WSGI_APPLICATION = 'fmsa_system.wsgi.application'
 # Database
 # default 是配置库。runtime 是实况、预报、航班、告警结果这些生产库。
 _SQLITE_DIR = BASE_DIR.parent / 'data' / 'sqlite_database'
-_SQLITE_OPTIONS = {'timeout': 30}
+_SQLITE_OPTIONS = {'timeout': 60}
 
 
 def _adopt_sqlite_name(directory: Path, new_name: str, old_name: str) -> Path:

@@ -590,14 +590,15 @@ def trigger_parsing(request, time_mode='current'):
                         'error': '未找到认证token，请先登录'
                     }, status=401)
         
-        raw_user = request.headers.get('X-User-Code') or identity.get('user_id')
+        user_code = identity.get('user_id') or None
         from utils.popup_utils import get_client_ip
+        activator_ip = get_client_ip(request)
         logger.info(
             '手动激活解析: types=%s IP=%s user=%s',
-            update_types, get_client_ip(request), raw_user or '-',
+            update_types, activator_ip, user_code or '-',
         )
 
-        manager = ParsingManager(time_mode, token, log_user, activator_ip=activator_ip)
+        manager = ParsingManager(time_mode, token, user_code, activator_ip=activator_ip)
         
         # 根据是否有updateTypes参数决定调用哪个方法
         if update_types is None:

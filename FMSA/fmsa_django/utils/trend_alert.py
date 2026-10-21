@@ -1259,29 +1259,35 @@ def refresh_airports(codes, now_ms: Optional[int] = None, *, backfill: bool = Tr
             row.airport_4code: row
             for row in AirportTrendAlert.objects.filter(airport_4code__in=inside)
         }
+        pending = []
         for code in inside:
-            try:
-                groups = groups_for_airport(config, code, universe)
-                result = evaluate_airport(by_airport.get(code) or [], groups, now_ms, slots)
-                color = result['color']
-                old = previous.get(code)
-                handled = bool(
-                    old and old.handled and old.handled_signature == color and color in ('R', 'Y', 'G')
-                )
+            groups = groups_for_airport(config, code, universe)
+            result = evaluate_airport(by_airport.get(code) or [], groups, now_ms, slots)
+            color = result['color']
+            old = previous.get(code)
+            handled = bool(
+                old and old.handled and old.handled_signature == color and color in ('R', 'Y', 'G')
+            )
+            pending.append((code, {
+                'color': color,
+                'score': result['score'],
+                'bar_color': result.get('bar_color') or color,
+                'labels': result['labels'],
+                'series': _pack_series(result['rows'], slots),
+                'handled': handled,
+                'handled_signature': color if handled else '',
+            }))
+
+        from utils.sqlite_retry import retry_if_locked
+
+        def _write():
+            for code, defaults in pending:
                 AirportTrendAlert.objects.update_or_create(
                     airport_4code=code,
-                    defaults={
-                        'color': color,
-                        'score': result['score'],
-                        'bar_color': result.get('bar_color') or color,
-                        'labels': result['labels'],
-                        'series': _pack_series(result['rows'], slots),
-                        'handled': handled,
-                        'handled_signature': color if handled else '',
-                    },
+                    defaults=defaults,
                 )
-            except Exception:
-                logger.exception('实况趋势告警写入失败: %s', code)
+
+        retry_if_locked(_write)
     except Exception:
         logger.exception('实况趋势告警重算失败: %s', wanted)
 

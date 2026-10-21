@@ -440,27 +440,29 @@ class RadarAlertPipeline:
 
     def _persist_results(self, results: List[dict], frame_ts: int, host: str, path: str) -> None:
         from core.models import AirportRadarAlert, RadarJobRun
+        from utils.sqlite_retry import retry_if_locked
 
         now = timezone.now()
-        RadarJobRun.objects.create(
-            frame_time=frame_ts,
-            host=host,
-            path=path,
-            airport_count=len(results),
-            status='done',
-            finished_at=now,
-        )
-        self._trim_radar_job_runs()
         codes = [r['airport_4code'] for r in results]
-        previous = {
-            row.airport_4code: row
-            for row in AirportRadarAlert.objects.filter(airport_4code__in=codes)
-        }
-        for r in results:
-            try:
+
+        def _write():
+            RadarJobRun.objects.create(
+                frame_time=frame_ts,
+                host=host,
+                path=path,
+                airport_count=len(results),
+                status='done',
+                finished_at=now,
+            )
+            self._trim_radar_job_runs()
+            previous = {
+                row.airport_4code: row
+                for row in AirportRadarAlert.objects.filter(airport_4code__in=codes)
+            }
+            for r in results:
                 self._persist_one_airport(r, frame_ts, previous.get(r['airport_4code']), now)
-            except Exception:
-                logger.exception('雷达告警写入失败: %s', r.get('airport_4code'))
+
+        retry_if_locked(_write)
 
     @staticmethod
     def _trim_radar_job_runs() -> None:
