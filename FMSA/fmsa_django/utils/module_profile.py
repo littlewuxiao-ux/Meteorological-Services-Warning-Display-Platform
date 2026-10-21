@@ -18,15 +18,14 @@ PROFILE_PATH = _ROOT / 'data' / 'fmsa_modules.json'
 # 核心四类捆绑，不能关。
 CORE_KEY = 'core'
 
-# 可勾选模块。nwp 挂在主页下，不单独计入「至少勾选 1 个」。
+# 可勾选模块。nwp 挂在主页下；雷达/卫星由地图视图带动，均不单独计入「至少勾选 1 个」。
 OPTIONAL_KEYS = (
     'home',
+    'map',
     'plain',
-    'popup',
-    'import_alert',
     'trend',
-    'radar',
-    'satellite',
+    'import_alert',
+    'popup',
     'awc',
     'contact',
 )
@@ -35,9 +34,16 @@ OPTIONAL_KEYS = (
 REPORT_LANG_ORIGINAL = 'original'  # 原文优先：仅翻译视图显示中文
 REPORT_LANG_CHINESE = 'chinese'    # 中文优先：仅主页视图显示原文
 
+MODULE_GROUPS = (
+    ('base', '基础类'),
+    ('view', '视图类'),
+    ('general', '设置通用类'),
+)
+
 MODULE_META = [
     {
         'key': 'core',
+        'group': 'base',
         'name': '核心数据组',
         'locked': True,
         'data': '获取实况、预报、航班、停场，四类捆绑入库。地图上的机场也来自这组。',
@@ -47,6 +53,7 @@ MODULE_META = [
     },
     {
         'key': 'home',
+        'group': 'view',
         'name': '主页视图',
         'locked': False,
         'data': '不另取数据，用核心数据做列表展示。',
@@ -56,6 +63,7 @@ MODULE_META = [
     },
     {
         'key': 'nwp',
+        'group': 'view',
         'name': 'NWP 温度',
         'locked': False,
         'parent': 'home',
@@ -65,7 +73,18 @@ MODULE_META = [
         'config': '无',
     },
     {
+        'key': 'map',
+        'group': 'view',
+        'name': '地图视图',
+        'locked': False,
+        'data': '用地图展示核心机场。勾选后同时启用雷达回波、卫星云图图层，不再单独开关。',
+        'program': '雷达告警',
+        'human': '雷达告警标已处理',
+        'config': '雷达告警、地图样式',
+    },
+    {
         'key': 'plain',
+        'group': 'view',
         'name': '翻译视图',
         'locked': False,
         'data': '不另取数据，列表展示核心报文的中文。',
@@ -74,7 +93,28 @@ MODULE_META = [
         'config': '无',
     },
     {
+        'key': 'trend',
+        'group': 'view',
+        'name': '实况趋势',
+        'locked': False,
+        'data': '对实况再计算，导航进入趋势视图。',
+        'program': '趋势结果',
+        'human': '标已处理',
+        'config': '实况趋势告警',
+    },
+    {
+        'key': 'import_alert',
+        'group': 'view',
+        'name': '入库告警',
+        'locked': False,
+        'data': '检查实况、预报是否按时入库，导航进入入库视图。',
+        'program': '告警标记',
+        'human': '标已处理',
+        'config': '预报入库告警',
+    },
+    {
         'key': 'popup',
+        'group': 'general',
         'name': '实况弹窗',
         'locked': False,
         'data': '用核心实况、航班和停场规则计算运行类、停场类。',
@@ -83,43 +123,8 @@ MODULE_META = [
         'config': '弹窗设置',
     },
     {
-        'key': 'import_alert',
-        'name': '入库告警',
-        'locked': False,
-        'data': '检查实况、预报是否按时入库。',
-        'program': '告警标记',
-        'human': '标已处理',
-        'config': '预报入库告警',
-    },
-    {
-        'key': 'trend',
-        'name': '实况趋势',
-        'locked': False,
-        'data': '对实况再计算。',
-        'program': '趋势结果',
-        'human': '标已处理',
-        'config': '实况趋势告警',
-    },
-    {
-        'key': 'radar',
-        'name': '雷达',
-        'locked': False,
-        'data': '获取雷达回波并做反演。显示在地图图层和导航数量。',
-        'program': '告警',
-        'human': '标已处理',
-        'config': '雷达告警',
-    },
-    {
-        'key': 'satellite',
-        'name': '卫星云图',
-        'locked': False,
-        'data': '浏览器直接取葵花红外、水汽、可见光。服务器不入库。显示在地图图层。',
-        'program': '无',
-        'human': '无',
-        'config': '无',
-    },
-    {
         'key': 'awc',
+        'group': 'general',
         'name': 'AWC 机场资料',
         'locked': False,
         'data': '按需查询坐标、跑道、日出日落。',
@@ -129,7 +134,8 @@ MODULE_META = [
     },
     {
         'key': 'contact',
-        'name': '其他',
+        'group': 'general',
+        'name': '联系方式',
         'locked': False,
         'data': '控制联系方式是否在详情和搜索中展示。不勾时隐藏展示位置。',
         'program': '无',
@@ -144,6 +150,8 @@ def default_modules() -> Dict[str, bool]:
     for key in OPTIONAL_KEYS:
         data[key] = True
     data['nwp'] = True
+    data['radar'] = True
+    data['satellite'] = True
     return data
 
 
@@ -153,15 +161,21 @@ def default_options() -> Dict[str, str]:
 
 def _normalize(raw: dict) -> Dict[str, bool]:
     base = default_modules()
+    src = {}
     if isinstance(raw, dict):
         src = raw.get('modules') if isinstance(raw.get('modules'), dict) else raw
-        if isinstance(src, dict):
-            for key in list(base.keys()):
-                if key in src:
-                    base[key] = bool(src[key])
+        if not isinstance(src, dict):
+            src = {}
+        for key in list(base.keys()):
+            if key in src:
+                base[key] = bool(src[key])
+        if 'map' not in src:
+            base['map'] = bool(src.get('radar', True)) or bool(src.get('satellite', True))
     base[CORE_KEY] = True
     if not base.get('home'):
         base['nwp'] = False
+    base['radar'] = bool(base.get('map'))
+    base['satellite'] = bool(base.get('map'))
     return base
 
 
@@ -224,6 +238,8 @@ def module_enabled(key: str) -> bool:
     modules = load_modules()
     if key == 'nwp':
         return bool(modules.get('home')) and bool(modules.get('nwp'))
+    if key in ('radar', 'satellite'):
+        return bool(modules.get('map'))
     if key == CORE_KEY:
         return True
     return bool(modules.get(key))
@@ -282,12 +298,11 @@ def permissions_for_runtime() -> Dict[str, dict]:
     always = flag(True)
     home = flag(bool(on.get('home')))
     nwp = flag(bool(on.get('home')) and bool(on.get('nwp')))
+    mapped = flag(bool(on.get('map')))
     plain = flag(bool(on.get('plain')))
     popup = flag(bool(on.get('popup')))
     imported = flag(bool(on.get('import_alert')))
     trend = flag(bool(on.get('trend')))
-    radar = flag(bool(on.get('radar')))
-    satellite = flag(bool(on.get('satellite')))
     contact = flag(bool(on.get('contact')))
     off = flag(False)
 
@@ -299,10 +314,10 @@ def permissions_for_runtime() -> Dict[str, dict]:
         'settings_btn': always,
         'metar_popup': popup,
         'view_home': home,
-        'view_map': always,
-        'map_radar': radar,
-        'map_radar_nav': radar,
-        'map_satellite': satellite,
+        'view_map': mapped,
+        'map_radar': mapped,
+        'map_radar_nav': mapped,
+        'map_satellite': mapped,
         'view_plain': plain,
         'view_trend': trend,
         'view_trend_nav': trend,
@@ -320,8 +335,8 @@ def permissions_for_runtime() -> Dict[str, dict]:
         'settings_alert_thresholds': always,
         'settings_weather_type': always,
         'settings_weather_alert': always,
-        'settings_radar_alert': radar,
+        'settings_radar_alert': mapped,
         'settings_trend_alert': trend,
-        'settings_map_style': always,
+        'settings_map_style': mapped,
         'unused': off,
     }

@@ -17,6 +17,7 @@ _profile = importlib.util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(_profile)
 
 MODULE_META = _profile.MODULE_META
+MODULE_GROUPS = _profile.MODULE_GROUPS
 PROFILE_PATH = _profile.PROFILE_PATH
 load_profile = _profile.load_profile
 save_profile = _profile.save_profile
@@ -35,28 +36,116 @@ LABEL2 = '#c7c7cc'
 MUTED = '#8e8e93'
 LINE = '#3a3a3c'
 ROW_ALT = '#1c1c1e'
+BOX = 22
 
 ctk.set_appearance_mode('dark')
 ctk.set_default_color_theme('dark-blue')
 
 COLS = (
-    ('模块', 168),
+    ('模块', 210),
     ('数据', 280),
-    ('程序写入', 170),
+    ('程序写入', 160),
     ('人写入', 170),
-    ('配置', 220),
+    ('配置', 210),
 )
+
+
+class SquareCheck(ctk.CTkFrame):
+    """方块勾选：选中时框内显示 √。locked 时仍显示勾，点了不变。"""
+
+    def __init__(self, master, text, variable, command=None, locked=False, width=210):
+        super().__init__(master, fg_color='transparent', width=width)
+        self.variable = variable
+        self.command = command
+        self.locked = locked
+        self.box = ctk.CTkButton(
+            self, text='', width=BOX, height=BOX, corner_radius=3,
+            fg_color=BG3, hover_color='#3a3a40', border_width=2, border_color=MUTED,
+            font=ctk.CTkFont(size=14, weight='bold'), text_color='#ffffff',
+            command=self._click,
+        )
+        self.box.pack(side='left', padx=(0, 8), pady=0)
+        self.caption = ctk.CTkLabel(
+            self, text=text, font=ctk.CTkFont(size=14, weight='bold'),
+            text_color=LABEL, anchor='w', cursor='hand2',
+        )
+        self.caption.pack(side='left', fill='x', expand=True)
+        self.caption.bind('<Button-1>', lambda _e: self._click())
+        self._trace = variable.trace_add('write', lambda *_: self._paint())
+        self._paint()
+
+    def _click(self):
+        if self.locked:
+            return
+        self.variable.set(not bool(self.variable.get()))
+        if self.command:
+            self.command()
+
+    def set_locked(self, locked):
+        self.locked = bool(locked)
+        self._paint()
+
+    def _paint(self):
+        on = bool(self.variable.get())
+        self.box.configure(
+            text='√' if on else '',
+            fg_color=BLUE if on else BG3,
+            hover_color=BLUE if on else '#3a3a40',
+            border_color=BLUE if on else MUTED,
+        )
+        if self.locked:
+            self.box.configure(hover_color=BLUE if on else BG3)
+            self.caption.configure(text_color=MUTED if not on else LABEL)
+
+
+class ExclusiveSquare(ctk.CTkFrame):
+    """二选一：同样是方块 √，同一组只能勾一个。"""
+
+    def __init__(self, master, text, variable, value, command=None, width=210):
+        super().__init__(master, fg_color='transparent', width=width)
+        self.variable = variable
+        self.value = value
+        self.command = command
+        self.box = ctk.CTkButton(
+            self, text='', width=BOX, height=BOX, corner_radius=3,
+            fg_color=BG3, hover_color='#3a3a40', border_width=2, border_color=MUTED,
+            font=ctk.CTkFont(size=14, weight='bold'), text_color='#ffffff',
+            command=self._click,
+        )
+        self.box.pack(side='left', padx=(0, 8), pady=0)
+        self.caption = ctk.CTkLabel(
+            self, text=text, font=ctk.CTkFont(size=14, weight='bold'),
+            text_color=LABEL, anchor='w', cursor='hand2',
+        )
+        self.caption.pack(side='left', fill='x', expand=True)
+        self.caption.bind('<Button-1>', lambda _e: self._click())
+        variable.trace_add('write', lambda *_: self._paint())
+        self._paint()
+
+    def _click(self):
+        self.variable.set(self.value)
+        if self.command:
+            self.command()
+
+    def _paint(self):
+        on = self.variable.get() == self.value
+        self.box.configure(
+            text='√' if on else '',
+            fg_color=BLUE if on else BG3,
+            hover_color=BLUE if on else '#3a3a40',
+            border_color=BLUE if on else MUTED,
+        )
 
 
 class ModuleConfigApp(ctk.CTk):
     def __init__(self):
         super().__init__()
         self.title('FMSA 模块配置')
-        self.geometry('1180x820')
-        self.minsize(980, 680)
+        self.geometry('1180x860')
+        self.minsize(980, 700)
         self.configure(fg_color=BG)
         self._vars = {}
-        self._nwp_switch = None
+        self._checks = {}
         self._lang = ctk.StringVar(value=REPORT_LANG_ORIGINAL)
         self._build()
         self._load()
@@ -70,7 +159,7 @@ class ModuleConfigApp(ctk.CTk):
         ).pack(fill='x')
         ctk.CTkLabel(
             header,
-            text='勾选后主程序下次启动生效。核心数据组固定启用。至少再勾选 1 个模块。',
+            text='勾选后主程序下次启动生效。核心数据组固定启用。至少再勾选 1 个模块。雷达和卫星由地图视图一并控制。',
             font=ctk.CTkFont(size=13), text_color=LABEL2, anchor='w', wraplength=1100,
         ).pack(fill='x', pady=(4, 0))
         ctk.CTkLabel(
@@ -78,72 +167,17 @@ class ModuleConfigApp(ctk.CTk):
             text_color=MUTED, anchor='w',
         ).pack(fill='x', pady=(2, 0))
 
-        lang = ctk.CTkFrame(self, fg_color=BG2, corner_radius=10)
-        lang.pack(fill='x', padx=22, pady=(10, 6))
-        ctk.CTkLabel(
-            lang, text='机场详情 / 搜索结果',
-            font=ctk.CTkFont(size=15, weight='bold'), text_color=LABEL, anchor='w',
-        ).pack(fill='x', padx=16, pady=(12, 4))
+        scroll = ctk.CTkScrollableFrame(self, fg_color=BG, corner_radius=0)
+        scroll.pack(fill='both', expand=True, padx=14, pady=8)
 
-        choices = ctk.CTkFrame(lang, fg_color='transparent')
-        choices.pack(fill='x', padx=12, pady=(0, 12))
-        self._lang_original = self._lang_card(
-            choices, REPORT_LANG_ORIGINAL, '原文优先',
-            '只有翻译视图下，详情和搜索才显示中文；其余视图显示原文。',
-        )
-        self._lang_original.pack(side='left', fill='both', expand=True, padx=4)
-        self._lang_chinese = self._lang_card(
-            choices, REPORT_LANG_CHINESE, '中文优先',
-            '只有主页视图下，详情和搜索才显示原文；其余视图显示中文。',
-        )
-        self._lang_chinese.pack(side='left', fill='both', expand=True, padx=4)
-        self._lang.trace_add('write', lambda *_: self._paint_lang())
+        by_group = {key: [] for key, _title in MODULE_GROUPS}
+        for meta in MODULE_META:
+            by_group.setdefault(meta['group'], []).append(meta)
 
-        table_wrap = ctk.CTkFrame(self, fg_color=BG2, corner_radius=10)
-        table_wrap.pack(fill='both', expand=True, padx=22, pady=6)
-
-        head = ctk.CTkFrame(table_wrap, fg_color=HEADER, corner_radius=0)
-        head.pack(fill='x')
-        for i, (title, width) in enumerate(COLS):
-            ctk.CTkLabel(
-                head, text=title, width=width, anchor='w',
-                font=ctk.CTkFont(size=13, weight='bold'), text_color=LABEL2,
-            ).grid(row=0, column=i, sticky='nsew', padx=(16 if i == 0 else 8, 8), pady=10)
-            head.grid_columnconfigure(i, weight=1 if i else 0)
-
-        scroll = ctk.CTkScrollableFrame(table_wrap, fg_color=BG2, corner_radius=0)
-        scroll.pack(fill='both', expand=True)
-
-        for row_i, meta in enumerate(MODULE_META):
-            bg = ROW_ALT if row_i % 2 else BG2
-            row = ctk.CTkFrame(scroll, fg_color=bg, corner_radius=0)
-            row.pack(fill='x')
-            var = ctk.BooleanVar(value=True)
-            self._vars[meta['key']] = var
-            name = meta['name']
-            if meta.get('parent') == 'home':
-                name = '└  ' + name
-            switch = ctk.CTkSwitch(
-                row, text=name, variable=var, width=COLS[0][1],
-                font=ctk.CTkFont(size=14, weight='bold'),
-                text_color=LABEL, progress_color=BLUE,
-                command=self._on_toggle,
-            )
-            switch.grid(row=0, column=0, sticky='nw', padx=(16, 8), pady=10)
-            if meta.get('locked'):
-                switch.configure(state='disabled')
-                var.set(True)
-            if meta['key'] == 'nwp':
-                self._nwp_switch = switch
-            texts = (meta['data'], meta['program'], meta['human'], meta['config'])
-            for i, text in enumerate(texts, start=1):
-                ctk.CTkLabel(
-                    row, text=text, width=COLS[i][1],
-                    font=ctk.CTkFont(size=13), text_color=LABEL2,
-                    anchor='nw', justify='left', wraplength=COLS[i][1] - 8,
-                ).grid(row=0, column=i, sticky='nsew', padx=8, pady=10)
-                row.grid_columnconfigure(i, weight=1)
-            row.grid_columnconfigure(0, weight=0)
+        for group_key, title in MODULE_GROUPS:
+            wrap = self._section(scroll, title, by_group.get(group_key) or [])
+            if group_key == 'general':
+                self._lang_rows(wrap)
 
         bar = ctk.CTkFrame(self, fg_color=BG, corner_radius=0)
         bar.pack(fill='x', padx=22, pady=(4, 16))
@@ -157,36 +191,78 @@ class ModuleConfigApp(ctk.CTk):
             font=ctk.CTkFont(size=14, weight='bold'), command=self._save,
         ).pack(side='right')
 
-    def _lang_card(self, parent, value, title, desc):
-        card = ctk.CTkFrame(
-            parent, fg_color=BG3, corner_radius=8, cursor='hand2',
-            border_width=2, border_color=LINE,
-        )
-        radio = ctk.CTkRadioButton(
-            card, text=title, variable=self._lang, value=value,
-            font=ctk.CTkFont(size=15, weight='bold'), text_color=LABEL,
-            fg_color=BLUE, hover_color=BLUE, command=self._paint_lang,
-        )
-        radio.pack(anchor='w', padx=14, pady=(12, 4))
+    def _section(self, parent, title, items):
+        wrap = ctk.CTkFrame(parent, fg_color=BG2, corner_radius=10)
+        wrap.pack(fill='x', padx=8, pady=(0, 10))
         ctk.CTkLabel(
-            card, text=desc, font=ctk.CTkFont(size=13), text_color=LABEL2,
-            anchor='w', justify='left', wraplength=480,
-        ).pack(fill='x', padx=14, pady=(0, 12))
-        card.bind('<Button-1>', lambda _e, v=value: self._lang.set(v))
-        return card
+            wrap, text=title, font=ctk.CTkFont(size=16, weight='bold'),
+            text_color=LABEL, anchor='w',
+        ).pack(fill='x', padx=16, pady=(12, 6))
+        self._col_header(wrap)
+        for row_i, meta in enumerate(items):
+            self._module_row(wrap, meta, row_i)
+        return wrap
 
-    def _paint_lang(self):
-        current = self._lang.get()
-        for card, value in (
-            (self._lang_original, REPORT_LANG_ORIGINAL),
-            (self._lang_chinese, REPORT_LANG_CHINESE),
-        ):
-            on = current == value
-            card.configure(
-                fg_color='#1a2740' if on else BG3,
-                border_color=BLUE if on else LINE,
-            )
-        self.status.configure(text='', text_color=LABEL2)
+    def _col_header(self, parent):
+        head = ctk.CTkFrame(parent, fg_color=HEADER, corner_radius=0)
+        head.pack(fill='x')
+        for i, (title, width) in enumerate(COLS):
+            ctk.CTkLabel(
+                head, text=title, width=width, anchor='w',
+                font=ctk.CTkFont(size=12, weight='bold'), text_color=MUTED,
+            ).grid(row=0, column=i, sticky='nsew', padx=(16 if i == 0 else 8, 8), pady=8)
+            head.grid_columnconfigure(i, weight=1 if i else 0)
+
+    def _module_row(self, parent, meta, row_i):
+        bg = ROW_ALT if row_i % 2 else BG2
+        row = ctk.CTkFrame(parent, fg_color=bg, corner_radius=0)
+        row.pack(fill='x')
+        var = ctk.BooleanVar(value=True)
+        self._vars[meta['key']] = var
+        pad_left = 36 if meta.get('parent') == 'home' else 16
+        check = SquareCheck(
+            row, meta['name'], var, command=self._on_toggle,
+            locked=bool(meta.get('locked')), width=COLS[0][1] - (pad_left - 16),
+        )
+        check.grid(row=0, column=0, sticky='nw', padx=(pad_left, 8), pady=10)
+        self._checks[meta['key']] = check
+        texts = (meta['data'], meta['program'], meta['human'], meta['config'])
+        for i, text in enumerate(texts, start=1):
+            ctk.CTkLabel(
+                row, text=text, width=COLS[i][1],
+                font=ctk.CTkFont(size=13), text_color=LABEL2,
+                anchor='nw', justify='left', wraplength=COLS[i][1] - 8,
+            ).grid(row=0, column=i, sticky='nsew', padx=8, pady=10)
+            row.grid_columnconfigure(i, weight=1)
+        row.grid_columnconfigure(0, weight=0)
+
+    def _lang_rows(self, wrap):
+        ctk.CTkLabel(
+            wrap, text='机场详情 / 搜索结果',
+            font=ctk.CTkFont(size=14, weight='bold'), text_color=LABEL, anchor='w',
+        ).pack(fill='x', padx=16, pady=(10, 4))
+        rows = (
+            (
+                REPORT_LANG_ORIGINAL, '原文优先',
+                '只有翻译视图下，机场详情和搜索才显示中文；其余视图显示原文。',
+            ),
+            (
+                REPORT_LANG_CHINESE, '中文优先',
+                '只有主页视图下，机场详情和搜索才显示原文；其余视图显示中文。',
+            ),
+        )
+        for i, (value, name, desc) in enumerate(rows):
+            bg = ROW_ALT if i % 2 else BG2
+            row = ctk.CTkFrame(wrap, fg_color=bg, corner_radius=0)
+            row.pack(fill='x')
+            ExclusiveSquare(
+                row, name, self._lang, value, command=self._on_toggle, width=COLS[0][1],
+            ).grid(row=0, column=0, sticky='nw', padx=(16, 8), pady=10)
+            ctk.CTkLabel(
+                row, text=desc, font=ctk.CTkFont(size=13), text_color=LABEL2,
+                anchor='nw', justify='left', wraplength=COLS[1][1] + COLS[2][1] + COLS[3][1] + COLS[4][1] - 24,
+            ).grid(row=0, column=1, columnspan=4, sticky='nsew', padx=8, pady=10)
+            row.grid_columnconfigure(1, weight=1)
 
     def _load(self):
         profile = load_profile()
@@ -196,7 +272,6 @@ class ModuleConfigApp(ctk.CTk):
         self._vars['core'].set(True)
         self._lang.set(profile['options'].get('report_lang') or REPORT_LANG_ORIGINAL)
         self._sync_nwp()
-        self._paint_lang()
 
     def _on_toggle(self):
         self._sync_nwp()
@@ -206,14 +281,17 @@ class ModuleConfigApp(ctk.CTk):
         home_on = bool(self._vars['home'].get())
         if not home_on:
             self._vars['nwp'].set(False)
-        if self._nwp_switch is not None:
-            self._nwp_switch.configure(state='normal' if home_on else 'disabled')
+        nwp = self._checks.get('nwp')
+        if nwp is not None:
+            nwp.set_locked(not home_on)
 
     def _selection(self):
         data = {key: bool(var.get()) for key, var in self._vars.items()}
         data['core'] = True
         if not data.get('home'):
             data['nwp'] = False
+        data['radar'] = bool(data.get('map'))
+        data['satellite'] = bool(data.get('map'))
         return data
 
     def _save(self):
