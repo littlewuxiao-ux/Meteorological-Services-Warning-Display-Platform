@@ -12,6 +12,20 @@ from datetime import datetime
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+# FMSA/.env：内网地址只放本机，不进 Git
+try:
+    from utils.sf_env import load_fmsa_env
+    load_fmsa_env()
+except Exception:
+    env_path = BASE_DIR.parent / '.env'
+    if env_path.is_file():
+        for raw in env_path.read_text(encoding='utf-8').splitlines():
+            line = raw.strip()
+            if not line or line.startswith('#') or '=' not in line:
+                continue
+            key, _, value = line.partition('=')
+            os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+
 
 # 自定义日志处理器：按日期创建文件，避免重命名冲突
 class DailyFileHandler(logging.FileHandler):
@@ -86,7 +100,7 @@ SECRET_KEY = 'django-insecure-mtws-secret-key-change-in-production'
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-# 内网统一入口会把局域网 IP 写进 Host（如 10.88.24.24:8000）。
+# 内网统一入口会把席位机局域网 IP 写进 Host。
 # 通配允许席位机用 IP 访问；本系统仅部署在局域网。
 ALLOWED_HOSTS = ['*']
 

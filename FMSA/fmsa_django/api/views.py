@@ -34,6 +34,7 @@ from utils.marks_alert_calculator import computed_alerts_from_flight
 from utils.popup_utils import PopupManager, get_seat_identity, get_popup_trace_hours, list_popup_history
 from data_adapters.adapter_factory import AdapterFactory
 from utils.cas_api_log import cas_user_context, log_cas_api_request
+from utils.sf_env import intranet_url
 
 logger = logging.getLogger('fmsa.api')
 
@@ -902,7 +903,7 @@ def validate_token_status(request, time_mode='current'):
             has_token=True,
         )
         response = requests.post(
-            'http://sfa-wgw-inn.sf-airlines.com:1080/flight/flightSchedule/getByFlightDate',
+            intranet_url('/flight/flightSchedule/getByFlightDate'),
             headers=headers,
             json=request_data,
             timeout=10

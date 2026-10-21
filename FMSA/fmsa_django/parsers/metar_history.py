@@ -9,12 +9,12 @@ import requests
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
+from utils.sf_env import intranet_url
+
 logger = logging.getLogger('fmsa.parsers')
 
-_HISTORY_API_URL = (
-    "http://sfa-wgw-inn.sf-airlines.com:1080"
-    "/met/dispatchMetTelSummary/airportMetList"
-)
+def _history_api_url():
+    return intranet_url('/met/dispatchMetTelSummary/airportMetList')
 
 # 单位换算常数
 _KT_TO_MPS = 0.514444   # 节 → 米/秒
@@ -319,7 +319,7 @@ def _fetch_history_obj(
             has_token=bool(token) if time_mode == 'current' else False,
         )
         response = requests.post(
-            _HISTORY_API_URL,
+            _history_api_url(),
             headers=headers,
             json=payload,
             timeout=30,

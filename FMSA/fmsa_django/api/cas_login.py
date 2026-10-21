@@ -7,6 +7,7 @@ from PIL import Image
 from io import BytesIO
 
 from utils.cas_api_log import log_cas_api_request
+from utils.sf_env import intranet_url, require
 
 session = requests.session()
 
@@ -20,20 +21,15 @@ def reset_cas_http_session():
         pass
     session = requests.session()
 
-get_qar_url = "https://cas.sf-express.com/cas/qrcode?type=cXJjb2Rl"
-listion_scan_qrcode_url = "https://cas.sf-express.com/cas/qrcode?type=dmFsaWRhdGlvbg"
-validate_url = "https://sfa-gwgw-inn.sf-airlines.com:8443/apis-auth/login/cas3.0"
-
-
 def get_config():
     """
     根据serviceId获得配置信息
     :return:
     """
     data = {
-        "serviceId": "sfa-gwgw-inn.sf-airlines.com"
+        "serviceId": require('SF_CAS_SERVICE_ID')
     }
-    url = "https://cas.sf-express.com/cas/app/getConfig"
+    url = require('SF_CAS_CONFIG_URL')
     log_cas_api_request(url, user_id='(未登录)', has_token=False)
     response = session.post(url=url, json=data)
     json_str = json.loads(response.text)
@@ -48,8 +44,9 @@ def get_qrcode(config):
     headers = {
         "routing": config.get("routing")
     }
-    log_cas_api_request(get_qar_url, user_id='(未登录)', has_token=False)
-    response = session.get(get_qar_url, headers=headers)
+    qr_url = require('SF_CAS_QRCODE_URL')
+    log_cas_api_request(qr_url, user_id='(未登录)', has_token=False)
+    response = session.get(qr_url, headers=headers)
     json_str = json.loads(response.text).get("data")
     return {
         "qr_id": json_str.get("id"),
@@ -66,8 +63,9 @@ def check_scan_status(qr_id, routing):
         "id": qr_id,
         "responseHeaders": "true"
     }
-    log_cas_api_request(listion_scan_qrcode_url, user_id='(扫码中)', has_token=False)
-    response = session.get(listion_scan_qrcode_url, params=params)
+    scan_url = require('SF_CAS_SCAN_URL')
+    log_cas_api_request(scan_url, user_id='(扫码中)', has_token=False)
+    response = session.get(scan_url, params=params)
     response_data = json.loads(response.text)
     if response_data.get("success") == True:
         scan_data = response_data.get("data")
@@ -84,8 +82,9 @@ def qrcode_login(config):
     headers = {
         "routing": config.get("routing")
     }
-    log_cas_api_request(get_qar_url, user_id='(未登录)', has_token=False)
-    response = session.get(get_qar_url, headers=headers)
+    qr_url = require('SF_CAS_QRCODE_URL')
+    log_cas_api_request(qr_url, user_id='(未登录)', has_token=False)
+    response = session.get(qr_url, headers=headers)
     json_str = json.loads(response.text).get("data")
     img_data = base64.b64decode(json_str.get("img"))
     byte_stream = BytesIO(img_data)
@@ -99,7 +98,7 @@ def qrcode_login(config):
             "id": json_str.get("id"),
             "responseHeaders": "true"
         }
-        response2 = session.get(listion_scan_qrcode_url, params=params)
+        response2 = session.get(require('SF_CAS_SCAN_URL'), params=params)
         json_str2 = json.loads(response2.text).get("data")
         if json.loads(response2.text).get("success") == True:
             print("扫码成功:" + json_str2.get("userCode"))
@@ -121,8 +120,9 @@ def validate_login(config, scan_qrcode_result):
         "appSecret": "mtwsFoc2#123"
     }
     user_id = scan_qrcode_result.get("userCode") or '(扫码成功待换票)'
-    log_cas_api_request(validate_url, user_id=user_id, has_token=False)
-    response = session.post(validate_url, headers=headers, json=data)
+    login_url = require('SF_CAS_VALIDATE_URL')
+    log_cas_api_request(login_url, user_id=user_id, has_token=False)
+    response = session.post(login_url, headers=headers, json=data)
     json_str = json.loads(response.text)
     print("登录成功")
     return json_str.get("obj").get("token")
@@ -139,7 +139,7 @@ def logout(token):
         bool: 登出是否成功
     """
     try:
-        logout_url = "http://sfa-wgw-inn.sf-airlines.com:1080/apis-auth/login/logout"
+        logout_url = intranet_url(require('SF_CAS_LOGOUT_PATH'))
         log_cas_api_request(logout_url, has_token=bool(token))
         headers = {
             'token': token,

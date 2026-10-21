@@ -13,6 +13,7 @@ import json
 from .base_adapter import BaseDataAdapter
 
 from utils.cas_api_log import log_cas_api_request
+from utils.sf_env import intranet_base_url
 
 logger = logging.getLogger('fmsa.data_adapters')
 
@@ -35,7 +36,7 @@ class APIDataAdapter(BaseDataAdapter):
         self.token = token
         self.timeout = 30
         
-        self.base_url = "http://sfa-wgw-inn.sf-airlines.com:1080"
+        self.base_url = intranet_base_url()
         self.headers = {
             'token': token or '',
             'Content-Type': 'application/json'
