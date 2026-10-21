@@ -60,34 +60,8 @@ SCRIPT_DIR  = Path(__file__).parent
 CONFIG_PATH = SCRIPT_DIR / "launcher_config.json"
 IPC_PORT    = 19528          # 单实例 IPC（与 MTWS 的 19527 错开）
 AUTH_BROKER_PORT = 19529     # Nginx 统一登录态接口后端（仅 127.0.0.1，由 Nginx /auth/ 反代）
-
-
-def _load_fmsa_env():
-    path = SCRIPT_DIR / "FMSA" / ".env"
-    if not path.is_file():
-        return
-    try:
-        text = path.read_text(encoding="utf-8")
-    except OSError:
-        return
-    for raw in text.splitlines():
-        line = raw.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, _, value = line.partition("=")
-        key = key.strip()
-        value = value.strip().strip('"').strip("'")
-        if key:
-            os.environ.setdefault(key, value)
-
-
-_load_fmsa_env()
-# 航班计划接口，用于轻量校验 token 是否仍然有效（地址来自 FMSA/.env）。
-_sf_base = os.environ.get("SF_INTRANET_BASE_URL", "").rstrip("/")
-SF_FLIGHT_VALIDATE_URL = (
-    os.environ.get("SF_FLIGHT_VALIDATE_URL", "").strip()
-    or (f"{_sf_base}/flight/flightSchedule/getByFlightDate" if _sf_base else "")
-)
+# SF 平台航班计划接口，用于轻量校验 token 是否仍然有效（与 MTWS validate-token 同源）。
+SF_FLIGHT_VALIDATE_URL = "http://sfa-wgw-inn.sf-airlines.com:1080/flight/flightSchedule/getByFlightDate"
 AUTH_VALIDATE_INTERVAL_MS = 60000   # 控制台后台校验 token 的间隔（毫秒）
 
 DEFAULT_MTWS_DIR = SCRIPT_DIR / "FMSA"
