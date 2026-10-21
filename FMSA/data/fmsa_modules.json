@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "modules": {
+    "core": true,
+    "home": true,
+    "nwp": true,
+    "plain": true,
+    "popup": true,
+    "import_alert": true,
+    "trend": true,
+    "radar": true,
+    "satellite": true,
+    "awc": true,
+    "contact": true
+  }
+}

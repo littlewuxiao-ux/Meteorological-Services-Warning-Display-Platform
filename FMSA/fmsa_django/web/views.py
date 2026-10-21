@@ -125,11 +125,6 @@ def parsing_status(request, time_mode='current'):
     })
 
 
-def access_admin(request, time_mode='current'):
-    """超级用户管理独立页"""
-    return render(request, 'web/access_admin.html', {'time_mode': time_mode})
-
-
 def system_reference_pdf(request):
     """在浏览器新标签中打开 docs/FMSA-System-Reference.pdf。"""
     docs_dir = Path(django_settings.BASE_DIR).parent / 'docs'

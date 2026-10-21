@@ -258,8 +258,10 @@ class MetarParser:
         self._check_metar_import_alert(airport_codes, now_ms, config)
         if updated_airports:
             try:
-                from utils.trend_alert import refresh_airports
-                refresh_airports(updated_airports)
+                from utils.module_profile import module_enabled
+                if module_enabled('trend'):
+                    from utils.trend_alert import refresh_airports
+                    refresh_airports(updated_airports)
             except Exception as trend_error:
                 logger.error(f"实况趋势告警跟随实况入库失败: {trend_error}")
 
@@ -270,7 +272,10 @@ class MetarParser:
         test 模式取的是固定历史快照，用真实时钟判定会把全部报文判成过期，
         故整套入库告警（占位行、超时标记、滞留清理）在该模式下不执行。
         """
-        return self.time_mode == 'test'
+        if self.time_mode == 'test':
+            return True
+        from utils.module_profile import module_enabled
+        return not module_enabled('import_alert')
 
     def _clear_stale_metar_import_alerts(self, now_ms: int):
         """
@@ -1208,6 +1213,16 @@ class MetarParser:
         op_level = (popup_settings.operation_metar_popup_level if popup_settings else None) or 'Y'
         park_level = (popup_settings.parking_metar_popup_level if popup_settings else None) or 'Y'
         op_leeway = popup_settings.operation_metar_popup_leeway if popup_settings else None
+
+        from utils.module_profile import module_enabled
+        if not module_enabled('popup'):
+            parsed_data['operation_popup'] = 'N'
+            parsed_data['parking_popup'] = 'N'
+            parsed_data['popup_time'] = None
+            parsed_data['operation_metar_popup_leeway'] = op_leeway
+            parsed_data['operation_metar_popup_level'] = op_level
+            parsed_data['parking_metar_popup_level'] = park_level
+            return
 
         operation_met = self._check_operation_popup(
             parsed_data, weather_type_dict, op_level, op_leeway

@@ -22,23 +22,20 @@ class TimeModelMiddleware(MiddlewareMixin):
         return None
 
     def _remember_local_duty_user(self, request):
-        """本机当前登录用户就是入库用的那一个。测试页和没有工号的请求不覆盖。"""
+        """当前登录用户就是入库用的那一个。测试页和没有工号的请求不覆盖。"""
         if getattr(request, 'time_mode', 'current') != 'current':
             return
         code = str(request.headers.get('X-User-Code') or '').strip()
         if not code or code in {'--', '-', 'system', 'scheduler', 'test', 'default'}:
             return
         try:
-            from utils.access_control import is_local_request
-            if not is_local_request(request):
-                return
             from parsers.scheduler import set_scheduler_user_code
             set_scheduler_user_code(code)
         except Exception:
             return
 
     def process_response(self, request, response):
-        """设置页和超级用户页上的操作把超级用户会话再顺延 5 分钟。"""
+        """设置页上的操作把超级用户会话再顺延 5 分钟。"""
         path = request.path or ''
         touches = (
             '/api/settings/',

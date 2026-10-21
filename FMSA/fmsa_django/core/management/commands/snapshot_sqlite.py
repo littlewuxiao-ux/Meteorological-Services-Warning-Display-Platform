@@ -16,7 +16,7 @@ class Command(BaseCommand):
             nargs='?',
             default='access',
             choices=sorted(settings.DATABASES.keys()),
-            help='要导出的库：access=用户组库，default=配置库，runtime=生产库',
+            help='要导出的库：access=口令库，default=配置库，runtime=生产库',
         )
         parser.add_argument(
             '-o', '--output',

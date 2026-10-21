@@ -8,7 +8,7 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
-from utils.access_control import has_perm, is_local_request, resolve_access_identity
+from utils.access_control import has_perm, resolve_access_identity
 from utils.trend_alert import build_results, known_weather_codes, read_config, save_config
 
 
@@ -35,9 +35,7 @@ def trend_alert_config(request, time_mode='current'):
             **scope_meta(request, time_mode),
         })
     if not has_perm(identity, 'settings_trend_alert', 'write'):
-        return JsonResponse({'success': False, 'error': '无该设置项写入权限'}, status=403)
-    if not is_local_request(request):
-        return JsonResponse({'success': False, 'error': '设置项仅允许本机用户修改'}, status=403)
+        return JsonResponse({'success': False, 'error': '该模块未启用'}, status=403)
     data = _body(request)
     from utils.user_settings import settings_subject
     user, _editing = settings_subject(request, time_mode)

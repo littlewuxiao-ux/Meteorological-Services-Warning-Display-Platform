@@ -1882,7 +1882,10 @@ class TafParser:
         test 模式取的是固定历史快照，用真实时钟判定会把全部报文判成过期，
         故整套入库告警（占位行、过期标记、滞留清理）在该模式下不执行。
         """
-        return self.time_mode == 'test'
+        if self.time_mode == 'test':
+            return True
+        from utils.module_profile import module_enabled
+        return not module_enabled('import_alert')
 
     def _clear_stale_taf_import_alerts(self, now_ms: int):
         """

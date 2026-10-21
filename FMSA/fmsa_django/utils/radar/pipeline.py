@@ -74,6 +74,9 @@ def trigger_radar_job(
     已在跑时记下最后一次请求，本轮结束后再跑。不改清单外机场的已有记录。
     """
     global _job_hide_stale, _job_codes, _job_started_at, _job_pending
+    from utils.module_profile import module_enabled
+    if not module_enabled('radar'):
+        return {'state': 'disabled', 'message': '雷达模块未启用'}
     wanted = None if codes is None else [str(c).strip().upper() for c in codes if c]
     with _job_lock:
         if _job_status.get('state') == 'running' and not force:

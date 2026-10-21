@@ -129,7 +129,7 @@ def replace_carrier_codes(codes, time_mode='current', user_code=None) -> list:
 
     owner = user_code or TEMPLATE
     if owner == TEMPLATE and user_code != TEMPLATE:
-        raise ValueError('请使用已登录的本机账号修改承运人')
+        raise ValueError('请先登录后再修改承运人')
     cleaned = []
     for code in codes or []:
         item = carrier_code_or_blank(code)
@@ -166,7 +166,7 @@ def apply_carrier_change(action: str, code: str, time_mode='current', user_code=
         raise ValueError('未知操作')
     owner = user_code or TEMPLATE
     if owner == TEMPLATE and user_code != TEMPLATE:
-        raise ValueError('请使用已登录的本机账号修改承运人')
+        raise ValueError('请先登录后再修改承运人')
     current = carrier_codes(owner)
     if action == 'add' and cleaned not in current:
         current.append(cleaned)

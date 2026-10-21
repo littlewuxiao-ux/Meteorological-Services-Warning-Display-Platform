@@ -176,7 +176,7 @@ DATABASES = {
         'NAME': _adopt_sqlite_name(_SQLITE_DIR, 'fmsa_runtime.db', 'mtws_runtime.db'),
         'OPTIONS': _SQLITE_OPTIONS,
     },
-    # 用户组权限、扫码黑名单、超管口令，整库复制即可移植
+    # 超级用户口令哈希。整库复制即可移植。
     'access': {
         'ENGINE': 'django.db.backends.sqlite3',
         'NAME': _adopt_sqlite_name(_SQLITE_DIR, 'fmsa_access.db', 'mtws_access.db'),

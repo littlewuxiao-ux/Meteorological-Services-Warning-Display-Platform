@@ -846,16 +846,11 @@ function sameCarrierList(left, right) {
     return a.length === b.length && a.every((code, index) => code === b[index]);
 }
 
-function carrierCanEdit() {
-    const id = window.__accessIdentity;
-    return !id || !!id.is_local;
-}
-
 function refreshCarrierConfirm() {
     const btn = document.getElementById('carrier-confirm');
     if (!btn) return;
     const dirty = !sameCarrierList(carrierSelectedCodes, carrierSavedCodes);
-    btn.disabled = btn.dataset.busy === '1' || !carrierCanEdit();
+    btn.disabled = btn.dataset.busy === '1';
     btn.textContent = btn.dataset.busy === '1' ? '正在确认…' : '确认';
 }
 
@@ -913,10 +908,6 @@ function carrierEditBusy() {
 
 function toggleCarrierCell(code) {
     if (carrierEditBusy()) return;
-    if (!carrierCanEdit()) {
-        alert('非本机使用默认承运人');
-        return;
-    }
     const selected = new Set(carrierSelectedCodes);
     if (selected.has(code)) selected.delete(code);
     else selected.add(code);
@@ -964,10 +955,6 @@ function commitCarrierAdd(raw) {
         if (input) input.focus();
         return;
     }
-    if (!carrierCanEdit()) {
-        alert('非本机使用默认承运人');
-        return;
-    }
     carrierSelectedCodes = sortCarrierCodes(carrierSelectedCodes.concat([code]));
     renderCarrierMatrix(carrierFlightCodes, carrierSelectedCodes);
 }
@@ -988,10 +975,6 @@ function onCarrierMatrixClick(event) {
 function confirmCarrierSelection() {
     const btn = document.getElementById('carrier-confirm');
     if (!btn || btn.disabled) return;
-    if (!carrierCanEdit()) {
-        alert('非本机使用默认承运人');
-        return;
-    }
     btn.dataset.busy = '1';
     refreshCarrierConfirm();
     const headers = Object.assign(

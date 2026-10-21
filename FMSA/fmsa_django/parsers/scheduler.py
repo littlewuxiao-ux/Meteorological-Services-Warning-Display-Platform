@@ -178,15 +178,17 @@ def _run_parsing_job(update_types: list, time_mode: str) -> None:
             )
         # NWP 与 TAF 同频：当 TAF 调度任务运行且 NWP 开关开启时附带执行
         if _nwp_enabled and 'taf' in update_types:
-            set_parser_exec_status('nwp', 'running')
-            try:
-                from parsers.NWP import NwpParser
-                NwpParser().fetch_and_filter()
-                logger.info("NWP 调度解析完成")
-            except Exception as nwp_err:
-                logger.error(f"NWP 调度解析失败：{nwp_err}")
-            finally:
-                set_parser_exec_status('nwp', 'done')
+            from utils.module_profile import module_enabled
+            if module_enabled('nwp'):
+                set_parser_exec_status('nwp', 'running')
+                try:
+                    from parsers.NWP import NwpParser
+                    NwpParser().fetch_and_filter()
+                    logger.info("NWP 调度解析完成")
+                except Exception as nwp_err:
+                    logger.error(f"NWP 调度解析失败：{nwp_err}")
+                finally:
+                    set_parser_exec_status('nwp', 'done')
 
     except Exception as e:
         logger.error(f"调度任务异常：{update_types}，{e}", exc_info=True)
@@ -236,19 +238,23 @@ def _register_jobs(scheduler, time_mode='current'):
     row = json_config_row(RadarAlertConfig, active_job_user())
     cfg = merge_config(row.config if row else None)
     if cfg.get('enabled', True):
-        interval = float(cfg.get('interval_minutes', 15) or 15)
-        first_radar = datetime.now() + timedelta(seconds=90)
-        from utils.radar import trigger_radar_job
-        scheduler.add_job(
-            func=lambda: trigger_radar_job(force=False),
-            trigger=IntervalTrigger(minutes=interval, start_date=first_radar),
-            id='scheduled_radar_alert',
-            replace_existing=True,
-            max_instances=1,
-            coalesce=True,
-            misfire_grace_time=120,
-        )
-        logger.info(f'雷达告警调度已注册：间隔 {interval} 分钟')
+        from utils.module_profile import module_enabled
+        if not module_enabled('radar'):
+            logger.info('雷达模块未启用，不注册雷达调度')
+        else:
+            interval = float(cfg.get('interval_minutes', 15) or 15)
+            first_radar = datetime.now() + timedelta(seconds=90)
+            from utils.radar import trigger_radar_job
+            scheduler.add_job(
+                func=lambda: trigger_radar_job(force=False),
+                trigger=IntervalTrigger(minutes=interval, start_date=first_radar),
+                id='scheduled_radar_alert',
+                replace_existing=True,
+                max_instances=1,
+                coalesce=True,
+                misfire_grace_time=120,
+            )
+            logger.info(f'雷达告警调度已注册：间隔 {interval} 分钟')
 
 
 def reload_scheduler_jobs() -> None:

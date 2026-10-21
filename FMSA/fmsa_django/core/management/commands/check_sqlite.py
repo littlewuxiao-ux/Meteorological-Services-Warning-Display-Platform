@@ -5,7 +5,7 @@ from django.core.management.base import BaseCommand, CommandError
 
 
 class Command(BaseCommand):
-    help = '检查配置库、生产库、用户组库的完整性'
+    help = '检查配置库、生产库、口令库的完整性'
 
     def handle(self, *args, **options):
         import sqlite3

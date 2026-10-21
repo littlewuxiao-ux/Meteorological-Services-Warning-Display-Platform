@@ -130,7 +130,7 @@ def airports_overview(request, time_mode='current'):
     try:
         # 移除缓存机制，直接从数据库加载最新数据
         
-        # 1. 按当前查看者的承运人确定有航班的机场。非本机用 default，不读别人的勾选结果。
+        # 1. 按当前查看者的承运人确定有航班的机场。
         from utils.flight_selection import airport_flags_from_events, selected_events
         from utils.user_settings import request_settings_user
         viewer = request_settings_user(request, time_mode)
@@ -424,7 +424,7 @@ def airport_history_reports(request, airport_code, time_mode='current'):
     try:
         # 移除缓存机制，直接从API获取最新历史报文数据
         
-        # 获取token（仅在current模式下需要）；非本机回退本机调度缓存
+        # 获取 token（仅在 current 模式下需要）。请求没带时用调度器缓存。
         token = None
         if time_mode == 'current':
             auth_header = request.headers.get('Authorization')
@@ -439,7 +439,7 @@ def airport_history_reports(request, airport_code, time_mode='current'):
                 if not token:
                     return JsonResponse({
                         'success': False,
-                        'error': '未找到认证token，请先在本机登录'
+                        'error': '未找到认证token，请先登录'
                     }, status=401)
         
         user_code = request.headers.get('X-User-Code')
@@ -579,7 +579,6 @@ def trigger_parsing(request, time_mode='current'):
                 except Exception:
                     pass
             else:
-                # 非本机可用调度器缓存的本机 token
                 try:
                     from parsers.scheduler import get_scheduler_token
                     token = get_scheduler_token()
@@ -588,34 +587,15 @@ def trigger_parsing(request, time_mode='current'):
                 if not token:
                     return JsonResponse({
                         'success': False,
-                        'error': '未找到认证token，请先在本机登录'
+                        'error': '未找到认证token，请先登录'
                     }, status=401)
         
-        # 激活日志：需扫码的席位记 IP + user_id；免扫码只记 IP，避免落到本机值班工号
         raw_user = request.headers.get('X-User-Code') or identity.get('user_id')
         from utils.popup_utils import get_client_ip
-        activator_ip = get_client_ip(request)
-        log_user = raw_user if identity.get('require_qr') else None
-        if log_user:
-            logger.info(
-                '手动激活解析: types=%s IP=%s user_id=%s group=%s is_local=%s',
-                update_types, activator_ip, log_user,
-                identity.get('group_name'), identity.get('is_local'),
-            )
-        else:
-            logger.info(
-                '手动激活解析: types=%s IP=%s group=%s is_local=%s',
-                update_types, activator_ip,
-                identity.get('group_name'), identity.get('is_local'),
-            )
-
-        # 仅扫码席位把激活人工号写入调度缓存；免扫码不覆盖本机值班工号
-        if log_user and time_mode == 'current':
-            try:
-                from parsers.scheduler import set_scheduler_user_code
-                set_scheduler_user_code(log_user)
-            except Exception:
-                pass
+        logger.info(
+            '手动激活解析: types=%s IP=%s user=%s',
+            update_types, get_client_ip(request), raw_user or '-',
+        )
 
         manager = ParsingManager(time_mode, token, log_user, activator_ip=activator_ip)
         
@@ -1188,6 +1168,18 @@ def airport_extra_info(request, airport_code, time_mode='current'):
         import requests
         from suntime import Sun
         
+        from utils.module_profile import module_enabled
+        if not module_enabled('awc'):
+            return JsonResponse({
+                'success': True,
+                'data': {
+                    'sunrise': None,
+                    'sunset': None,
+                    'runways': [],
+                    'awc_disabled': True,
+                },
+            })
+
         # 调用aviationweather.gov API获取机场信息
         api_url = f"https://aviationweather.gov/api/data/airport?ids={airport_code}&format=json"
         
@@ -1942,8 +1934,7 @@ def _ingest_carrier_airports(request, time_mode, user_code, airports):
 @csrf_exempt
 @require_http_methods(["GET", "POST"])
 def flight_carriers(request, time_mode='current'):
-    """主页承运人矩阵。本机用户改自己的清单；非本机只看 default。"""
-    from utils.access_control import is_local_request
+    """主页承运人矩阵。当前登录用户改自己的清单。"""
     from utils.user_settings import scope_meta, settings_subject
     viewer, _editing = settings_subject(request, time_mode)
     try:
@@ -1954,8 +1945,6 @@ def flight_carriers(request, time_mode='current'):
                 'selected': sort_carrier_codes(selected_carrier_codes(viewer)),
                 **scope_meta(request, time_mode),
             })
-        if not is_local_request(request):
-            return JsonResponse({'success': False, 'error': '非本机用户使用默认承运人'}, status=403)
         data = json.loads(request.body or '{}')
         action = data.get('action')
         if action not in ('add', 'remove', 'confirm'):

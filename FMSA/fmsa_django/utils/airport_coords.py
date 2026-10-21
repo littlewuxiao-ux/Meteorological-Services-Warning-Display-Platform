@@ -59,6 +59,9 @@ def fetch_aviationweather_airport(code):
     成功返回 {'lat', 'lon', 'name', 'runways'}，lat/lon 可能为 None。
     网络或响应失败时抛出 requests.RequestException 或 ValueError。
     """
+    from utils.module_profile import module_enabled
+    if not module_enabled('awc'):
+        return {'lat': None, 'lon': None, 'name': None, 'runways': []}
     response = requests.get(
         AVIATIONWEATHER_AIRPORT_URL.format(code=code),
         timeout=10,

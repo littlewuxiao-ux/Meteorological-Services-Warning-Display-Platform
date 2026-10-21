@@ -60,7 +60,7 @@ def bound_or(explicit, time_mode='current'):
 
 
 def active_job_user():
-    """当前本机登录用户。没有人登录时用 default。"""
+    """当前登录用户。没有人登录时用 default。"""
     try:
         from parsers.scheduler import get_scheduler_user_code
         code = str(get_scheduler_user_code() or '').strip()
@@ -72,13 +72,10 @@ def active_job_user():
 
 
 def request_settings_user(request, time_mode='current'):
-    """这次页面请求该用谁的配置。非本机固定用 default。"""
+    """这次页面请求该用谁的配置。请求里有工号就用这个人，否则用当前登录用户。"""
     if time_mode == 'test':
         return TEST
     if request is not None:
-        from utils.access_control import is_local_request
-        if not is_local_request(request):
-            return TEMPLATE
         code = str(request.headers.get('X-User-Code') or '').strip()
         if code and code not in _SKIP and code != TEST:
             return code
@@ -91,8 +88,8 @@ def editing_template(request):
     scope = str(request.headers.get('X-Settings-Scope') or request.GET.get('settings_scope') or '').strip()
     if scope != TEMPLATE:
         return False
-    from utils.access_control import is_admin_unlocked, is_local_request
-    return is_local_request(request) and is_admin_unlocked(request, touch=True)
+    from utils.access_control import is_admin_unlocked
+    return is_admin_unlocked(request, touch=True)
 
 
 def settings_subject(request, time_mode='current'):
@@ -107,8 +104,8 @@ def settings_subject(request, time_mode='current'):
 def can_edit_template(request):
     if request is None:
         return False
-    from utils.access_control import is_admin_unlocked, is_local_request
-    return is_local_request(request) and is_admin_unlocked(request, touch=False)
+    from utils.access_control import is_admin_unlocked
+    return is_admin_unlocked(request, touch=False)
 
 
 def allow_restore(request, time_mode='current'):

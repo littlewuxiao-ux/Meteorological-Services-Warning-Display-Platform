@@ -329,50 +329,8 @@ class WxmsgImportAlert(models.Model):
         return f"{self.airport_4code} - {self.msg_type} - {self.alert_time}"
 
 
-class AccessGroup(models.Model):
-    """访问用户组（本机一组 + 可自定义非本机类型）"""
-
-    code = models.CharField(max_length=64, unique=True, verbose_name='组代码')
-    name = models.CharField(max_length=100, verbose_name='组名称')
-    is_local = models.BooleanField(default=False, verbose_name='是否本机组')
-    require_qr = models.BooleanField(default=False, verbose_name='是否需要扫码')
-    is_builtin = models.BooleanField(default=False, verbose_name='是否内置')
-    sort_order = models.PositiveIntegerField(default=100, verbose_name='排序')
-    created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')
-    updated_at = models.DateTimeField(auto_now=True, verbose_name='更新时间')
-
-    class Meta:
-        db_table = 'access_group'
-        verbose_name = '访问用户组'
-        verbose_name_plural = '访问用户组'
-        ordering = ['sort_order', 'id']
-
-    def __str__(self):
-        return self.name
-
-
-class AccessGroupPermission(models.Model):
-    """用户组模块权限（显示/写入）"""
-
-    group = models.ForeignKey(
-        AccessGroup, on_delete=models.CASCADE, related_name='permissions', verbose_name='用户组'
-    )
-    module_code = models.CharField(max_length=64, verbose_name='模块代码')
-    can_display = models.BooleanField(default=False, verbose_name='显示')
-    can_write = models.BooleanField(default=False, verbose_name='写入')
-
-    class Meta:
-        db_table = 'access_group_permission'
-        verbose_name = '用户组模块权限'
-        verbose_name_plural = '用户组模块权限'
-        unique_together = [['group', 'module_code']]
-
-    def __str__(self):
-        return f'{self.group_id}:{self.module_code}'
-
-
 class AccessSetting(models.Model):
-    """用户组库的键值配置（超管口令哈希等）"""
+    """口令库的键值配置（超级用户口令哈希）。"""
 
     key = models.CharField(max_length=64, unique=True, verbose_name='键')
     value = models.TextField(verbose_name='值')
@@ -380,28 +338,11 @@ class AccessSetting(models.Model):
 
     class Meta:
         db_table = 'access_setting'
-        verbose_name = '用户组库配置'
-        verbose_name_plural = '用户组库配置'
+        verbose_name = '口令配置'
+        verbose_name_plural = '口令配置'
 
     def __str__(self):
         return self.key
-
-
-class NonLocalQrBlacklist(models.Model):
-    """非本机扫码黑名单（仅校验 user_id）"""
-
-    user_id = models.CharField(max_length=32, unique=True, verbose_name='用户ID')
-    remark = models.CharField(max_length=200, blank=True, null=True, verbose_name='备注')
-    created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')
-
-    class Meta:
-        db_table = 'non_local_qr_blacklist'
-        verbose_name = '非本机扫码黑名单'
-        verbose_name_plural = '非本机扫码黑名单'
-        ordering = ['-created_at']
-
-    def __str__(self):
-        return self.user_id
 
 
 class RadarAlertConfig(models.Model):

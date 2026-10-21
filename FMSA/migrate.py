@@ -1,4 +1,4 @@
-"""选择迁移文件后执行。按文件里的模型判断写入配置库、生产库、用户组库。"""
+"""选择迁移文件后执行。按文件里的模型判断写入配置库、生产库、口令库。"""
 
 import importlib
 import os
@@ -22,7 +22,7 @@ FILE_RE = re.compile(r"^(\d{4})_.+\.py$")
 DB_CONFIG = "default"
 DB_RUNTIME = "runtime"
 DB_ACCESS = "access"
-DB_TITLES = {DB_CONFIG: "配置库", DB_RUNTIME: "生产库", DB_ACCESS: "用户组库"}
+DB_TITLES = {DB_CONFIG: "配置库", DB_RUNTIME: "生产库", DB_ACCESS: "口令库"}
 
 sys.path.insert(0, str(DJANGO_DIR))
 
@@ -83,10 +83,17 @@ def parse_showmigrations(text):
 def _model_names(operation):
     names = []
     model_name = getattr(operation, "model_name", None)
-    if model_name:
-        names.append(str(model_name).lower())
-    for nested in getattr(operation, "operations", None) or []:
-        names.extend(_model_names(nested))
+    if isinstance(model_name, str) and model_name:
+        names.append(model_name.lower())
+    elif isinstance(getattr(operation, "name", None), str) and operation.name:
+        names.append(operation.name.lower())
+    for attr in ("old_name", "new_name"):
+        value = getattr(operation, attr, None)
+        if isinstance(value, str) and value:
+            names.append(value.lower())
+    for attr in ("operations", "database_operations", "state_operations"):
+        for nested in getattr(operation, attr, None) or []:
+            names.extend(_model_names(nested))
     return names
 
 

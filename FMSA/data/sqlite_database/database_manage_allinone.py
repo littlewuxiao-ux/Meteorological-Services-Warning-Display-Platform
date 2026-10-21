@@ -233,7 +233,7 @@ class DatabaseViewer(tk.Tk):
         pairs = (
             ("配置库", "fmsa_config.db", "mtws_config.db"),
             ("生产库", "fmsa_runtime.db", "mtws_runtime.db"),
-            ("用户组库", "fmsa_access.db", "mtws_access.db"),
+            ("口令库", "fmsa_access.db", "mtws_access.db"),
         )
         for label, new_name, old_name in pairs:
             path = None

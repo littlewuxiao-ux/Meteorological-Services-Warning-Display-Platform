@@ -50,13 +50,11 @@ def _refresh_marks_alerts(airport_codes, time_mode='current'):
 
 
 def _deny_settings_write(request, module_code: str):
-    """设置写接口统一鉴权：需对应模块写入权，且仅本机可改库。"""
-    from utils.access_control import resolve_access_identity, has_perm, is_local_request
+    """设置写接口：模块开着就可以改。超级用户口令只用于编辑 default 模板。"""
+    from utils.access_control import resolve_access_identity, has_perm
     identity = resolve_access_identity(request)
     if not has_perm(identity, module_code, 'write'):
-        return JsonResponse({'success': False, 'error': '无该设置项写入权限'}, status=403)
-    if not is_local_request(request):
-        return JsonResponse({'success': False, 'error': '设置项仅允许本机用户修改'}, status=403)
+        return JsonResponse({'success': False, 'error': '该模块未启用'}, status=403)
     return None
 
 
@@ -508,10 +506,10 @@ def prefix_area_visibility(request, time_mode='current'):
     import json
     from core.models import SystemConfig
     from utils.user_settings import TEMPLATE
-    from utils.access_control import is_admin_unlocked, is_local_request
+    from utils.access_control import is_admin_unlocked
     if request.method != 'POST':
         return JsonResponse({'success': False, 'error': 'method'}, status=405)
-    if not (is_local_request(request) and is_admin_unlocked(request, touch=True)):
+    if not is_admin_unlocked(request, touch=True):
         return JsonResponse({'success': False, 'error': 'need superuser'}, status=403)
     try:
         body = json.loads(request.body.decode('utf-8') or '{}')

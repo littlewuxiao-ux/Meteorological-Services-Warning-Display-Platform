@@ -140,11 +140,13 @@ class FlightParser:
                 Flight.objects.filter(airport_4code__in=stale).delete()
                 logger.info(f"已删除无数据机场航班行: {sorted(stale)}")
             try:
-                from utils.trend_alert import clear_airports, refresh_airports
-                if stale:
-                    clear_airports(stale)
-                if trend_changed:
-                    refresh_airports(trend_changed)
+                from utils.module_profile import module_enabled
+                if module_enabled('trend'):
+                    from utils.trend_alert import clear_airports, refresh_airports
+                    if stale:
+                        clear_airports(stale)
+                    if trend_changed:
+                        refresh_airports(trend_changed)
             except Exception as trend_error:
                 logger.error(f"实况趋势告警跟随航班更新失败: {trend_error}")
             

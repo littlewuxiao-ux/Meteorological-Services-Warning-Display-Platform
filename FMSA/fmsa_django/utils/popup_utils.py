@@ -50,45 +50,30 @@ def normalize_ip(ip: str) -> str:
         return raw
 
 
-def is_loopback_ip(ip: str) -> bool:
-    try:
-        return ipaddress.ip_address(ip).is_loopback
-    except ValueError:
-        return ip in ('127.0.0.1', '::1', 'localhost')
-
-
 def client_can_write_popup_handle(request) -> bool:
-    """按用户组 metar_popup 写入权限判断（取代 IP 白名单）。"""
+    """弹窗模块开着就可以写入处理记录。"""
     try:
         from utils.access_control import resolve_access_identity, has_perm
         identity = resolve_access_identity(request)
         return has_perm(identity, 'metar_popup', 'write')
     except Exception:
-        ip = get_client_ip(request)
-        return is_loopback_ip(ip)
+        return False
 
 
 def get_seat_identity(request) -> dict:
-    """兼容旧字段，完整身份见 resolve_access_identity。"""
+    """当前登录工号，供概览接口附带。"""
     try:
         from utils.access_control import resolve_access_identity
         identity = resolve_access_identity(request)
         return {
-            'role': identity.get('role') or 'guest',
+            'role': 'user',
             'show_logout': bool(identity.get('show_logout')),
             'label': identity.get('label') or '',
-            'is_local': bool(identity.get('is_local')),
-            'group_name': identity.get('group_name'),
             'user_id': identity.get('user_id'),
             'permissions': identity.get('permissions') or {},
-            'needs_role_select': bool(identity.get('needs_role_select')),
-            'host_login_ok': identity.get('host_login_ok', True),
         }
     except Exception:
-        ip = get_client_ip(request)
-        if is_loopback_ip(ip):
-            return {'role': 'local', 'show_logout': True, 'label': '', 'is_local': True}
-        return {'role': 'guest', 'show_logout': False, 'label': '', 'needs_role_select': True}
+        return {'role': 'user', 'show_logout': True, 'label': '', 'user_id': None, 'permissions': {}}
 
 
 _ALERT_LETTERS = frozenset({'R', 'Y', 'G', 'N'})

@@ -376,24 +376,11 @@ document.addEventListener('DOMContentLoaded', function () {
     initTimezoneModeToggle(); // 初始化时间模式开关
 
     const startApp = () => {
-        // 视图导航必须在权限就绪后再定视图：非本机先过角色选择，
-        // 拿到权限才知道地址里的 ?view= 能不能进（见 views_nav.js）
         if (typeof initViewNav === 'function') initViewNav();
 
         const canLoad = checkBrowserRefresh();
         if (!canLoad) return;
         if (currentTimeMode === 'current') {
-            const id = window.__accessIdentity;
-            if (id && !id.is_local) {
-                // 非本机：不走本机 CAS 登录墙，直接加载主数据（使用服务端已有解析结果）
-                if (id.needs_role_select) return;
-                showUserInfo();
-                loadInitialData();
-                if (hasAccess('metar_popup', 'display')) {
-                    setTimeout(() => { if (typeof startPopupCheck === 'function') startPopupCheck(); }, 2000);
-                }
-                return;
-            }
             initCurrentModeAuth();
         } else {
             loadInitialData();
@@ -403,8 +390,7 @@ document.addEventListener('DOMContentLoaded', function () {
     if (typeof bootstrapAccess === 'function') {
         bootstrapAccess().then(() => {
             window.onAccessReady = startApp;
-            const id = window.__accessIdentity;
-            if (!id || !id.needs_role_select) startApp();
+            startApp();
         }).catch(() => startApp());
     } else {
         startApp();
@@ -1384,12 +1370,7 @@ function bindEvents() {
     if (logoutConfirmBtn) {
         logoutConfirmBtn.addEventListener('click', function () {
             hideModal('logout-confirm-modal');
-            const logoutBtn = document.getElementById('logout-btn');
-            if (logoutBtn && logoutBtn.dataset.seatLogout === '1' && typeof accessSeatLogout === 'function') {
-                accessSeatLogout();
-            } else {
-                logout();
-            }
+            logout();
         });
     }
 
@@ -4317,11 +4298,6 @@ function updateAirportGridForModalInner(airportElement) {
 
 // ============== 鉴权相关函数 ==============
 
-function isLocalBrowserHost() {
-    const h = String(location.hostname || "").toLowerCase();
-    return h === "127.0.0.1" || h === "localhost" || h === "::1";
-}
-
 const UNIFIED_AUTH_STATUS_URL = '/auth/status';
 const UNIFIED_AUTH_UPDATE_URL = '/auth/update';
 const UNIFIED_AUTH_CLEAR_URL = '/auth/clear';
@@ -4731,9 +4707,6 @@ function canShowLoginUser() {
 function paintSeatUserInfo() {
     const userCodeSpan = document.getElementById('user-code');
     const logoutBtn = document.getElementById('logout-btn');
-    const ident = window.__seatIdentity || window.__accessIdentity;
-    let role = ident && ident.role;
-    if (!role) role = isLocalBrowserHost() ? 'local' : 'guest';
 
     if (!canShowLoginUser()) {
         const userInfoSection = document.getElementById('user-info-section');
@@ -4742,30 +4715,8 @@ function paintSeatUserInfo() {
         return;
     }
 
-    if (role === 'local' || (ident && ident.is_local)) {
-        if (userCodeSpan) userCodeSpan.textContent = currentUserCode || '未知用户';
-        if (logoutBtn) {
-            logoutBtn.style.display = '';
-            delete logoutBtn.dataset.seatLogout;
-        }
-        return;
-    }
-
-    if (role === 'non_local' || (ident && !ident.is_local && !ident.needs_role_select)) {
-        if (userCodeSpan) {
-            userCodeSpan.textContent = (ident && ident.label) || (ident && ident.group_name) || '';
-        }
-        if (logoutBtn) {
-            logoutBtn.style.display = (ident && ident.show_logout) ? '' : 'none';
-            logoutBtn.dataset.seatLogout = '1';
-        }
-        return;
-    }
-
-    if (logoutBtn) logoutBtn.style.display = 'none';
-    if (userCodeSpan) {
-        userCodeSpan.textContent = role === 'authorized' ? '授权用户' : '共享用户';
-    }
+    if (userCodeSpan) userCodeSpan.textContent = currentUserCode || '未知用户';
+    if (logoutBtn) logoutBtn.style.display = '';
 }
 
 async function refreshSeatIdentity() {
@@ -4777,7 +4728,7 @@ async function refreshSeatIdentity() {
             paintSeatUserInfo();
         }
     } catch (_) {
-        /* 接口不可用时按本机/共享兜底 */
+        /* 身份接口不可用时保持当前显示 */
     }
 }
 

@@ -19,7 +19,7 @@ def _cas_user_from_request(request):
 
 def _resolve_cas_token(request, time_mode='current'):
     """
-    解析 CAS token：优先请求头；非本机无自有 token 时回退本机调度缓存。
+    解析 CAS token：优先请求头；请求没带时用调度器缓存。
     报文原文等只读外呼依赖此 token，与权限矩阵无关。
     """
     if time_mode != 'current':
@@ -35,7 +35,7 @@ def _resolve_cas_token(request, time_mode='current'):
     except Exception:
         pass
     return None, JsonResponse(
-        {'success': False, 'error': '未找到认证 token，请先在本机登录'},
+        {'success': False, 'error': '未找到认证 token，请先登录'},
         status=401,
     )
 

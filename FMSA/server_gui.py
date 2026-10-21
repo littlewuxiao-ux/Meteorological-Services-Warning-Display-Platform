@@ -26,6 +26,7 @@ SCRIPT_DIR  = Path(__file__).parent
 DJANGO_DIR  = SCRIPT_DIR / "fmsa_django"
 MANAGE_PY   = DJANGO_DIR / "manage.py"
 DB_TOOL     = SCRIPT_DIR / "data" / "sqlite_database" / "database_manage_allinone.py"
+MODULE_TOOL = SCRIPT_DIR / "module_config_gui.py"
 HOME_URL    = "http://127.0.0.1:8000/current/"
 
 DJANGO_PORT  = 8000          # Django 服务端口
@@ -250,6 +251,19 @@ class FMSAServerGUI(ctk.CTk):
             height=38
         )
         self.db_btn.pack(fill="x", padx=12, pady=(0, 4))
+
+        self.module_btn = ctk.CTkButton(
+            sidebar,
+            text="  模块配置",
+            command=self._open_module_tool,
+            font=ctk.CTkFont(size=13),
+            fg_color=BG_TERTIARY,
+            hover_color=BG_GROUPED,
+            text_color=COLOR_LABEL2,
+            corner_radius=8,
+            height=38
+        )
+        self.module_btn.pack(fill="x", padx=12, pady=(0, 4))
 
         # ── 分割线 ──
         ctk.CTkFrame(sidebar, fg_color=COLOR_SEPARATOR, height=1).pack(
@@ -712,6 +726,16 @@ class FMSAServerGUI(ctk.CTk):
             self._log("数据库管理工具已启动", "info")
         except Exception as exc:
             self._log(f"启动数据库管理工具失败：{exc}", "error")
+
+    def _open_module_tool(self):
+        if not MODULE_TOOL.exists():
+            self._log(f"找不到模块配置程序：{MODULE_TOOL}", "error")
+            return
+        try:
+            subprocess.Popen([sys.executable, str(MODULE_TOOL)], cwd=str(SCRIPT_DIR))
+            self._log("模块配置程序已启动。保存后需重启主程序。", "info")
+        except Exception as exc:
+            self._log(f"启动模块配置程序失败：{exc}", "error")
 
     # ══════════════════════════════════════════════════════════════════════════
     #  日志系统

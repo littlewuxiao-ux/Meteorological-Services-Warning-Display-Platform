@@ -21,11 +21,8 @@ from .settings_views import (
 )
 from .plain_views import plain_taf_batch, plain_metar_batch, plain_report_text
 from .access_views import (
-    access_bootstrap, access_session_status, access_select_role,
-    access_complete_qr_login, access_seat_logout,
+    access_bootstrap, access_session_status,
     access_admin_unlock, access_admin_lock, access_admin_touch, access_admin_change_password,
-    access_admin_groups, access_admin_group_detail, access_admin_export, access_admin_import,
-    access_admin_blacklist, access_admin_blacklist_detail,
 )
 from .radar_views import (
     radar_alert_config, radar_alert_status, radar_alert_run,
@@ -120,19 +117,10 @@ urlpatterns = [
     # 访问控制 / 超级用户
     path('access/bootstrap/', access_bootstrap, name='access_bootstrap'),
     path('access/session/', access_session_status, name='access_session_status'),
-    path('access/select-role/', access_select_role, name='access_select_role'),
-    path('access/complete-qr-login/', access_complete_qr_login, name='access_complete_qr_login'),
-    path('access/seat-logout/', access_seat_logout, name='access_seat_logout'),
     path('access/admin/unlock/', access_admin_unlock, name='access_admin_unlock'),
     path('access/admin/touch/', access_admin_touch, name='access_admin_touch'),
     path('access/admin/lock/', access_admin_lock, name='access_admin_lock'),
     path('access/admin/change-password/', access_admin_change_password, name='access_admin_change_password'),
-    path('access/admin/groups/', access_admin_groups, name='access_admin_groups'),
-    path('access/admin/groups/<int:group_id>/', access_admin_group_detail, name='access_admin_group_detail'),
-    path('access/admin/export/', access_admin_export, name='access_admin_export'),
-    path('access/admin/import/', access_admin_import, name='access_admin_import'),
-    path('access/admin/blacklist/', access_admin_blacklist, name='access_admin_blacklist'),
-    path('access/admin/blacklist/<int:item_id>/', access_admin_blacklist_detail, name='access_admin_blacklist_detail'),
 
     # 雷达告警
     path('radar/config/', radar_alert_config, name='radar_alert_config'),

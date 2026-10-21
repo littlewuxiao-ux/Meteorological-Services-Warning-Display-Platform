@@ -26,8 +26,6 @@ PLAIN_MODULE = 'view_plain'
 
 def _deny_if_no_access(request):
     identity = resolve_access_identity(request)
-    if identity.get('needs_role_select'):
-        return JsonResponse({'success': False, 'error': '请先选择角色'}, status=403)
     if not has_perm(identity, PLAIN_MODULE, 'display'):
         return JsonResponse({'success': False, 'error': '无权访问中文模式'}, status=403)
     return None

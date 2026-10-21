@@ -1,4 +1,4 @@
-"""配置库 default，生产库 runtime，用户组库 access。"""
+"""配置库 default，生产库 runtime，口令库 access。"""
 
 CONFIG_MODELS = {
     'airportinfo',
@@ -28,9 +28,12 @@ RUNTIME_CORE_MODELS = {
 }
 
 ACCESS_MODELS = {
+    'accesssetting',
+}
+# 已删除的用户组表。迁移删表时仍要允许在口令库执行。
+_LEGACY_ACCESS_MODELS = {
     'accessgroup',
     'accessgrouppermission',
-    'accesssetting',
     'nonlocalqrblacklist',
 }
 
@@ -50,7 +53,7 @@ def database_for(app_label: str, model_name: str | None) -> str | None:
         return 'default'
     if name in RUNTIME_CORE_MODELS:
         return 'runtime'
-    if name in ACCESS_MODELS:
+    if name in ACCESS_MODELS or name in _LEGACY_ACCESS_MODELS:
         return ACCESS_DB
     return None
 
@@ -69,15 +72,17 @@ class FmsaRouter:
 
     def allow_migrate(self, db, app_label, model_name=None, **hints):
         if db == ACCESS_DB:
-            # 用户组库只建 ACCESS_MODELS 的表；历史迁移里的数据脚本（无模型名）不在此库执行
-            return app_label == 'core' and (model_name or '').lower() in ACCESS_MODELS
+            name = (model_name or '').lower()
+            allowed = ACCESS_MODELS | _LEGACY_ACCESS_MODELS
+            return app_label == 'core' and name in allowed
         if app_label in DJANGO_APPS:
             return db == 'default'
         if app_label == 'parsers':
             return db == 'runtime'
         if app_label == 'core':
             if not model_name:
-                return True
+                # 无模型名的数据脚本只跑配置库，避免在生产库重建配置表。
+                return db == 'default'
             target = database_for('core', model_name)
             return target == db
         return db == 'default'

@@ -51,9 +51,7 @@
       window.__adminUnlocked = !!res.can_edit_default;
     }
     const unlocked = !!window.__adminUnlocked;
-    const groupBtn = document.getElementById('superuser-group-btn');
     const toggle = document.getElementById('settings-default-toggle');
-    if (groupBtn) groupBtn.style.display = unlocked ? '' : 'none';
     if (toggle) {
       toggle.style.display = unlocked ? '' : 'none';
       toggle.textContent = settingsScope === 'default' ? '返回我的设置' : '编辑默认模板';
@@ -1660,12 +1658,6 @@ const modeBtn = document.getElementById('threshold-mode-btn');
           event.preventDefault();
           unlockSettingsAdmin();
         }
-      });
-    }
-    const groupBtn = document.getElementById('superuser-group-btn');
-    if (groupBtn) {
-      groupBtn.addEventListener('click', () => {
-        if (typeof openSuperuserAdmin === 'function') openSuperuserAdmin();
       });
     }
     const scopeToggle = document.getElementById('settings-default-toggle');

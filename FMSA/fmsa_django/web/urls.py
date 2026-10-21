@@ -38,5 +38,4 @@ urlpatterns = [
     
     # 解析状态检查页面
     path('parsing-status/', views.parsing_status, name='parsing_status'),
-    path('access-admin/', views.access_admin, name='access_admin'),
 ] 
