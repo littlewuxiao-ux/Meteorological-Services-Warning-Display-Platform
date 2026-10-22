@@ -301,7 +301,7 @@ class RadarAlertConfig(models.Model):
 
 
 class StyleConfig(models.Model):
-    """界面样式等配置（单行有效，JSON 存整表）。地图样式目前写在同一份 JSON 里。"""
+    """界面样式等配置（单行有效，JSON 存整表）。雷达地图样式与机场详细信息主题写在同一份 JSON 里，按登录用户覆盖。"""
 
     config = models.JSONField(default=dict, verbose_name='配置JSON')
     updated_at = models.DateTimeField(auto_now=True, verbose_name='更新时间')

@@ -308,6 +308,11 @@ body.plain-reports .airport-detail-title-row {
   border-top: 1px solid rgba(255, 255, 255, 0.45);
 }
 
+body.airport-detail-theme-light.plain-mode .airport-detail-title-row,
+body.airport-detail-theme-light.plain-reports .airport-detail-title-row {
+  border-top-color: rgba(0, 0, 0, 0.18);
+}
+
 body.plain-mode .airport-detail-title-row .title-weather,
 body.plain-reports .airport-detail-title-row .title-weather {
   width: var(--plain-row-label-width);
@@ -319,6 +324,12 @@ body.plain-reports .airport-detail-title-row .title-weather {
   justify-content: center;
   border-right: 1px solid rgba(255, 255, 255, 0.3);
   font-size: 12px;
+}
+
+body.airport-detail-theme-light.plain-mode .airport-detail-title-row .title-weather,
+body.airport-detail-theme-light.plain-reports .airport-detail-title-row .title-weather {
+  border-right-color: rgba(0, 0, 0, 0.18);
+  color: #000;
 }
 
 .airport-row-plain .plain-row-labels {
@@ -333,11 +344,20 @@ body.plain-reports .airport-detail-title-row .title-weather {
   background: rgba(255, 255, 255, 0.04);
 }
 
+body.airport-detail-theme-light .airport-row-plain .plain-row-labels {
+  border-right-color: rgba(0, 0, 0, 0.18);
+  background: #ffffff;
+}
+
 .plain-label-group {
   display: flex;
   flex: 4 1 0;
   min-height: 128px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+body.airport-detail-theme-light .plain-label-group {
+  border-bottom-color: rgba(0, 0, 0, 0.18);
 }
 
 .plain-label-group:last-child,
@@ -363,6 +383,11 @@ body.plain-reports .airport-detail-title-row .title-weather {
   border-right: 1px solid rgba(255, 255, 255, 0.3);
 }
 
+body.airport-detail-theme-light .plain-label-parent {
+  color: #000;
+  border-right-color: rgba(0, 0, 0, 0.18);
+}
+
 .plain-label-children {
   flex: 1;
   display: flex;
@@ -383,6 +408,15 @@ body.plain-reports .airport-detail-title-row .title-weather {
   padding: 0 2px;
   white-space: nowrap;
   border-bottom: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+body.airport-detail-theme-light .plain-row-label {
+  color: #000;
+  border-bottom-color: rgba(0, 0, 0, 0.18);
+}
+
+body.airport-detail-theme-light .plain-row-label-placeholder {
+  color: #555;
 }
 
 .plain-label-children .plain-row-label:last-child {
@@ -437,6 +471,10 @@ body.plain-reports .airport-detail-title-row .title-weather {
   z-index: 1;
 }
 
+body.airport-detail-theme-light .plain-detail-metar {
+  color: #000;
+}
+
 .plain-detail-section-title {
   text-align: center;
   font-size: 13px;
@@ -444,6 +482,10 @@ body.plain-reports .airport-detail-title-row .title-weather {
   letter-spacing: 0.35em;
   color: #ffffff;
   padding: 4px 0 6px;
+}
+
+body.airport-detail-theme-light .plain-detail-section-title {
+  color: #000;
 }
 
 .plain-detail-taf-title {

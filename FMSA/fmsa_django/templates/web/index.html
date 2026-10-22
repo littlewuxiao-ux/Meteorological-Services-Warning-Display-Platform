@@ -354,7 +354,7 @@
         <button class="settings-tab" data-tab="weather-alert">天气告警等级</button>
         <button class="settings-tab" data-tab="radar-alert">雷达告警</button>
         <button class="settings-tab" data-tab="trend-alert">实况趋势告警</button>
-        <button class="settings-tab" data-tab="map-style">地图样式</button>
+        <button class="settings-tab" data-tab="map-style">外观样式</button>
       </div>
       <div class="settings-tab-group settings-tab-group-global">
         <span class="settings-group-title" data-group="global">全局设置</span>
@@ -702,14 +702,16 @@
         <datalist id="trend-weather-list"></datalist>
       </div>
 
-      <!-- Tab11: 地图样式 -->
+      <!-- Tab11: 外观样式（地图样式 + 机场详细信息设置） -->
       <div class="settings-tab-pane" id="settings-pane-map-style">
         <div class="settings-sheet">
           <div class="radar-settings-toolbar">
             <button type="button" class="settings-btn-save" id="map-style-save-btn">保存配置</button>
-            <span class="settings-hint">仅影响地图模式显示</span>
+            <span class="settings-hint">按登录用户保存，与雷达页面地图样式写在同一份配置中</span>
           </div>
           <div class="settings-msg" id="map-style-msg"></div>
+          <div class="settings-appearance-group">
+            <div class="settings-appearance-group-title">地图样式</div>
           <div class="settings-sheet-grid">
             <section class="settings-sheet-card">
               <div class="settings-sheet-title">配色方案</div>
@@ -750,6 +752,34 @@
               </div>
               <div class="settings-hint">线宽：国界 &gt; 省界 &gt; 州/省级（代码固定）</div>
             </section>
+          </div>
+          </div>
+          <div class="settings-appearance-group">
+            <div class="settings-appearance-group-title">机场详细信息设置</div>
+            <div class="settings-sheet-grid">
+              <section class="settings-sheet-card">
+                <div class="settings-sheet-title">主题</div>
+                <div class="settings-hint">同时作用于机场详情页与多机场搜索结果页</div>
+                <div id="ad-theme-group" class="ms-scheme-group">
+                  <button type="button" class="ms-scheme-card active" data-ad-theme="dark">
+                    <div>深色</div>
+                    <div class="ms-scheme-swatches">
+                      <span style="background:#2c3e50"></span>
+                      <span style="background:#1b2838"></span>
+                      <span style="background:#ffffff"></span>
+                    </div>
+                  </button>
+                  <button type="button" class="ms-scheme-card" data-ad-theme="light">
+                    <div>浅色</div>
+                    <div class="ms-scheme-swatches">
+                      <span style="background:#ffffff"></span>
+                      <span style="background:#f7f4ec"></span>
+                      <span style="background:#eceff1"></span>
+                    </div>
+                  </button>
+                </div>
+              </section>
+            </div>
           </div>
         </div>
       </div>
@@ -921,24 +951,23 @@
         </div>
       </div>
 
-      <!-- 实况/预报报文 -->
-      <div class="airport-reports-section">
-        <h3>实况/预报报文</h3>
-        <div class="reports-content">
-          <div class="report-group report-group-metar">
-            <div class="report-group-body" id="airport-metar-reports"></div>
-          </div>
-          <div class="report-group report-group-taf">
-            <div class="report-group-body" id="airport-taf-reports"></div>
+      <!-- 实况/预报报文 与 实况趋势图表：二选一切换，打开时默认报文 -->
+      <div class="airport-detail-extra" id="airport-detail-extra" data-pane="reports">
+        <div class="airport-extra-switch" role="tablist">
+          <button type="button" class="airport-extra-switch-btn active" data-extra-pane="reports">实况/预报报文</button>
+          <button type="button" class="airport-extra-switch-btn" data-extra-pane="chart" id="airport-extra-chart-btn">实况趋势图表</button>
+        </div>
+        <div class="airport-reports-section" data-extra-pane-panel="reports">
+          <div class="reports-content">
+            <div class="report-group report-group-metar">
+              <div class="report-group-body" id="airport-metar-reports"></div>
+            </div>
+            <div class="report-group report-group-taf">
+              <div class="report-group-body" id="airport-taf-reports"></div>
+            </div>
           </div>
         </div>
-      </div>
-
-      <!-- 图表区域：默认折叠，点击开关展开后才加载图表 -->
-      <div class="airport-chart-section collapsed" id="airport-chart-section">
-        <div class="chart-toggle-switch" onclick="toggleAirportChartSection()">
-          <span class="chart-toggle-switch-text" id="chart-toggle-switch-text">&gt;&gt; 点击展开实况趋势图表 &lt;&lt;</span>
-        </div>
+        <div class="airport-chart-section collapsed" id="airport-chart-section" data-extra-pane-panel="chart">
         <div class="airport-chart-body">
           <div class="chart-time-selector-row">
             <div class="chart-time-selector">
@@ -967,6 +996,7 @@
             <div class="airport-chart" id="airport-detail-chart"></div>
           </div>
         </div>
+      </div>
       </div>
     </div>
   </div>

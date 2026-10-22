@@ -1451,19 +1451,25 @@ const modeBtn = document.getElementById('threshold-mode-btn');
     }
   }
 
-  // ========== Tab11: 地图样式 ==========
+  // ========== Tab11: 外观样式 ==========
   let _mapStyleCfg = null;
   let _mapColorSchemes = [];
   let _mapPalettes = {};
+  let _airportDetailTheme = 'dark';
 
   async function loadMapStyleSettings() {
     const res = await apiFetch(apiUrl('map-style/config/'));
+    applyScope(res);
     if (!res.success) { showMsg('map-style-msg', res.error || '加载失败', 'error'); return; }
     _mapStyleCfg = res.config;
     _mapColorSchemes = res.color_schemes || [];
+    _airportDetailTheme = (res.airport_detail && res.airport_detail.theme) || 'dark';
     if (res.palette) _mapPalettes[res.config.color_scheme] = res.palette;
-    // 补齐预览色：用返回的 palette 列表不够时从 scheme id 简单展示
     fillMapStyleForm(_mapStyleCfg, res.palette);
+    renderAirportDetailThemeCards(_airportDetailTheme);
+    if (typeof window.applyAirportDetailTheme === 'function') {
+      window.applyAirportDetailTheme(_airportDetailTheme);
+    }
   }
 
   function fillMapStyleForm(cfg, palette) {
@@ -1510,6 +1516,33 @@ const modeBtn = document.getElementById('threshold-mode-btn');
     });
   }
 
+  function bindAirportDetailThemeCards() {
+    const box = document.getElementById('ad-theme-group');
+    if (!box || box.dataset.bound === '1') return;
+    box.dataset.bound = '1';
+    box.querySelectorAll('.ms-scheme-card').forEach(btn => {
+      btn.addEventListener('click', () => {
+        box.querySelectorAll('.ms-scheme-card').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+      });
+    });
+  }
+
+  function renderAirportDetailThemeCards(activeId) {
+    const box = document.getElementById('ad-theme-group');
+    if (!box) return;
+    bindAirportDetailThemeCards();
+    const current = activeId === 'light' ? 'light' : 'dark';
+    box.querySelectorAll('.ms-scheme-card').forEach(btn => {
+      btn.classList.toggle('active', btn.getAttribute('data-ad-theme') === current);
+    });
+  }
+
+  function parseAirportDetailTheme() {
+    const active = document.querySelector('#ad-theme-group .ms-scheme-card.active');
+    return { theme: active && active.dataset.adTheme === 'light' ? 'light' : 'dark' };
+  }
+
   function parseMapStyleForm() {
     const active = document.querySelector('#ms-color-scheme-group .ms-scheme-card.active');
     return {
@@ -1538,17 +1571,23 @@ const modeBtn = document.getElementById('threshold-mode-btn');
   async function saveMapStyleSettings() {
     try {
       const config = parseMapStyleForm();
+      const airport_detail = parseAirportDetailTheme();
       const res = await apiFetch(apiUrl('map-style/config/'), {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ config }),
+        body: JSON.stringify({ config, airport_detail }),
       });
       if (!res.success) { showMsg('map-style-msg', res.error || '保存失败', 'error'); return; }
       _mapStyleCfg = res.config;
+      _airportDetailTheme = (res.airport_detail && res.airport_detail.theme) || airport_detail.theme;
       fillMapStyleForm(res.config, res.palette);
+      renderAirportDetailThemeCards(_airportDetailTheme);
       showMsg('map-style-msg', '已保存', 'success');
       if (typeof window.applyMapStyleConfig === 'function') {
         window.applyMapStyleConfig(res.config, res.border_widths, res.palette);
+      }
+      if (typeof window.applyAirportDetailTheme === 'function') {
+        window.applyAirportDetailTheme(_airportDetailTheme);
       }
     } catch (e) {
       showMsg('map-style-msg', e.message, 'error');
@@ -1882,6 +1921,7 @@ const modeBtn = document.getElementById('threshold-mode-btn');
     if (mapStyleSave) {
       mapStyleSave.addEventListener('click', saveMapStyleSettings);
     }
+    bindAirportDetailThemeCards();
   }
 
   function selectSettingsGroup(name, switchToFirst) {

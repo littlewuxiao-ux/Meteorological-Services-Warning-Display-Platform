@@ -4220,11 +4220,13 @@ function updateAirportGridForModalInner(airportElement) {
     const marksMode = typeof isFlightMarksMode === 'function' && isFlightMarksMode();
 
     if (marksMode) {
-        appendMarksVerticalLines(airportElement, { dark: true });
+        const darkModal = !(typeof airportDetailThemeIsLight === 'function' && airportDetailThemeIsLight());
+        appendMarksVerticalLines(airportElement, { dark: darkModal });
     } else {
         const positions = calculateVerticalLinePositions(horizontalWidth, timeSlots);
         const midnightIndexes = findMidnightBoldLineIndexes(getCurrentTime());
 
+        const lightTheme = typeof airportDetailThemeIsLight === 'function' && airportDetailThemeIsLight();
         positions.forEach((position, index) => {
             const line = document.createElement('div');
             line.className = 'grid-vertical-line';
@@ -4236,7 +4238,9 @@ function updateAirportGridForModalInner(airportElement) {
                 top: 0;
                 width: ${isMidnightLine ? '3px' : '1px'};
                 height: ${airportHeight}px;
-                background-color: ${isMidnightLine ? '#ffffff' : 'rgba(255, 255, 255, 0.3)'};
+                background-color: ${isMidnightLine
+                    ? (lightTheme ? '#000000' : '#ffffff')
+                    : (lightTheme ? 'rgba(0, 0, 0, 0.16)' : 'rgba(255, 255, 255, 0.3)')};
                 z-index: 0;
                 pointer-events: none;
             `;
@@ -4256,6 +4260,7 @@ function updateAirportGridForModalInner(airportElement) {
         lineData.push({ position: airportHeight * i / rowCount, className: 'forecast-bottom' });
     }
 
+    const lightThemeH = typeof airportDetailThemeIsLight === 'function' && airportDetailThemeIsLight();
     lineData.forEach((data) => {
         const line = document.createElement('div');
         line.className = `grid-horizontal-line ${data.className}`;
@@ -4265,7 +4270,7 @@ function updateAirportGridForModalInner(airportElement) {
             top: ${data.position}px;
             width: ${horizontalWidth}px;
             height: 1px;
-            background-color: rgba(255, 255, 255, 0.3);
+            background-color: ${lightThemeH ? 'rgba(0, 0, 0, 0.16)' : 'rgba(255, 255, 255, 0.3)'};
             z-index: 0;
             pointer-events: none;
         `;
@@ -4280,20 +4285,21 @@ function updateAirportGridForModalInner(airportElement) {
         const forecastHeight = plainRow ? airportHeight * 4 / 9 : airportHeight / 3;
         const overlay = document.createElement('div');
         overlay.className = 'no-taf-data-overlay';
+        const lightOverlay = typeof airportDetailThemeIsLight === 'function' && airportDetailThemeIsLight();
         overlay.style.cssText = `
             position: absolute;
             top: 0;
             left: ${leftOffset}px;
             width: ${horizontalWidth}px;
             height: ${forecastHeight}px;
-            background: #2c3e50;
+            background: ${lightOverlay ? '#ffffff' : '#2c3e50'};
             z-index: 10;
             display: flex;
             align-items: center;
             justify-content: center;
             font-size: 14px;
-            color: #ffffff;
-            border: 1px solid rgba(255, 255, 255, 0.3);
+            color: ${lightOverlay ? '#000000' : '#ffffff'};
+            border: 1px solid ${lightOverlay ? 'rgba(0, 0, 0, 0.18)' : 'rgba(255, 255, 255, 0.3)'};
             box-sizing: border-box;
         `;
         overlay.textContent = '没有有效的TAF数据';
@@ -4466,6 +4472,7 @@ async function initCurrentModeAuth() {
 
         currentToken = savedToken;
         currentUserCode = savedUserCode;
+        if (typeof loadAirportDetailTheme === 'function') loadAirportDetailTheme();
         writeStoredAuth(currentToken, currentUserCode);
         // 启动器/Nginx 统一登录态在重启后会清空（仅存内存）。
         // 浏览器本地仍有可用 token 时，主动回灌统一登录态，
@@ -4634,6 +4641,7 @@ function startLoginCheck() {
 
                     currentToken = data.data.token;
                     currentUserCode = data.data.userCode;
+                    if (typeof loadAirportDetailTheme === 'function') loadAirportDetailTheme();
 
                     writeStoredAuth(currentToken, currentUserCode);
                     updateUnifiedAuth(currentToken, currentUserCode);

@@ -1730,16 +1730,68 @@ body.display-timezone-utc .title-row.main-title-row .timeline-row {
 
 /* 弹窗内的时间轴标题行缩放已在上面定义 */
 
+.airport-detail-extra {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 0;
+  padding: 10px;
+  background-color: #2c3e50;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 4px;
+}
+
+.airport-extra-switch {
+  flex-shrink: 0;
+  display: flex;
+  gap: 0;
+  margin: 0 0 8px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.airport-extra-switch-btn {
+  flex: 1;
+  margin: 0;
+  padding: 7px 8px;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 12px;
+  font-weight: bold;
+  cursor: pointer;
+  letter-spacing: 0.5px;
+}
+
+.airport-extra-switch-btn + .airport-extra-switch-btn {
+  border-left: 1px solid rgba(255, 255, 255, 0.35);
+}
+
+.airport-extra-switch-btn.active {
+  background: rgba(255, 255, 255, 0.16);
+  color: #ffffff;
+}
+
+.airport-detail-extra[data-pane="reports"] [data-extra-pane-panel="chart"],
+.airport-detail-extra[data-pane="chart"] [data-extra-pane-panel="reports"] {
+  display: none;
+}
+
+.airport-detail-extra.no-chart .airport-extra-switch-btn[data-extra-pane="chart"] {
+  display: none;
+}
+
 /* 机场报文区域：随内容自动收缩/扩展 */
 .airport-reports-section {
   flex: 0 0 auto;
   display: flex;
   flex-direction: column;
-  margin-bottom: 10px;
-  padding: 10px;
-  background-color: #2c3e50;
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  border-radius: 4px;
+  margin-bottom: 0;
+  padding: 0;
+  background-color: transparent;
+  border: none;
+  border-radius: 0;
 }
 
 .airport-reports-section h3 {
@@ -1758,16 +1810,16 @@ body.display-timezone-utc .title-row.main-title-row .timeline-row {
 }
 
 
-/* 机场图表区域：默认折叠的可展开面板；作为弹窗内最后一个区块，不再预留底部多余间距 */
+/* 机场图表区域：由上方二选一开关切换，不再单独预留底部开关 */
 .airport-chart-section {
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
   margin-bottom: 0;
-  padding: 10px;
-  background-color: #2c3e50;
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  border-radius: 4px;
+  padding: 0;
+  background-color: transparent;
+  border: none;
+  border-radius: 0;
 }
 
 /* 图表展开/收起开关：整块可点击，样式与其他区块明显区分，一眼可辨认是开关 */
@@ -1806,7 +1858,7 @@ body.display-timezone-utc .title-row.main-title-row .timeline-row {
 
 /* 折叠时不渲染图表主体，展开后才占用空间/触发渲染 */
 .airport-chart-body {
-  padding-top: 10px;
+  padding-top: 2px;
 }
 
 .airport-chart-section.collapsed .airport-chart-body {
@@ -2091,6 +2143,199 @@ body.display-timezone-utc .title-row.main-title-row .timeline-row {
   text-align: center;
   padding: 20px;
   font-size: 14px;
+}
+
+/* 机场详情 / 多机场搜索：浅色主题（当前样式为深色演示） */
+body.airport-detail-theme-light .airport-detail-content,
+body.airport-detail-theme-light .airport-search-modal-content {
+  background-color: #f4f1ea;
+  color: #000;
+}
+
+body.airport-detail-theme-light #airport-detail-modal .modal-close,
+body.airport-detail-theme-light #airport-search-modal .modal-close {
+  color: #333;
+}
+
+body.airport-detail-theme-light .airport-detail-header {
+  border-bottom-color: #c8c3b8;
+}
+
+body.airport-detail-theme-light .airport-title-center h2,
+body.airport-detail-theme-light .airport-title-inline h2,
+body.airport-detail-theme-light .airport-title-name,
+body.airport-detail-theme-light .airport-detail-info-hint,
+body.airport-detail-theme-light .airport-info-left .info-label,
+body.airport-detail-theme-light .airport-info-left .info-value,
+body.airport-detail-theme-light .airport-info-contacts .contact-label,
+body.airport-detail-theme-light .airport-info-contacts .contact-value,
+body.airport-detail-theme-light .airport-name-item .info-value {
+  color: #000;
+}
+
+body.airport-detail-theme-light .airport-info-left .info-item,
+body.airport-detail-theme-light .airport-info-contacts .contact-item,
+body.airport-detail-theme-light .airport-name-item {
+  background-color: #ffffff;
+}
+
+body.airport-detail-theme-light .airport-code-divider {
+  background-color: rgba(0, 0, 0, 0.35);
+}
+
+body.airport-detail-theme-light .airport-data-section {
+  border-color: rgba(0, 0, 0, 0.18);
+  background-color: #ffffff;
+}
+
+body.airport-detail-theme-light .airport-detail-title-row,
+body.airport-detail-theme-light .airport-detail-title-row .title-weather,
+body.airport-detail-theme-light .airport-detail-title-row .title-timeline,
+body.airport-detail-theme-light .airport-detail-title-row .timeline-row {
+  background-color: #eceff1;
+  color: #000;
+}
+
+body.airport-detail-theme-light .airport-detail-title-row .title-weather,
+body.airport-detail-theme-light .airport-detail-title-row .title-text,
+body.airport-detail-theme-light .airport-detail-title-row .beijing-time,
+body.airport-detail-theme-light .airport-detail-title-row .utc-time {
+  color: #000;
+}
+
+/* 实况信息、预报/航班底为白色；时间格与横竖线保持透明，避免盖住格子 */
+body.airport-detail-theme-light .airport-detail-main,
+body.airport-detail-theme-light .airport-detail-main .airport-row,
+body.airport-detail-theme-light .airport-detail-main .weather-info,
+body.airport-detail-theme-light .airport-detail-main .weather-info-container {
+  background-color: #ffffff;
+  color: #000;
+}
+
+body.airport-detail-theme-light .airport-detail-main .forecast-timeline,
+body.airport-detail-theme-light .airport-detail-main .forecast-row,
+body.airport-detail-theme-light .airport-detail-main .forecast-row .timeline-cell,
+body.airport-detail-theme-light .airport-detail-main .flight-row {
+  background-color: transparent;
+  color: #000;
+}
+
+body.airport-detail-theme-light .airport-detail-main .grid-vertical-line,
+body.airport-detail-theme-light .airport-detail-main .grid-horizontal-line {
+  background-color: rgba(0, 0, 0, 0.16) !important;
+}
+
+body.airport-detail-theme-light .airport-detail-main .grid-vertical-line.utc-00-line {
+  background-color: #000 !important;
+}
+
+body.airport-detail-theme-light .airport-detail-main .weather-row,
+body.airport-detail-theme-light .airport-detail-main [style*="color: black"],
+body.airport-detail-theme-light .airport-detail-main [style*="color: #333"] {
+  color: #000 !important;
+}
+
+body.airport-detail-theme-light .airport-detail-main .no-data,
+body.airport-detail-theme-light .airport-detail-main .no-taf-data-overlay {
+  background: #ffffff;
+  color: #000;
+  border-color: rgba(0, 0, 0, 0.18);
+}
+
+body.airport-detail-theme-light .airport-detail-main .no-taf-data {
+  background-color: #ffffff;
+  color: #000;
+  border-bottom-color: rgba(0, 0, 0, 0.18);
+}
+
+body.airport-detail-theme-light .airport-detail-main .airport-row {
+  border-bottom-color: rgba(0, 0, 0, 0.16);
+}
+
+body.airport-detail-theme-light .airport-detail-main .weather-info {
+  border-color: rgba(0, 0, 0, 0.18);
+}
+
+body.airport-detail-theme-light .airport-detail-main .timeline-cell,
+body.airport-detail-theme-light .airport-detail-main .forecast-row .timeline-cell {
+  border-right-color: rgba(0, 0, 0, 0.16);
+}
+
+body.airport-detail-theme-light .airport-detail-extra {
+  background-color: #eceff1;
+  border-color: rgba(0, 0, 0, 0.18);
+}
+
+body.airport-detail-theme-light .airport-extra-switch {
+  border-color: rgba(0, 0, 0, 0.18);
+}
+
+body.airport-detail-theme-light .airport-extra-switch-btn {
+  color: #000;
+}
+
+body.airport-detail-theme-light .airport-extra-switch-btn + .airport-extra-switch-btn {
+  border-left-color: rgba(0, 0, 0, 0.18);
+}
+
+body.airport-detail-theme-light .airport-extra-switch-btn.active {
+  background: #ffffff;
+  color: #000;
+}
+
+body.airport-detail-theme-light .airport-reports-section,
+body.airport-detail-theme-light .airport-chart-section {
+  background-color: transparent;
+  border-color: transparent;
+}
+
+body.airport-detail-theme-light .reports-content,
+body.airport-detail-theme-light .report-group-metar,
+body.airport-detail-theme-light .report-group-taf {
+  background-color: #ffffff;
+}
+
+body.airport-detail-theme-light .airport-reports-section h3,
+body.airport-detail-theme-light .reports-content,
+body.airport-detail-theme-light .report-group-empty,
+body.airport-detail-theme-light .report-content,
+body.airport-detail-theme-light .report-time {
+  color: #000;
+}
+
+body.airport-detail-theme-light .airport-reports-section h3 {
+  border-bottom-color: rgba(0, 0, 0, 0.16);
+}
+
+body.airport-detail-theme-light .report-group-metar,
+body.airport-detail-theme-light .report-group-taf {
+  background-color: #ffffff;
+}
+
+body.airport-detail-theme-light .chart-toggle-switch {
+  display: none;
+}
+
+body.airport-detail-theme-light .airport-chart-section .chart-time-label,
+body.airport-detail-theme-light .airport-chart-section .chart-time-radio {
+  color: #000;
+}
+
+body.airport-detail-theme-light .airport-chart {
+  border-color: rgba(0, 0, 0, 0.18);
+}
+
+body.airport-detail-theme-light .airport-search-block {
+  border-bottom-color: #000;
+}
+
+body.airport-detail-theme-light .airport-search-block .airport-detail-header {
+  border-bottom-color: rgba(0, 0, 0, 0.18);
+}
+
+body.airport-detail-theme-light .airport-search-loading,
+body.airport-detail-theme-light .airport-search-empty {
+  color: #000;
 }
 
 .report-time {
@@ -4481,6 +4726,25 @@ p.settings-hint {
   grid-template-columns: repeat(2, minmax(280px, 1fr));
   gap: 14px;
 }
+#settings-pane-map-style .settings-appearance-group {
+  width: min(760px, 100%);
+  margin: 18px auto 0;
+}
+#settings-pane-map-style .settings-appearance-group:first-of-type {
+  margin-top: 0;
+}
+#settings-pane-map-style .settings-appearance-group-title {
+  display: block;
+  width: 100%;
+  font-size: 15px;
+  font-weight: 700;
+  color: #2c3e50;
+  margin: 0 0 10px;
+  padding-bottom: 6px;
+  border-bottom: 2px solid #2c3e50;
+  white-space: nowrap;
+  writing-mode: horizontal-tb;
+}
 #settings-pane-map-style .settings-sheet-grid {
   grid-template-columns: minmax(0, 1fr);
   width: min(760px, 100%);
@@ -4499,6 +4763,11 @@ p.settings-hint {
 #settings-pane-map-style .settings-sheet-card > :not(.settings-sheet-title) {
   margin-left: 14px;
   margin-right: 14px;
+}
+#settings-pane-map-style #ad-theme-group {
+  margin-top: 10px;
+  margin-bottom: 8px;
+  min-height: 48px;
 }
 .settings-sheet-card-form {
   width: min(640px, 100%);

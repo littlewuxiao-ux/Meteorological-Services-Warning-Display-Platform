@@ -566,7 +566,12 @@ function _loadMapStyleConfig() {
     })
         .then(r => r.json())
         .then(data => {
-            if (data.success) applyMapStyleConfig(data.config, data.border_widths, data.palette);
+            if (data.success) {
+                applyMapStyleConfig(data.config, data.border_widths, data.palette);
+                if (data.airport_detail && typeof window.applyAirportDetailTheme === 'function') {
+                    window.applyAirportDetailTheme(data.airport_detail.theme);
+                }
+            }
         })
         .catch(err => console.warn('[地图样式] 加载失败', err));
 }

@@ -97,6 +97,102 @@ def default_map_style_config() -> Dict[str, Any]:
     }
 
 
+_MAP_SKIP_KEYS = ('metar_flash_mode', 'map', 'airport_detail', 'by_user')
+AIRPORT_DETAIL_THEMES = ('dark', 'light')
+
+
+def default_airport_detail_style() -> Dict[str, Any]:
+    return {'theme': 'dark'}
+
+
+def merge_airport_detail_style(stored: Dict[str, Any] | None) -> Dict[str, Any]:
+    out = default_airport_detail_style()
+    if isinstance(stored, dict):
+        theme = str(stored.get('theme') or '').strip()
+        if theme in AIRPORT_DETAIL_THEMES:
+            out['theme'] = theme
+    return out
+
+
+def _is_nested_style_row(stored: Dict[str, Any]) -> bool:
+    return any(key in stored for key in ('map', 'airport_detail', 'by_user'))
+
+
+def split_style_row(stored: Dict[str, Any] | None) -> Dict[str, Any]:
+    """把 style_config 单行 JSON 拆成默认地图/机场主题 + 按用户覆盖。兼容旧的扁平地图配置。"""
+    data = stored if isinstance(stored, dict) else {}
+    if _is_nested_style_row(data):
+        map_src = data.get('map') if isinstance(data.get('map'), dict) else data
+        by_user = data.get('by_user') if isinstance(data.get('by_user'), dict) else {}
+        users: Dict[str, Any] = {}
+        for code, blob in by_user.items():
+            key = str(code or '').strip()
+            if not key or not isinstance(blob, dict):
+                continue
+            users[key] = {
+                'map': merge_map_style(blob.get('map') if isinstance(blob.get('map'), dict) else None),
+                'airport_detail': merge_airport_detail_style(
+                    blob.get('airport_detail') if isinstance(blob.get('airport_detail'), dict) else None
+                ),
+            }
+        return {
+            'map': merge_map_style(map_src),
+            'airport_detail': merge_airport_detail_style(
+                data.get('airport_detail') if isinstance(data.get('airport_detail'), dict) else None
+            ),
+            'by_user': users,
+        }
+    return {
+        'map': merge_map_style(data),
+        'airport_detail': default_airport_detail_style(),
+        'by_user': {},
+    }
+
+
+def resolve_user_appearance(stored: Dict[str, Any] | None, user_code: str | None, editing_template: bool = False):
+    base = split_style_row(stored)
+    overlay = {}
+    code = str(user_code or '').strip()
+    if (not editing_template) and code and code != 'default':
+        overlay = base['by_user'].get(code) or {}
+    map_cfg = overlay.get('map') if overlay.get('map') else base['map']
+    airport_cfg = overlay.get('airport_detail') if overlay.get('airport_detail') else base['airport_detail']
+    return merge_map_style(map_cfg), merge_airport_detail_style(airport_cfg)
+
+
+def dump_style_row(base: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        'map': merge_map_style(base.get('map')),
+        'airport_detail': merge_airport_detail_style(base.get('airport_detail')),
+        'by_user': base.get('by_user') or {},
+    }
+
+
+def save_user_appearance(
+    stored: Dict[str, Any] | None,
+    user_code: str | None,
+    map_cfg: Dict[str, Any] | None,
+    airport_detail: Dict[str, Any] | None,
+    editing_template: bool = False,
+) -> Dict[str, Any]:
+    base = split_style_row(stored)
+    code = str(user_code or '').strip()
+    if editing_template or (not code) or code == 'default':
+        if map_cfg is not None:
+            base['map'] = merge_map_style(map_cfg)
+        if airport_detail is not None:
+            base['airport_detail'] = merge_airport_detail_style(airport_detail)
+        return dump_style_row(base)
+    prev = base['by_user'].get(code) or {}
+    base['by_user'][code] = {
+        'map': merge_map_style(map_cfg if map_cfg is not None else prev.get('map') or base['map']),
+        'airport_detail': merge_airport_detail_style(
+            airport_detail if airport_detail is not None else prev.get('airport_detail') or base['airport_detail']
+        ),
+    }
+    return dump_style_row(base)
+
+
 def merge_map_style(stored: Dict[str, Any] | None) -> Dict[str, Any]:
     cfg = default_map_style_config()
     if not stored:
@@ -104,7 +200,7 @@ def merge_map_style(stored: Dict[str, Any] | None) -> Dict[str, Any]:
     else:
         out = deepcopy(cfg)
         for key, val in stored.items():
-            if key == 'metar_flash_mode':
+            if key in _MAP_SKIP_KEYS:
                 continue
             if key in ('china', 'world', 'global') and isinstance(val, dict):
                 out[key] = {**cfg.get(key, {}), **val}

@@ -144,9 +144,10 @@ function renderAllNwpOverlays(nwpData) {
  * @param {Array}   temperatures      [{time: unix_sec, temperature: float}, ...]
  */
 function renderNwpOverlayForAirport(forecastTimeline, temperatures) {
-    // 深色背景（机场详情弹窗 / 搜索结果弹窗）文字用白色，主页浅色背景保持黑色
-    const isDarkTheme = forecastTimeline.closest('.airport-detail-main') !== null;
-    const textColor = isDarkTheme ? '#fff' : '#000';
+    // 机场详情/搜索结果：深色主题白字，浅色主题黑字；主页始终黑字
+    const inDetail = forecastTimeline.closest('.airport-detail-main') !== null;
+    const lightDetail = typeof airportDetailThemeIsLight === 'function' && airportDetailThemeIsLight();
+    const textColor = (inDetail && !lightDetail) ? '#fff' : '#000';
 
     const overlay = document.createElement('div');
     overlay.className = 'nwp-temperature-overlay';
