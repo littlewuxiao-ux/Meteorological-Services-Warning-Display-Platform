@@ -118,6 +118,7 @@ const AIRPORT_CHART_MIN_HOURS = 3;
 const AIRPORT_CHART_MAX_HOURS = 72;
 const AIRPORT_CHART_DEFAULT_HOURS = 24;
 const AIRPORT_CHART_WEATHER_HOURLY_HOURS = 12;
+const AIRPORT_CHART_WEATHER_TILT_HOURS = 30;
 
 function defaultAirportChartSelectedSeries() {
   return {
@@ -143,9 +144,14 @@ function airportChartUsesHourlyWeather() {
   return clampAirportChartHours(airportDetailChart.hours) >= AIRPORT_CHART_WEATHER_HOURLY_HOURS;
 }
 
+function airportChartUsesTiltedWeather() {
+  return clampAirportChartHours(airportDetailChart.hours) >= AIRPORT_CHART_WEATHER_TILT_HOURS;
+}
+
 function airportChartWeatherGridBottom(weatherOn) {
   if (!weatherOn) return 70;
-  return airportChartUsesHourlyWeather() ? 108 : 88;
+  if (airportChartUsesTiltedWeather()) return 92;
+  return airportChartUsesHourlyWeather() ? 118 : 100;
 }
 
 function formatAirportChartHours(hours) {
@@ -375,6 +381,29 @@ async function fetchNonHomepageAirportDetail(airportCode) {
 }
 
 // 显示机场详细信息弹窗
+function pinAirportDetailModalForChartCenter() {
+  const box = document.querySelector('#airport-detail-modal .airport-detail-content');
+  const modal = document.getElementById('airport-detail-modal');
+  if (!box || !modal || modal.style.display === 'none') return;
+  const extra = document.getElementById('airport-detail-extra');
+  const reports = extra && extra.querySelector('[data-extra-pane-panel="reports"]');
+  const currentH = box.getBoundingClientRect().height;
+  const reportsH = reports ? reports.getBoundingClientRect().height : 0;
+  const estimated = Math.max(currentH, currentH - reportsH + 420);
+  const viewH = window.innerHeight;
+  const top = Math.max(24, Math.round((viewH - Math.min(estimated, viewH - 48)) / 2));
+  box.style.top = `${top}px`;
+  box.style.maxHeight = `${Math.max(200, viewH - top - 24)}px`;
+}
+
+function bindAirportDetailModalPin() {
+  if (bindAirportDetailModalPin.bound) return;
+  bindAirportDetailModalPin.bound = true;
+  window.addEventListener('resize', () => {
+    pinAirportDetailModalForChartCenter();
+  });
+}
+
 async function showAirportDetailModal(airportData, source) {
   await ensurePlainScriptIfNeeded();
   // 主页数据是扁平结构，直接使用airportData
@@ -452,6 +481,11 @@ async function showAirportDetailModal(airportData, source) {
   paintAirportChartRangeHint(AIRPORT_CHART_DEFAULT_HOURS, false);
   setAirportTrendTableMessage('过去 24 小时实况表将在报文加载完成后准备');
   resetAirportDetailExtraPane();
+  bindAirportDetailModalPin();
+  requestAnimationFrame(() => {
+    pinAirportDetailModalForChartCenter();
+    requestAnimationFrame(pinAirportDetailModalForChartCenter);
+  });
 
   if (typeof syncAirportDetailTimelineLabel === 'function') {
     syncAirportDetailTimelineLabel();
@@ -1273,19 +1307,19 @@ function splitWeatherCodes(text) {
   return String(text).split(/[,\s]+/).map((item) => item.trim()).filter(Boolean);
 }
 
-function pushWeatherLabel(graphicItems, idx, xPixel, y, text) {
+function pushWeatherLabel(graphicItems, idx, xPixel, y, text, tilted) {
   graphicItems.push({
     id: `wl_${idx}`,
     type: 'text',
     z: 5,
     x: xPixel,
     y,
-    rotation: 0,
+    rotation: tilted ? Math.PI / 4 : 0,
     style: {
       text,
-      fontSize: 11,
+      fontSize: tilted ? 12 : 11,
       fill: airportDetailChartInk().weather,
-      align: 'center',
+      align: tilted ? 'right' : 'center',
       verticalAlign: 'top',
     },
   });
@@ -1301,11 +1335,13 @@ function renderWeatherLabels(chart) {
   if (selected['天气现象']) {
     const containerHeight = chartDom.offsetHeight;
     const bottom = airportChartWeatherGridBottom(true);
-    const anchorY = containerHeight - bottom + 16;
+    const tilted = airportChartUsesTiltedWeather();
+    const hourly = airportChartUsesHourlyWeather();
+    const anchorY = containerHeight - bottom + (tilted ? 16 : 28);
     const latestTime = airportDetailChart.latestTime;
     const startTime = latestTime - clampAirportChartHours(airportDetailChart.hours) * 3600000;
     const lineHeight = 13;
-    if (airportChartUsesHourlyWeather()) {
+    if (hourly) {
       (airportDetailChart.hourlyWeather || []).forEach((slot) => {
         const hour = slot && slot.hour;
         const codes = splitWeatherCodes(slot && slot.weather);
@@ -1313,9 +1349,13 @@ function renderWeatherLabels(chart) {
         if (latestTime && (hour < startTime || hour > latestTime)) return;
         const xPixel = chart.convertToPixel({ xAxisIndex: 0 }, hour);
         if (xPixel == null || isNaN(xPixel)) return;
-        codes.forEach((code, line) => {
-          pushWeatherLabel(graphicItems, idx++, xPixel, anchorY + line * lineHeight, code);
-        });
+        if (tilted) {
+          pushWeatherLabel(graphicItems, idx++, xPixel, anchorY, codes.join(' '), true);
+        } else {
+          codes.forEach((code, line) => {
+            pushWeatherLabel(graphicItems, idx++, xPixel, anchorY + line * lineHeight, code, false);
+          });
+        }
       });
     } else {
       const source = airportDetailChart.filteredData || airportDetailChart.historyData || [];
@@ -1327,7 +1367,7 @@ function renderWeatherLabels(chart) {
         const xPixel = chart.convertToPixel({ xAxisIndex: 0 }, time);
         if (xPixel == null || isNaN(xPixel)) return;
         codes.forEach((code, line) => {
-          pushWeatherLabel(graphicItems, idx++, xPixel, anchorY + line * lineHeight, code);
+          pushWeatherLabel(graphicItems, idx++, xPixel, anchorY + line * lineHeight, code, false);
         });
       });
     }

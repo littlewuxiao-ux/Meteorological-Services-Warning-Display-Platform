@@ -2348,11 +2348,11 @@ body.display-timezone-utc .title-row.main-title-row .timeline-row {
    通过绝对定位+位移始终保持垂直水平居中（高度变化时自动重新居中） */
 #airport-detail-modal .airport-detail-content {
   position: absolute;
-  top: 24px;
+  top: 80px;
   left: 50%;
   margin: 0;
   transform: translateX(-50%);
-  max-height: calc(100vh - 48px);
+  max-height: calc(100vh - 96px);
   overflow: hidden;
 }
 
