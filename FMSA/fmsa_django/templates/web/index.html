@@ -704,12 +704,12 @@
 
       <!-- Tab11: 外观样式（地图样式 + 机场详细信息设置） -->
       <div class="settings-tab-pane" id="settings-pane-map-style">
+        <div class="radar-settings-toolbar">
+          <button type="button" class="settings-btn-save" id="map-style-save-btn">保存配置</button>
+          <span class="settings-hint">按登录用户保存，与雷达页面地图样式写在同一份配置中</span>
+        </div>
+        <div class="settings-msg" id="map-style-msg"></div>
         <div class="settings-sheet">
-          <div class="radar-settings-toolbar">
-            <button type="button" class="settings-btn-save" id="map-style-save-btn">保存配置</button>
-            <span class="settings-hint">按登录用户保存，与雷达页面地图样式写在同一份配置中</span>
-          </div>
-          <div class="settings-msg" id="map-style-msg"></div>
           <div class="settings-appearance-group">
             <div class="settings-appearance-group-title">地图样式</div>
           <div class="settings-sheet-grid">
@@ -955,7 +955,7 @@
       <div class="airport-detail-extra" id="airport-detail-extra" data-pane="reports">
         <div class="airport-extra-switch" role="tablist">
           <button type="button" class="airport-extra-switch-btn active" data-extra-pane="reports">实况/预报报文</button>
-          <button type="button" class="airport-extra-switch-btn" data-extra-pane="chart" id="airport-extra-chart-btn">实况趋势图（72小时）<span class="airport-extra-pane-range" id="airport-chart-range-hint">过去 24 小时</span></button>
+          <button type="button" class="airport-extra-switch-btn" data-extra-pane="chart" id="airport-extra-chart-btn">实况趋势图（<span class="airport-chart-title-idle">3-72小时</span><span class="airport-chart-title-on">使用鼠标滚轮缩放展示时段</span>）<span class="airport-extra-pane-range" id="airport-chart-range-hint">过去 24 小时</span></button>
           <button type="button" class="airport-extra-switch-btn" data-extra-pane="table" id="airport-extra-table-btn">实况趋势表（24小时）</button>
         </div>
         <div class="airport-reports-section" data-extra-pane-panel="reports">

@@ -175,13 +175,119 @@ function paintAirportChartRangeHint(hours, flash) {
 
 const AIRPORT_CHART_LEGEND_GROUPS = [
   { id: 'wind', items: [{ name: '平均风', color: '#3498db' }, { name: '阵风', color: '#3498db' }] },
-  { id: 'vis', items: [{ name: '能见度', color: '#f39c12' }, { name: 'RVR', color: '#e74c3c' }] },
+  { id: 'vis', items: [{ name: '能见度', color: '#e74c3c' }, { name: 'RVR', color: '#e74c3c' }] },
   { id: 'cloud', items: [{ name: '云底高', color: '#9b59b6' }] },
-  { id: 'temp', items: [{ name: '气温', color: '#27ae60' }] },
-  { id: 'dew', items: [{ name: '露点温度', color: '#00cec9' }] },
-  { id: 'pressure', items: [{ name: '气压', color: '#16a085' }] },
+  { id: 'temp', items: [{ name: '气温', color: '#f39c12' }] },
+  { id: 'dew', items: [{ name: '露点温度', color: '#27ae60' }] },
+  { id: 'pressure', items: [{ name: '气压', color: '#00cec9' }] },
   { id: 'weather', items: [{ name: '天气现象', color: '#95a5a6' }] },
 ];
+
+const AIRPORT_CHART_AXIS_SLOT_PX = 56;
+const AIRPORT_CHART_AXIS_PAD_PX = 14;
+const AIRPORT_CHART_AXIS_GROUPS = {
+  wind: { name: 'W(mps)', color: '#3498db', seriesNames: ['平均风', '阵风'] },
+  vis: { name: 'V(m)', color: '#e74c3c', seriesNames: ['能见度', 'RVR'] },
+  cloud: { name: 'H(30m)', color: '#9b59b6', seriesNames: ['云底高'] },
+  temp: { name: 'T(℃)', color: '#f39c12', seriesNames: ['气温', '露点温度'] },
+  pressure: { name: 'P(hPa)', color: '#00cec9', seriesNames: ['气压'] },
+};
+const AIRPORT_CHART_AXIS_GROUP_IDS = ['wind', 'vis', 'cloud', 'temp', 'pressure'];
+
+function airportChartAxisGroupOn(selected, groupId) {
+  const group = AIRPORT_CHART_AXIS_GROUPS[groupId];
+  return !!(group && group.seriesNames.some((name) => selected && selected[name]));
+}
+
+function syncAirportChartAxisOrder(selected) {
+  const prev = Array.isArray(airportDetailChart.axisOrder) ? airportDetailChart.axisOrder : [];
+  const next = prev.filter((id) => airportChartAxisGroupOn(selected, id));
+  AIRPORT_CHART_AXIS_GROUP_IDS.forEach((id) => {
+    if (airportChartAxisGroupOn(selected, id) && next.indexOf(id) < 0) next.push(id);
+  });
+  airportDetailChart.axisOrder = next;
+  return next;
+}
+
+function formatAirportChartAxisLabel(value) {
+  if (value == null || !Number.isFinite(Number(value))) return '';
+  const number = Number(value);
+  if (Math.abs(number) >= 1000) return String(Math.round(number));
+  if (Math.abs(number - Math.round(number)) < 1e-6) return String(Math.round(number));
+  return String(Number(number.toFixed(1)));
+}
+
+function buildAirportChartYAxes(order, ink, hasSeries) {
+  if (!order.length) {
+    return [{
+      type: 'value',
+      show: false,
+      axisLine: { show: false },
+      axisTick: { show: false },
+      axisLabel: { show: false },
+      splitLine: { show: false },
+    }];
+  }
+  return order.map((id, index) => {
+    const meta = AIRPORT_CHART_AXIS_GROUPS[id];
+    const side = index % 2 === 0 ? 'left' : 'right';
+    const axis = {
+      type: 'value',
+      show: true,
+      name: meta.name,
+      nameLocation: 'end',
+      nameGap: 16,
+      nameRotate: 0,
+      nameTextStyle: {
+        color: meta.color,
+        fontSize: 10,
+        width: AIRPORT_CHART_AXIS_SLOT_PX,
+        overflow: 'none',
+      },
+      position: side,
+      offset: Math.floor(index / 2) * AIRPORT_CHART_AXIS_SLOT_PX,
+      axisLabel: {
+        show: true,
+        hideOverlap: false,
+        showMinLabel: true,
+        showMaxLabel: true,
+        color: ink.muted,
+        fontSize: 10,
+        margin: 8,
+        formatter: formatAirportChartAxisLabel,
+      },
+      axisLine: { show: true, lineStyle: { color: ink.faint } },
+      axisTick: { show: true, lineStyle: { color: ink.faint } },
+      splitLine: index === 0 ? {
+        show: !!hasSeries,
+        lineStyle: { color: ink.split, type: 'solid', width: 1 },
+      } : { show: false },
+      splitNumber: 5,
+    };
+    if (id === 'pressure') {
+      axis.min = (value) => (value.min == null ? null : Math.floor(value.min - 2));
+      axis.max = (value) => (value.max == null ? null : Math.ceil(value.max + 2));
+    }
+    if (id === 'temp' || id === 'pressure') axis.scale = true;
+    return axis;
+  });
+}
+
+function buildAirportChartGrid(order, weatherBottom) {
+  let leftCount = 0;
+  let rightCount = 0;
+  order.forEach((_, index) => {
+    if (index % 2 === 0) leftCount += 1;
+    else rightCount += 1;
+  });
+  return {
+    left: leftCount ? AIRPORT_CHART_AXIS_PAD_PX + leftCount * AIRPORT_CHART_AXIS_SLOT_PX : 16,
+    right: rightCount ? AIRPORT_CHART_AXIS_PAD_PX + rightCount * AIRPORT_CHART_AXIS_SLOT_PX : 16,
+    top: 36,
+    bottom: weatherBottom,
+    containLabel: false,
+  };
+}
 
 function parseMetarDewPoint(value) {
   if (value == null || value === '') return null;
@@ -229,6 +335,7 @@ function bindAirportChartLegend() {
       selected[name] = next;
     }
     airportDetailChart.selectedSeries = selected;
+    syncAirportChartAxisOrder(selected);
     if (airportDetailChart.airportCode) updateAirportDetailChart(airportDetailChart.airportCode);
     else renderAirportChartLegend();
   });
@@ -291,6 +398,7 @@ const airportDetailChart = {
   chart: null,
   hours: AIRPORT_CHART_DEFAULT_HOURS,
   selectedSeries: defaultAirportChartSelectedSeries(),
+  axisOrder: [],
   airportCode: null,
   historyData: null,        // 历史 METAR 接口返回的解析数据
   filteredData: null,       // 当前时段过滤后的数据点（用于天气标签重绘）
@@ -478,6 +586,7 @@ async function showAirportDetailModal(airportData, source) {
   airportDetailChart.airportCode = airport.airport_4code;
   airportDetailChart.hours = AIRPORT_CHART_DEFAULT_HOURS;
   airportDetailChart.selectedSeries = defaultAirportChartSelectedSeries();
+  airportDetailChart.axisOrder = [];
   paintAirportChartRangeHint(AIRPORT_CHART_DEFAULT_HOURS, false);
   setAirportTrendTableMessage('过去 24 小时实况表将在报文加载完成后准备');
   resetAirportDetailExtraPane();
@@ -727,6 +836,7 @@ function initAirportDetailChart(airportCode, hours) {
   airportDetailChart.chart = chart;
   airportDetailChart.hours = clampAirportChartHours(hours || AIRPORT_CHART_DEFAULT_HOURS);
   airportDetailChart.selectedSeries = defaultAirportChartSelectedSeries();
+  airportDetailChart.axisOrder = [];
   airportDetailChart.airportCode = airportCode;
   bindAirportChartWheel(chartDom);
   bindAirportChartLegend();
@@ -908,24 +1018,56 @@ function updateAirportDetailChart(airportCode) {
   }
 
   const sel = airportDetailChart.selectedSeries;
-  const showWindAxis = !!sel['平均风'] || !!sel['阵风'];
-  const showTempAxis = !!sel['气温'] || !!sel['露点温度'];
-  const showVisAxis = !!sel['能见度'] || !!sel['RVR'];
-  const showCloudAxis = !!sel['云底高'];
-  const showPressureAxis = !!sel['气压'];
   const showWeather = !!sel['天气现象'];
-  const hasAnySeriesSelected = showWindAxis || showTempAxis || showVisAxis || showCloudAxis || showPressureAxis || showWeather;
-
-  function axisOffsets(shown) {
-    const steps = [15, 50, 85];
-    let i = 0;
-    return shown.map((on) => (on ? steps[Math.min(i++, steps.length - 1)] : 0));
-  }
-  const [windAxisOffset, tempAxisOffset, pressureAxisOffset] = axisOffsets([showWindAxis, showTempAxis, showPressureAxis]);
-  const [visAxisOffset, cloudAxisOffset] = axisOffsets([showVisAxis, showCloudAxis]);
-  const leftAxisCount = [showWindAxis, showTempAxis, showPressureAxis].filter(Boolean).length;
-
+  const axisOrder = syncAirportChartAxisOrder(sel);
+  const yIndexByGroup = {};
+  axisOrder.forEach((id, index) => { yIndexByGroup[id] = index; });
+  const hasAnySeriesSelected = axisOrder.length > 0 || showWeather;
   const ink = airportDetailChartInk();
+  const singlePoint = allData.length === 1;
+
+  function pushAirportChartSeries(list, name, groupId, data, style) {
+    if (!sel[name]) return;
+    const yAxisIndex = yIndexByGroup[groupId];
+    if (yAxisIndex == null) return;
+    if (singlePoint || style.forceScatter) {
+      list.push({
+        name,
+        type: 'scatter',
+        data,
+        yAxisIndex,
+        symbol: style.symbol || 'circle',
+        symbolSize: style.symbolSize || (singlePoint ? 10 : 8),
+        symbolRotate: style.symbolRotate,
+        itemStyle: { color: style.color },
+      });
+      return;
+    }
+    list.push({
+      name,
+      type: 'line',
+      data,
+      smooth: true,
+      yAxisIndex,
+      showSymbol: true,
+      symbol: style.symbol || 'circle',
+      symbolSize: style.symbolSize || 6,
+      itemStyle: { color: style.color },
+      lineStyle: { color: style.color, width: 2, type: style.lineType },
+    });
+  }
+
+  const series = [];
+  pushAirportChartSeries(series, '平均风', 'wind', timeData.map((t, i) => [t, windSpeedData[i]]), { color: '#3498db' });
+  pushAirportChartSeries(series, '阵风', 'wind', timeData.map((t, i) => [t, gustData[i]]), {
+    color: '#3498db', forceScatter: true, symbol: 'triangle', symbolSize: 14, symbolRotate: 180,
+  });
+  pushAirportChartSeries(series, '能见度', 'vis', timeData.map((t, i) => [t, visibilityData[i]]), { color: '#e74c3c', lineType: 'dashed' });
+  pushAirportChartSeries(series, 'RVR', 'vis', timeData.map((t, i) => [t, rvrData[i]]), { color: '#e74c3c' });
+  pushAirportChartSeries(series, '云底高', 'cloud', timeData.map((t, i) => [t, cloudHeightData[i]]), { color: '#9b59b6' });
+  pushAirportChartSeries(series, '气温', 'temp', timeData.map((t, i) => [t, tempData[i]]), { color: '#f39c12' });
+  pushAirportChartSeries(series, '露点温度', 'temp', timeData.map((t, i) => [t, dewData[i]]), { color: '#27ae60' });
+  pushAirportChartSeries(series, '气压', 'pressure', timeData.map((t, i) => [t, pressureData[i]]), { color: '#00cec9' });
 
   // 配置图表选项
   const option = {
@@ -943,6 +1085,7 @@ function updateAirportDetailChart(airportCode) {
     tooltip: {
       trigger: 'axis',
       formatter: function (params) {
+        if (!params || !params.length) return '';
         const time = new Date(params[0].axisValue);
         const isUtc = window.displayTimezone === 'UTC';
         const mo = isUtc ? time.getUTCMonth() + 1 : time.getMonth() + 1;
@@ -983,12 +1126,7 @@ function updateAirportDetailChart(airportCode) {
       show: false,
       selected: airportDetailChart.selectedSeries,
     },
-    grid: {
-      left: leftAxisCount >= 3 ? '124px' : '94px',
-      right: '94px',
-      top: '18px',
-      bottom: airportChartWeatherGridBottom(showWeather)
-    },
+    grid: buildAirportChartGrid(axisOrder, airportChartWeatherGridBottom(showWeather)),
     xAxis: {
       type: 'time',
       min: startTime,
@@ -1009,270 +1147,14 @@ function updateAirportDetailChart(airportCode) {
       axisLine: { lineStyle: { color: ink.faint } },
       splitLine: { show: true, lineStyle: { color: ink.split } }
     },
-    yAxis: [
-      // yAxis[0]: 风速和阵风 - 左侧
-      {
-        type: 'value',
-        name: showWindAxis ? 'W(mps)' : '',
-        show: showWindAxis,
-        nameLocation: 'end',
-        nameGap: 10,
-        nameTextStyle: { color: '#3498db', fontSize: 10 },
-        position: 'left',
-        offset: windAxisOffset,
-        axisLabel: { color: ink.muted, fontSize: 10 },
-        axisLine: { show: showWindAxis, lineStyle: { color: ink.faint } },
-        axisTick: { show: showWindAxis },
-        splitLine: {
-          show: hasAnySeriesSelected,
-          lineStyle: {
-            color: ink.split,
-            type: 'solid',
-            width: 1
-          }
-        },
-        splitNumber: 12
-      },
-      // yAxis[1]: 气温 - 左侧
-      {
-        type: 'value',
-        name: showTempAxis ? 'T(℃)' : '',
-        show: showTempAxis,
-        nameLocation: 'end',
-        nameGap: 10,
-        nameTextStyle: { color: '#27ae60', fontSize: 10 },
-        position: 'left',
-        offset: tempAxisOffset,
-        axisLabel: { color: ink.muted, fontSize: 10 },
-        axisLine: { show: showTempAxis, lineStyle: { color: ink.faint } },
-        axisTick: { show: showTempAxis },
-        splitLine: { show: false }
-      },
-      // yAxis[2]: 能见度和RVR - 右侧
-      {
-        type: 'value',
-        name: showVisAxis ? 'V(m)' : '',
-        show: showVisAxis,
-        nameLocation: 'end',
-        nameGap: 10,
-        nameTextStyle: { color: '#f39c12', fontSize: 10 },
-        position: 'right',
-        offset: visAxisOffset,
-        axisLabel: { color: ink.muted, fontSize: 10 },
-        axisLine: { show: showVisAxis, lineStyle: { color: ink.faint } },
-        axisTick: { show: showVisAxis },
-        splitLine: { show: false }
-      },
-      // yAxis[3]: 云底高 - 右侧
-      {
-        type: 'value',
-        name: showCloudAxis ? 'H(30m)' : '',
-        show: showCloudAxis,
-        nameLocation: 'end',
-        nameGap: 10,
-        nameTextStyle: { color: '#9b59b6', fontSize: 10 },
-        position: 'right',
-        offset: cloudAxisOffset,
-        axisLabel: { color: ink.muted, fontSize: 10 },
-        axisLine: { show: showCloudAxis, lineStyle: { color: ink.faint } },
-        axisTick: { show: showCloudAxis },
-        splitLine: { show: false }
-      },
-      {
-        type: 'value',
-        name: showPressureAxis ? 'P(hPa)' : '',
-        show: showPressureAxis,
-        nameLocation: 'end',
-        nameGap: 10,
-        nameTextStyle: { color: '#16a085', fontSize: 10 },
-        position: 'left',
-        offset: pressureAxisOffset,
-        axisLabel: { color: ink.muted, fontSize: 10 },
-        axisLine: { show: showPressureAxis, lineStyle: { color: ink.faint } },
-        axisTick: { show: showPressureAxis },
-        splitLine: { show: false },
-        min: (value) => (value.min == null ? null : Math.floor(value.min - 2)),
-        max: (value) => (value.max == null ? null : Math.ceil(value.max + 2)),
-      }
-    ],
-    series: allData.length === 1 ? [
-      // 只有1个数据点时，全部使用散点图
-      {
-        name: '平均风',
-        type: 'scatter',
-        data: timeData.map((t, i) => [t, windSpeedData[i]]),
-        yAxisIndex: 0,
-        symbol: 'circle',
-        symbolSize: 10,
-        itemStyle: { color: '#3498db' }
-      },
-      {
-        name: '阵风',
-        type: 'scatter',
-        data: timeData.map((t, i) => [t, gustData[i]]),
-        yAxisIndex: 0,
-        symbol: 'triangle',
-        symbolSize: 8,
-        symbolRotate: 180,
-        itemStyle: { color: '#3498db' }
-      },
-      {
-        name: '能见度',
-        type: 'scatter',
-        data: timeData.map((t, i) => [t, visibilityData[i]]),
-        yAxisIndex: 2,
-        symbol: 'circle',
-        symbolSize: 10,
-        itemStyle: { color: '#f39c12' }
-      },
-      {
-        name: 'RVR',
-        type: 'scatter',
-        data: timeData.map((t, i) => [t, rvrData[i]]),
-        yAxisIndex: 2,
-        symbol: 'circle',
-        symbolSize: 10,
-        itemStyle: { color: '#e74c3c' }
-      },
-      {
-        name: '云底高',
-        type: 'scatter',
-        data: timeData.map((t, i) => [t, cloudHeightData[i]]),
-        yAxisIndex: 3,
-        symbol: 'circle',
-        symbolSize: 10,
-        itemStyle: { color: '#9b59b6' }
-      },
-      {
-        name: '气温',
-        type: 'scatter',
-        data: timeData.map((t, i) => [t, tempData[i]]),
-        yAxisIndex: 1,
-        symbol: 'circle',
-        symbolSize: 10,
-        itemStyle: { color: '#27ae60' }
-      },
-      {
-        name: '露点温度',
-        type: 'scatter',
-        data: timeData.map((t, i) => [t, dewData[i]]),
-        yAxisIndex: 1,
-        symbol: 'circle',
-        symbolSize: 10,
-        itemStyle: { color: '#00cec9' }
-      },
-      {
-        name: '气压',
-        type: 'scatter',
-        data: timeData.map((t, i) => [t, pressureData[i]]),
-        yAxisIndex: 4,
-        symbol: 'circle',
-        symbolSize: 10,
-        itemStyle: { color: '#16a085' }
-      }
-    ] : [
-      // 2个及以上数据点时，使用平滑曲线
-      {
-        name: '平均风',
-        type: 'line',
-        data: timeData.map((t, i) => [t, windSpeedData[i]]),
-        smooth: true,
-        yAxisIndex: 0,
-        showSymbol: true,
-        symbol: 'circle',
-        symbolSize: 6,
-        itemStyle: { color: '#3498db' },
-        lineStyle: { color: '#3498db', width: 2 }
-      },
-      {
-        name: '阵风',
-        type: 'scatter',
-        data: timeData.map((t, i) => [t, gustData[i]]),
-        yAxisIndex: 0,
-        symbol: 'triangle',
-        symbolSize: 8,
-        symbolRotate: 180,
-        itemStyle: { color: '#3498db' }
-      },
-      {
-        name: '能见度',
-        type: 'line',
-        data: timeData.map((t, i) => [t, visibilityData[i]]),
-        smooth: true,
-        yAxisIndex: 2,
-        showSymbol: true,
-        symbol: 'circle',
-        symbolSize: 6,
-        itemStyle: { color: '#f39c12' },
-        lineStyle: { color: '#f39c12', width: 2 }
-      },
-      {
-        name: 'RVR',
-        type: 'line',
-        data: timeData.map((t, i) => [t, rvrData[i]]),
-        smooth: true,
-        yAxisIndex: 2,
-        showSymbol: true,
-        symbol: 'circle',
-        symbolSize: 6,
-        itemStyle: { color: '#e74c3c' },
-        lineStyle: { color: '#e74c3c', width: 2 }
-      },
-      {
-        name: '云底高',
-        type: 'line',
-        data: timeData.map((t, i) => [t, cloudHeightData[i]]),
-        smooth: true,
-        yAxisIndex: 3,
-        showSymbol: true,
-        symbol: 'circle',
-        symbolSize: 6,
-        itemStyle: { color: '#9b59b6' },
-        lineStyle: { color: '#9b59b6', width: 2 }
-      },
-      {
-        name: '气温',
-        type: 'line',
-        data: timeData.map((t, i) => [t, tempData[i]]),
-        smooth: true,
-        yAxisIndex: 1,
-        showSymbol: true,
-        symbol: 'circle',
-        symbolSize: 6,
-        itemStyle: { color: '#27ae60' },
-        lineStyle: { color: '#27ae60', width: 2 }
-      },
-      {
-        name: '露点温度',
-        type: 'line',
-        data: timeData.map((t, i) => [t, dewData[i]]),
-        smooth: true,
-        yAxisIndex: 1,
-        showSymbol: true,
-        symbol: 'circle',
-        symbolSize: 6,
-        itemStyle: { color: '#00cec9' },
-        lineStyle: { color: '#00cec9', width: 2, type: 'dashed' }
-      },
-      {
-        name: '气压',
-        type: 'line',
-        data: timeData.map((t, i) => [t, pressureData[i]]),
-        smooth: true,
-        yAxisIndex: 4,
-        showSymbol: true,
-        symbol: 'circle',
-        symbolSize: 6,
-        itemStyle: { color: '#16a085' },
-        lineStyle: { color: '#16a085', width: 2 }
-      }
-    ]
+    yAxis: buildAirportChartYAxes(axisOrder, ink, hasAnySeriesSelected),
+    series
   };
 
   // 保存当前过滤数据，供天气标签渲染和 resize 时使用
   airportDetailChart.allData = allData;
   airportDetailChart.filteredData = filteredData;
-  airportDetailChart.chart.setOption(option);
+  airportDetailChart.chart.setOption(option, { replaceMerge: ['yAxis', 'series'] });
   renderAirportChartLegend();
 
   // 在图表处理完新选项后渲染天气现象标签
@@ -1297,6 +1179,7 @@ function updateAirportDetailChart(airportCode) {
     }
 
     airportDetailChart.selectedSeries = Object.assign(defaultAirportChartSelectedSeries(), params.selected);
+    syncAirportChartAxisOrder(airportDetailChart.selectedSeries);
     updateAirportDetailChart(airportCode);
   });
 }
@@ -1441,18 +1324,18 @@ function renderAirportTrendTable(payload) {
     out += '</tr>';
     return out;
   };
-  html += line('能见度', rows.visibility, 0);
-  html += line('RVR', rows.rvr, 0);
-  html += line('温度', rows.temp, 1);
-  html += line('露点温度', rows.dewpoint, 1);
-  html += '<tr><th class="trend-table-label">风向</th>';
+  html += line('能见度 (m)', rows.visibility, 0);
+  html += line('RVR (m)', rows.rvr, 0);
+  html += line('温度 (℃)', rows.temp, 1);
+  html += line('露点温度 (℃)', rows.dewpoint, 1);
+  html += '<tr><th class="trend-table-label">风向 (°)</th>';
   hours.forEach((_, index) => {
     html += `<td>${trendTableWindHtml((rows.wind_dir || [])[index])}</td>`;
   });
   html += '</tr>';
-  html += line('平均风速', rows.wind_speed, 1);
-  html += line('阵风风速', rows.gust, 1);
-  html += line('气压', rows.pressure, 1);
+  html += line('平均风速 (mps)', rows.wind_speed, 1);
+  html += line('阵风风速 (mps)', rows.gust, 1);
+  html += line('气压 (hPa)', rows.pressure, 1);
   for (let rowIndex = 0; rowIndex < weatherRowCount; rowIndex += 1) {
     html += '<tr>';
     if (rowIndex === 0) {

@@ -1785,6 +1785,18 @@ body.display-timezone-utc .title-row.main-title-row .timeline-row {
   transform: translateY(-1px);
 }
 
+.airport-chart-title-on {
+  display: none;
+}
+
+.airport-detail-extra[data-pane="chart"] .airport-chart-title-idle {
+  display: none;
+}
+
+.airport-detail-extra[data-pane="chart"] .airport-chart-title-on {
+  display: inline;
+}
+
 .airport-extra-pane-range {
   display: none;
   margin-left: 8px;
@@ -1916,8 +1928,8 @@ body.display-timezone-utc .title-row.main-title-row .timeline-row {
 }
 
 .airport-chart-legend-group[data-group="vis"].is-on {
-  background: rgba(243, 156, 18, 0.18);
-  border-color: rgba(243, 156, 18, 0.55);
+  background: rgba(231, 76, 60, 0.18);
+  border-color: rgba(231, 76, 60, 0.55);
 }
 
 .airport-chart-legend-group[data-group="cloud"].is-on {
@@ -1926,18 +1938,18 @@ body.display-timezone-utc .title-row.main-title-row .timeline-row {
 }
 
 .airport-chart-legend-group[data-group="temp"].is-on {
+  background: rgba(243, 156, 18, 0.18);
+  border-color: rgba(243, 156, 18, 0.55);
+}
+
+.airport-chart-legend-group[data-group="dew"].is-on {
   background: rgba(39, 174, 96, 0.18);
   border-color: rgba(39, 174, 96, 0.55);
 }
 
-.airport-chart-legend-group[data-group="dew"].is-on {
+.airport-chart-legend-group[data-group="pressure"].is-on {
   background: rgba(0, 206, 201, 0.18);
   border-color: rgba(0, 206, 201, 0.55);
-}
-
-.airport-chart-legend-group[data-group="pressure"].is-on {
-  background: rgba(22, 160, 133, 0.18);
-  border-color: rgba(22, 160, 133, 0.55);
 }
 
 .airport-chart-legend-group[data-group="weather"].is-on {
@@ -2063,8 +2075,8 @@ body.display-timezone-utc .title-row.main-title-row .timeline-row {
 }
 
 .airport-trend-table .trend-table-label {
-  width: 72px;
-  min-width: 72px;
+  width: 118px;
+  min-width: 118px;
   text-align: left;
   padding-left: 8px;
   font-weight: 700;
@@ -2534,8 +2546,8 @@ body.airport-detail-theme-light .airport-chart-legend-group[data-group="wind"].i
 }
 
 body.airport-detail-theme-light .airport-chart-legend-group[data-group="vis"].is-on {
-  background: rgba(243, 156, 18, 0.14);
-  border-color: rgba(243, 156, 18, 0.45);
+  background: rgba(231, 76, 60, 0.14);
+  border-color: rgba(231, 76, 60, 0.45);
 }
 
 body.airport-detail-theme-light .airport-chart-legend-group[data-group="cloud"].is-on {
@@ -2544,18 +2556,18 @@ body.airport-detail-theme-light .airport-chart-legend-group[data-group="cloud"].
 }
 
 body.airport-detail-theme-light .airport-chart-legend-group[data-group="temp"].is-on {
+  background: rgba(243, 156, 18, 0.14);
+  border-color: rgba(243, 156, 18, 0.45);
+}
+
+body.airport-detail-theme-light .airport-chart-legend-group[data-group="dew"].is-on {
   background: rgba(39, 174, 96, 0.12);
   border-color: rgba(39, 174, 96, 0.45);
 }
 
-body.airport-detail-theme-light .airport-chart-legend-group[data-group="dew"].is-on {
-  background: rgba(0, 184, 148, 0.12);
-  border-color: rgba(0, 184, 148, 0.45);
-}
-
 body.airport-detail-theme-light .airport-chart-legend-group[data-group="pressure"].is-on {
-  background: rgba(22, 160, 133, 0.12);
-  border-color: rgba(22, 160, 133, 0.45);
+  background: rgba(0, 206, 201, 0.12);
+  border-color: rgba(0, 206, 201, 0.45);
 }
 
 body.airport-detail-theme-light .airport-chart-legend-group[data-group="weather"].is-on {
@@ -5636,11 +5648,29 @@ p.settings-hint {
 .prefix-region.is-editing [data-prefix-mode]:hover { background: #219d55; }
 .prefix-kind-head .settings-add-btn { background: #27ae60; }
 .prefix-kind-head .settings-add-btn:hover { background: #219d55; }
-/* 地图设置:工具条与卡片同宽居中 */
-#settings-pane-map-style .radar-settings-toolbar {
+/* 地图设置:保存条固定在面板顶部，不随下方卡片滚动 */
+#settings-pane-map-style {
+  padding: 0 20px;
+}
+#settings-pane-map-style > .radar-settings-toolbar,
+#settings-pane-map-style > .settings-msg {
+  flex-shrink: 0;
   width: min(760px, 100%);
-  margin: 0 auto 12px;
+  margin-left: auto;
+  margin-right: auto;
+}
+#settings-pane-map-style > .radar-settings-toolbar {
   justify-content: flex-start;
+  margin-bottom: 0;
+  padding: 16px 0 8px;
+  background: #fefefe;
+  z-index: 8;
+}
+#settings-pane-map-style > .settings-msg {
+  margin-bottom: 4px;
+}
+#settings-pane-map-style .settings-sheet {
+  padding: 8px 0 20px;
 }
 
 /* ========== 航班时刻 marks 模式 ========== */
