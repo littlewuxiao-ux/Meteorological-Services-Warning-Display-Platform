@@ -148,6 +148,7 @@ class Metar(models.Model):
     )
     rvr_min_org = models.IntegerField(blank=True, null=True, verbose_name='RVR最小值原始')
     rvr_min_val = models.IntegerField(blank=True, null=True, verbose_name='RVR最小值')
+    metar_pressure_val = models.FloatField(blank=True, null=True, verbose_name='气压值')
     operation_metar_popup_leeway = models.IntegerField(blank=True, null=True, verbose_name='运行区METAR弹窗余量')
     operation_metar_popup_level = models.CharField(max_length=1, blank=True, null=True, verbose_name='运行区METAR弹窗级别')
     parking_metar_popup_level = models.CharField(max_length=1, blank=True, null=True, verbose_name='停场METAR弹窗级别')

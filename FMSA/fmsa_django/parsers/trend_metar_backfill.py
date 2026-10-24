@@ -92,6 +92,35 @@ def _cloud_text(data) -> Optional[str]:
     return ' '.join(parts) if parts else None
 
 
+def _wind_dir_text(data) -> Optional[str]:
+    wind = getattr(data, 'wind_direction', None)
+    if wind is None:
+        return None
+    raw = str(getattr(wind, 'repr', '') or '').upper()
+    if 'VRB' in raw:
+        return 'VRB'
+    if getattr(wind, 'value', None) is not None:
+        try:
+            return f'{int(round(float(wind.value))) % 360:03d}'
+        except (TypeError, ValueError):
+            pass
+    return raw or None
+
+
+def _rvr_min_from_data(data, is_na: bool) -> Optional[int]:
+    from parsers.metar_history import _rvr_to_m
+
+    values = []
+    for rvr in getattr(data, 'runway_visibility', None) or []:
+        vis = getattr(rvr, 'visibility', None)
+        if vis is None or getattr(vis, 'value', None) is None:
+            continue
+        converted = _rvr_to_m(vis.value, is_na)
+        if converted is not None:
+            values.append(converted)
+    return min(values) if values else None
+
+
 def _parse_row_for_store(
     content: str,
     airport_code: str,
@@ -99,9 +128,11 @@ def _parse_row_for_store(
     now_ms: int,
     parser,
     min_cloud_amt: Optional[str] = None,
+    raw_item: Optional[dict] = None,
 ) -> Optional[dict]:
     from parsers.metar_elements import build_metar_elements
     from parsers.metar_history import _extract_obs_timestamp_ms, _visibility_to_m, _wind_to_mps
+    from parsers.metar_pressure import resolve_pressure_hpa
     from parsers.report_text_highlight import _parse_avwx_metar
 
     content = (content or '').strip()
@@ -111,7 +142,7 @@ def _parse_row_for_store(
     if obs_ts is None:
         return None
     try:
-        data, units, _is_na = _parse_avwx_metar(content, airport_code)
+        data, units, is_na = _parse_avwx_metar(content, airport_code)
     except Exception:
         return None
     if data is None or units is None:
@@ -165,9 +196,14 @@ def _parse_row_for_store(
         'metar_temp_val': temp_val,
         'metar_temperature': None if temp_val is None else str(temp_val),
         'metar_dew_point': _dewpoint_text(dew_val),
+        'metar_wind_direction': _wind_dir_text(data),
         'metar_wind_speed_val': wind_speed,
         'metar_gust_val': gust,
         'metar_visibility_val': vis_val,
+        'rvr_min_val': _rvr_min_from_data(data, bool(is_na)),
+        'metar_pressure_val': resolve_pressure_hpa(
+            content, elements, raw_item, data, units,
+        ),
         'metar_weather': weather,
         'metar_cloud': _cloud_text(data),
         'metar_min_cloud_height': min_cloud_height,
@@ -251,6 +287,7 @@ def _backfill_airport(
         content = item.get('content') or ''
         parsed = _parse_row_for_store(
             content, airport, item.get('wtype') or '', now_ms, parser, min_cloud_amt,
+            raw_item=item,
         )
         if not parsed:
             continue

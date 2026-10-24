@@ -326,7 +326,7 @@ def permissions_for_runtime() -> Dict[str, dict]:
         'detail_contact_plain': contact,
         'search_contact_home': contact,
         'search_contact_plain': contact,
-        'detail_metar_trend': trend,
+        'detail_metar_trend': always,
         'settings_airport_info': always,
         'settings_prefix_area': always,
         'settings_taf_import': imported,

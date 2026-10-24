@@ -64,6 +64,7 @@ def history_items_from_db(
                 'content': row.metar_content or '',
                 'wtype': wtype,
                 'receiveTime': ts,
+                'airPressure': getattr(row, 'metar_pressure_val', None),
             })
 
     if wanted & {'FC', 'FT'}:
@@ -173,11 +174,38 @@ def _rvr_to_m(value, is_na: bool) -> Optional[int]:
     return int(v)
 
 
+def _air_pressure_hpa(item: Optional[dict], data, units) -> Optional[float]:
+    """优先用原始记录 airPressure，没有则从报文气压组换算为 hPa。"""
+    raw = None
+    if isinstance(item, dict):
+        raw = item.get('airPressure')
+        if raw is None:
+            raw = item.get('air_pressure')
+    try:
+        if raw is not None and str(raw).strip() != '':
+            return float(raw)
+    except (TypeError, ValueError):
+        pass
+    alt = getattr(data, 'altimeter', None) if data is not None else None
+    if alt is not None and getattr(alt, 'value', None) is not None:
+        try:
+            val = float(alt.value)
+        except (TypeError, ValueError):
+            val = None
+        if val is not None:
+            unit = str(getattr(units, 'altimeter', '') or '').lower()
+            if unit in ('inhg', 'in') or val < 50:
+                return round(val * 33.8638866667, 1)
+            return round(val, 1)
+    return None
+
+
 def _parse_single_metar(
     content: str,
     airport_code: str,
     now_ms: int,
     min_cloud_amt: Optional[str] = None,
+    raw_item: Optional[dict] = None,
 ) -> Optional[dict]:
     """
     使用 avwx_custom 解析单条 METAR/SPECI 报文。
@@ -268,6 +296,7 @@ def _parse_single_metar(
         'metar_min_cloud_height': min_cloud_height,
         'metar_temp_val': temp_val,
         'metar_weather': metar_weather,
+        'airPressure': _air_pressure_hpa(raw_item, data, units),
     }
 
 
@@ -405,6 +434,7 @@ def fetch_raw_met_list(
             'content': content,
             'wtype': _item_wtype(item, content),
             'sort_time': sort_time if sort_time is not None else -1,
+            'airPressure': item.get('airPressure', item.get('air_pressure')),
         })
     items.sort(key=lambda x: x['sort_time'], reverse=True)
     return items
@@ -461,7 +491,7 @@ def fetch_and_parse_metar_history(
         content = (item.get('content') or '').strip()
         if not content:
             continue
-        parsed = _parse_single_metar(content, airport_code, now_ms, min_cloud_amt)
+        parsed = _parse_single_metar(content, airport_code, now_ms, min_cloud_amt, raw_item=item)
         if parsed:
             results.append(parsed)
 

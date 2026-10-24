@@ -664,6 +664,17 @@ class MetarParser:
             except Exception as exc:
                 logger.error(f'构建 metar_elements 失败 [{airport_4code}]: {exc}')
                 parsed_data['metar_elements'] = None
+
+            try:
+                from parsers.metar_pressure import resolve_pressure_hpa
+                parsed_data['metar_pressure_val'] = resolve_pressure_hpa(
+                    metar_content,
+                    parsed_data.get('metar_elements'),
+                    row,
+                )
+            except Exception as exc:
+                logger.error(f'解析气压失败 [{airport_4code}]: {exc}')
+                parsed_data['metar_pressure_val'] = None
             
         except Exception as e:
             logger.warning(f"解析METAR内容失败: {str(e)}")

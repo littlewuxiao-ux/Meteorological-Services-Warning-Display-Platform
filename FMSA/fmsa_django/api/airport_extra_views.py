@@ -41,28 +41,47 @@ def _resolve_cas_token(request, time_mode='current'):
 
 
 @require_http_methods(["GET"])
-def airport_metar_history(request, airport_code, time_mode='current'):
-    """
-    获取机场历史 METAR 图表数据（供详情页 ECharts 图表使用）。
-    返回最近 72 小时内的解析数据点列表。
-    """
+def airport_metar_history_ensure(request, airport_code, time_mode='current'):
+    """详情页首屏完成后：检查过去 72 小时整点 SA 是否齐全，缺口再补并落库。"""
     try:
         token, err = _resolve_cas_token(request, time_mode)
         if err:
             return err
-
-        from parsers.metar_history import fetch_and_parse_metar_history
+        from parsers.detail_metar_history import ensure_sa_history
         with cas_user_context(_cas_user_from_request(request)):
-            chart_data = fetch_and_parse_metar_history(
-                airport_code, time_mode=time_mode, token=token
-            )
-        return JsonResponse({'success': True, 'data': chart_data})
+            result = ensure_sa_history(airport_code, time_mode=time_mode, token=token)
+        return JsonResponse({'success': True, **result})
+    except Exception as exc:
+        logger.error(f'补齐历史 METAR 失败 [{airport_code}]: {exc}')
+        return JsonResponse({'success': False, 'error': str(exc)}, status=500)
 
+
+@require_http_methods(["GET"])
+def airport_metar_history(request, airport_code, time_mode='current'):
+    """详情页趋势图：读库过去 72 小时。"""
+    try:
+        from parsers.detail_metar_history import chart_points_from_db
+        with cas_user_context(_cas_user_from_request(request)):
+            chart_data = chart_points_from_db(airport_code, time_mode=time_mode)
+        return JsonResponse({'success': True, 'data': chart_data})
     except Exception as exc:
         logger.error(f'获取历史 METAR 数据失败 [{airport_code}]: {exc}')
         return JsonResponse(
             {'success': False, 'error': str(exc)}, status=500
         )
+
+
+@require_http_methods(["GET"])
+def airport_metar_trend_table(request, airport_code, time_mode='current'):
+    """详情页趋势表：读库聚合过去 24 个整点。"""
+    try:
+        from parsers.detail_metar_history import table_from_db
+        with cas_user_context(_cas_user_from_request(request)):
+            table = table_from_db(airport_code, time_mode=time_mode)
+        return JsonResponse({'success': True, 'data': table})
+    except Exception as exc:
+        logger.error(f'获取实况趋势表失败 [{airport_code}]: {exc}')
+        return JsonResponse({'success': False, 'error': str(exc)}, status=500)
 
 
 @require_http_methods(["GET"])

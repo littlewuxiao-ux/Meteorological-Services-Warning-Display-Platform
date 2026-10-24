@@ -951,11 +951,12 @@
         </div>
       </div>
 
-      <!-- 实况/预报报文 与 实况趋势图表：二选一切换，打开时默认报文 -->
+      <!-- 实况/预报报文、实况趋势（图）、实况趋势（表）：三选一，打开时默认报文 -->
       <div class="airport-detail-extra" id="airport-detail-extra" data-pane="reports">
         <div class="airport-extra-switch" role="tablist">
           <button type="button" class="airport-extra-switch-btn active" data-extra-pane="reports">实况/预报报文</button>
-          <button type="button" class="airport-extra-switch-btn" data-extra-pane="chart" id="airport-extra-chart-btn">实况趋势图表</button>
+          <button type="button" class="airport-extra-switch-btn" data-extra-pane="chart" id="airport-extra-chart-btn">实况趋势（图）</button>
+          <button type="button" class="airport-extra-switch-btn" data-extra-pane="table" id="airport-extra-table-btn">实况趋势（表）</button>
         </div>
         <div class="airport-reports-section" data-extra-pane-panel="reports">
           <div class="reports-content">
@@ -969,34 +970,21 @@
         </div>
         <div class="airport-chart-section collapsed" id="airport-chart-section" data-extra-pane-panel="chart">
         <div class="airport-chart-body">
-          <div class="chart-time-selector-row">
-            <div class="chart-time-selector">
-              <div class="chart-time-radios">
-                <label class="chart-time-radio"><input type="radio" name="chart-time-detail" value="3"
-                    checked><span>3</span></label>
-                <label class="chart-time-radio"><input type="radio" name="chart-time-detail"
-                    value="6"><span>6</span></label>
-                <label class="chart-time-radio"><input type="radio" name="chart-time-detail"
-                    value="12"><span>12</span></label>
-                <label class="chart-time-radio"><input type="radio" name="chart-time-detail"
-                    value="24"><span>24</span></label>
-                <label class="chart-time-radio"><input type="radio" name="chart-time-detail"
-                    value="48"><span>48</span></label>
-                <label class="chart-time-radio"><input type="radio" name="chart-time-detail"
-                    value="72"><span>72</span></label>
-              </div>
-              <div class="chart-time-custom">
-                <input type="number" class="chart-time-input" id="chart-time-input-detail" placeholder="2-72小时" min="2"
-                  max="72">
-                <button class="chart-time-btn" onclick="applyCustomChartTimeForDetail()">确定</button>
-              </div>
-            </div>
+          <div class="airport-chart-range-bar">
+            <span class="airport-chart-range-hint" id="airport-chart-range-hint">过去 24 小时</span>
+            <span class="airport-chart-range-tip">滚轮缩放 · 3–72小时</span>
           </div>
           <div class="airport-chart-container">
+            <div class="airport-chart-range-flash" id="airport-chart-range-flash" aria-hidden="true"></div>
             <div class="airport-chart" id="airport-detail-chart"></div>
           </div>
         </div>
       </div>
+        <div class="airport-trend-table-section" id="airport-trend-table-section" data-extra-pane-panel="table">
+          <div class="airport-trend-table-wrap" id="airport-trend-table-wrap">
+            <div class="airport-trend-table-empty">过去 24 小时实况表将在报文加载完成后准备</div>
+          </div>
+        </div>
       </div>
     </div>
   </div>
