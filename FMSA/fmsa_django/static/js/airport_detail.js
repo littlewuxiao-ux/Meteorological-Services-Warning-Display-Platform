@@ -155,6 +155,53 @@ function paintAirportChartRangeHint(hours, flash) {
   flashEl.classList.add('is-pop');
 }
 
+const AIRPORT_CHART_LEGEND_ITEMS = [
+  { name: '平均风', color: '#3498db' },
+  { name: '阵风', color: '#3498db' },
+  { name: '能见度', color: '#f39c12' },
+  { name: 'RVR', color: '#e74c3c' },
+  { name: '云底高', color: '#9b59b6' },
+  { name: '气温', color: '#27ae60' },
+  { name: '气压', color: '#16a085' },
+];
+
+function renderAirportChartLegend() {
+  const el = document.getElementById('airport-chart-legend');
+  if (!el) return;
+  const selected = airportDetailChart.selectedSeries || defaultAirportChartSelectedSeries();
+  el.innerHTML = AIRPORT_CHART_LEGEND_ITEMS.map((item) => {
+    const on = !!selected[item.name];
+    const color = on ? item.color : '';
+    return `<button type="button" class="airport-chart-legend-item${on ? ' is-on' : ''}" data-series="${item.name}"${color ? ` style="color:${color}"` : ''}><i></i><span>${item.name}</span></button>`;
+  }).join('');
+}
+
+function bindAirportChartLegend() {
+  const el = document.getElementById('airport-chart-legend');
+  if (!el || el.dataset.bound === '1') return;
+  el.dataset.bound = '1';
+  el.addEventListener('click', (event) => {
+    const btn = event.target.closest('.airport-chart-legend-item');
+    if (!btn) return;
+    const name = btn.getAttribute('data-series');
+    if (!name) return;
+    const selected = Object.assign(defaultAirportChartSelectedSeries(), airportDetailChart.selectedSeries);
+    const next = !selected[name];
+    if (name === '平均风' || name === '阵风') {
+      selected['平均风'] = next;
+      selected['阵风'] = next;
+    } else if (name === '能见度' || name === 'RVR') {
+      selected['能见度'] = next;
+      selected['RVR'] = next;
+    } else {
+      selected[name] = next;
+    }
+    airportDetailChart.selectedSeries = selected;
+    if (airportDetailChart.airportCode) updateAirportDetailChart(airportDetailChart.airportCode);
+    else renderAirportChartLegend();
+  });
+}
+
 function bindAirportChartWheel(chartDom) {
   const wrap = document.querySelector('#airport-chart-section .airport-chart-body') || chartDom;
   if (!wrap || wrap.dataset.wheelBound === '1') return;
@@ -621,6 +668,8 @@ function initAirportDetailChart(airportCode, hours) {
   airportDetailChart.selectedSeries = defaultAirportChartSelectedSeries();
   airportDetailChart.airportCode = airportCode;
   bindAirportChartWheel(chartDom);
+  bindAirportChartLegend();
+  renderAirportChartLegend();
   paintAirportChartRangeHint(airportDetailChart.hours, false);
   airportDetailChart.historyData = null;
   airportDetailChart.filteredData = null;
@@ -864,28 +913,13 @@ function updateAirportDetailChart(airportCode) {
       }
     },
     legend: {
-      data: [
-        { name: '平均风', itemStyle: { color: '#3498db' }, textStyle: { color: '#3498db' } },
-        { name: '阵风', itemStyle: { color: '#3498db' }, textStyle: { color: '#3498db' } },
-        { name: '能见度', itemStyle: { color: '#f39c12' }, textStyle: { color: '#f39c12' } },
-        { name: 'RVR', itemStyle: { color: '#e74c3c' }, textStyle: { color: '#e74c3c' } },
-        { name: '云底高', itemStyle: { color: '#9b59b6' }, textStyle: { color: '#9b59b6' } },
-        { name: '气温', itemStyle: { color: '#27ae60' }, textStyle: { color: '#27ae60' } },
-        { name: '气压', itemStyle: { color: '#16a085' }, textStyle: { color: '#16a085' } }
-      ],
+      show: false,
       selected: airportDetailChart.selectedSeries,
-      top: 13,
-      left: 'center',
-      orient: 'horizontal',
-      itemGap: 8,
-      textStyle: { fontSize: 10 },
-      itemWidth: 12,
-      itemHeight: 12
     },
     grid: {
       left: leftAxisCount >= 3 ? '124px' : '94px',
       right: '94px',
-      top: '35px',
+      top: '18px',
       bottom: '70px'
     },
     xAxis: {
@@ -1151,6 +1185,7 @@ function updateAirportDetailChart(airportCode) {
   airportDetailChart.allData = allData;
   airportDetailChart.filteredData = filteredData;
   airportDetailChart.chart.setOption(option);
+  renderAirportChartLegend();
 
   // 在图表处理完新选项后渲染天气现象标签
   setTimeout(() => {
@@ -1267,7 +1302,8 @@ function renderAirportTrendTable(payload) {
     return;
   }
   const weatherCols = rows.weather || hours.map(() => []);
-  const weatherRowCount = Math.max(1, ...weatherCols.map((item) => (item || []).length));
+  const weatherMinRows = 5;
+  const weatherRowCount = Math.max(weatherMinRows, ...weatherCols.map((item) => (item || []).length));
   const cell = (values, index, digits) => formatTrendTableNum((values || [])[index], digits);
   let html = '<table class="airport-trend-table"><thead><tr><th class="trend-table-label"></th>';
   hours.forEach((hour) => {
@@ -1295,7 +1331,12 @@ function renderAirportTrendTable(payload) {
   html += line('阵风风速', rows.gust, 1);
   html += line('气压', rows.pressure, 1);
   for (let rowIndex = 0; rowIndex < weatherRowCount; rowIndex += 1) {
-    html += `<tr><th class="trend-table-label">${rowIndex === 0 ? '天气现象' : ''}</th>`;
+    html += '<tr>';
+    if (rowIndex === 0) {
+      html += `<th class="trend-table-label" rowspan="${weatherMinRows}">天气现象</th>`;
+    } else if (rowIndex >= weatherMinRows) {
+      html += '<th class="trend-table-label"></th>';
+    }
     hours.forEach((_, index) => {
       html += `<td>${((weatherCols[index] || [])[rowIndex] || '')}</td>`;
     });

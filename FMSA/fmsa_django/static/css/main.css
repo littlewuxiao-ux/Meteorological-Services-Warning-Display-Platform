@@ -1756,8 +1756,8 @@ body.display-timezone-utc .title-row.main-title-row .timeline-row {
   margin: 0;
   padding: 7px 8px;
   border: none;
-  background: transparent;
-  color: rgba(255, 255, 255, 0.72);
+  background: rgba(255, 255, 255, 0.16);
+  color: #ffffff;
   font-size: 12px;
   font-weight: bold;
   cursor: pointer;
@@ -1769,8 +1769,20 @@ body.display-timezone-utc .title-row.main-title-row .timeline-row {
 }
 
 .airport-extra-switch-btn.active {
-  background: rgba(255, 255, 255, 0.16);
-  color: #ffffff;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.airport-extra-pane-range {
+  display: none;
+  margin-left: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.airport-detail-extra[data-pane="chart"] .airport-extra-pane-range {
+  display: inline;
 }
 
 .airport-detail-extra[data-pane="reports"] [data-extra-pane-panel="chart"],
@@ -1784,6 +1796,13 @@ body.display-timezone-utc .title-row.main-title-row .timeline-row {
 
 .airport-detail-extra.no-chart .airport-extra-switch-btn[data-extra-pane="chart"] {
   display: none;
+}
+
+.airport-reports-section,
+.airport-chart-section,
+.airport-trend-table-section {
+  --airport-extra-pane-min-height: 420px;
+  min-height: var(--airport-extra-pane-min-height);
 }
 
 /* 机场报文区域：随内容自动收缩/扩展 */
@@ -1853,24 +1872,44 @@ body.display-timezone-utc .title-row.main-title-row .timeline-row {
   letter-spacing: 1px;
 }
 
-.airport-chart-range-bar {
+.airport-chart-legend {
+  flex-shrink: 0;
   display: flex;
-  align-items: baseline;
+  flex-wrap: wrap;
+  align-items: center;
   justify-content: center;
-  gap: 12px;
-  margin-bottom: 8px;
+  gap: 10px 16px;
+  min-height: 36px;
+  margin: 0 0 8px;
 }
 
-.airport-chart-range-hint {
+.airport-chart-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 2px 0;
+  border: none;
+  background: transparent;
   color: #ffffff;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 700;
-  letter-spacing: 0.5px;
+  cursor: pointer;
+  line-height: 1.2;
 }
 
-.airport-chart-range-tip {
-  color: rgba(255, 255, 255, 0.55);
-  font-size: 11px;
+.airport-chart-legend-item i {
+  width: 12px;
+  height: 12px;
+  border: 1.5px solid currentColor;
+  border-radius: 2px;
+  box-sizing: border-box;
+  background: transparent;
+}
+
+.airport-chart-legend-item.is-on i {
+  border-color: currentColor;
+  background: currentColor;
 }
 
 .airport-chart-range-flash {
@@ -1907,6 +1946,10 @@ body.display-timezone-utc .title-row.main-title-row .timeline-row {
 
 /* 折叠时不渲染图表主体，展开后才占用空间/触发渲染 */
 .airport-chart-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
   padding-top: 2px;
 }
 
@@ -1916,11 +1959,15 @@ body.display-timezone-utc .title-row.main-title-row .timeline-row {
 
 .airport-trend-table-section {
   flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
   margin: 0;
-  padding: 0 0 8px;
+  padding: 0;
 }
 
 .airport-trend-table-wrap {
+  flex: 1;
+  min-height: var(--airport-extra-pane-min-height);
   overflow-x: auto;
   background: rgba(0, 0, 0, 0.18);
   border: 1px solid rgba(255, 255, 255, 0.22);
@@ -1936,6 +1983,7 @@ body.display-timezone-utc .title-row.main-title-row .timeline-row {
 
 .airport-trend-table {
   width: 100%;
+  min-height: 100%;
   border-collapse: collapse;
   table-layout: fixed;
   font-size: 12px;
@@ -1949,6 +1997,7 @@ body.display-timezone-utc .title-row.main-title-row .timeline-row {
   text-align: center;
   vertical-align: middle;
   word-break: break-all;
+  height: 28px;
 }
 
 .airport-trend-table .trend-table-label {
@@ -1983,17 +2032,18 @@ body.display-timezone-utc .title-row.main-title-row .timeline-row {
 .airport-chart-container {
   display: flex;
   flex-direction: column;
+  flex: 1;
   position: relative;
-  transform: scale(0.85);
-  transform-origin: left top;
-  width: 117.6%;
-  margin-bottom: -36px;
+  width: 100%;
+  min-height: 360px;
   overflow: visible;
 }
 
 .airport-chart {
   width: 100%;
-  height: 280px;
+  flex: 1;
+  min-height: 360px;
+  height: 100%;
   background-color: transparent;
   border-radius: 4px;
   border: 1px solid rgba(255, 255, 255, 0.3);
@@ -2086,9 +2136,10 @@ body.display-timezone-utc .title-row.main-title-row .timeline-row {
   background-color: #2980b9;
 }
 
-/* 报文内容区：随内容自动收缩/扩展，不再固定高度 */
+/* 报文内容区：与趋势表同一最小高度 */
 .reports-content {
-  flex: 0 0 auto;
+  flex: 1;
+  min-height: var(--airport-extra-pane-min-height);
   overflow-y: visible;
   overflow-x: hidden;
   color: #ffffff;
@@ -2377,7 +2428,7 @@ body.airport-detail-theme-light .airport-detail-main .forecast-row .timeline-cel
 }
 
 body.airport-detail-theme-light .airport-detail-extra {
-  background-color: #eceff1;
+  background-color: #ffffff;
   border-color: rgba(0, 0, 0, 0.18);
 }
 
@@ -2386,6 +2437,7 @@ body.airport-detail-theme-light .airport-extra-switch {
 }
 
 body.airport-detail-theme-light .airport-extra-switch-btn {
+  background: #eceff1;
   color: #000;
 }
 
@@ -2394,8 +2446,12 @@ body.airport-detail-theme-light .airport-extra-switch-btn + .airport-extra-switc
 }
 
 body.airport-detail-theme-light .airport-extra-switch-btn.active {
-  background: #ffffff;
+  background: transparent;
   color: #000;
+}
+
+body.airport-detail-theme-light .airport-chart-legend-item {
+  color: #000000;
 }
 
 body.airport-detail-theme-light .airport-reports-section,
@@ -2434,13 +2490,9 @@ body.airport-detail-theme-light .chart-toggle-switch {
 
 body.airport-detail-theme-light .airport-chart-section .chart-time-label,
 body.airport-detail-theme-light .airport-chart-section .chart-time-radio,
-body.airport-detail-theme-light .airport-chart-range-hint,
+body.airport-detail-theme-light .airport-extra-pane-range,
 body.airport-detail-theme-light .airport-chart-range-flash {
   color: #000;
-}
-
-body.airport-detail-theme-light .airport-chart-range-tip {
-  color: rgba(0, 0, 0, 0.45);
 }
 
 body.airport-detail-theme-light .airport-chart-range-flash {
