@@ -117,6 +117,7 @@ window.syncAirportDetailTimelineLabel = syncAirportDetailTimelineLabel;
 const AIRPORT_CHART_MIN_HOURS = 3;
 const AIRPORT_CHART_MAX_HOURS = 72;
 const AIRPORT_CHART_DEFAULT_HOURS = 24;
+const AIRPORT_CHART_WEATHER_HOURLY_HOURS = 12;
 
 function defaultAirportChartSelectedSeries() {
   return {
@@ -126,7 +127,9 @@ function defaultAirportChartSelectedSeries() {
     'RVR': false,
     '云底高': false,
     '气温': false,
+    '露点温度': false,
     '气压': false,
+    '天气现象': false,
   };
 }
 
@@ -134,6 +137,15 @@ function clampAirportChartHours(hours) {
   const n = Number(hours);
   if (!Number.isFinite(n)) return AIRPORT_CHART_DEFAULT_HOURS;
   return Math.min(AIRPORT_CHART_MAX_HOURS, Math.max(AIRPORT_CHART_MIN_HOURS, n));
+}
+
+function airportChartUsesHourlyWeather() {
+  return clampAirportChartHours(airportDetailChart.hours) >= AIRPORT_CHART_WEATHER_HOURLY_HOURS;
+}
+
+function airportChartWeatherGridBottom(weatherOn) {
+  if (!weatherOn) return 70;
+  return airportChartUsesHourlyWeather() ? 108 : 88;
 }
 
 function formatAirportChartHours(hours) {
@@ -155,24 +167,38 @@ function paintAirportChartRangeHint(hours, flash) {
   flashEl.classList.add('is-pop');
 }
 
-const AIRPORT_CHART_LEGEND_ITEMS = [
-  { name: '平均风', color: '#3498db' },
-  { name: '阵风', color: '#3498db' },
-  { name: '能见度', color: '#f39c12' },
-  { name: 'RVR', color: '#e74c3c' },
-  { name: '云底高', color: '#9b59b6' },
-  { name: '气温', color: '#27ae60' },
-  { name: '气压', color: '#16a085' },
+const AIRPORT_CHART_LEGEND_GROUPS = [
+  { id: 'wind', items: [{ name: '平均风', color: '#3498db' }, { name: '阵风', color: '#3498db' }] },
+  { id: 'vis', items: [{ name: '能见度', color: '#f39c12' }, { name: 'RVR', color: '#e74c3c' }] },
+  { id: 'cloud', items: [{ name: '云底高', color: '#9b59b6' }] },
+  { id: 'temp', items: [{ name: '气温', color: '#27ae60' }] },
+  { id: 'dew', items: [{ name: '露点温度', color: '#00cec9' }] },
+  { id: 'pressure', items: [{ name: '气压', color: '#16a085' }] },
+  { id: 'weather', items: [{ name: '天气现象', color: '#95a5a6' }] },
 ];
+
+function parseMetarDewPoint(value) {
+  if (value == null || value === '') return null;
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  let text = String(value).trim().toUpperCase().replace('−', '-');
+  if (!text || text === '//' || text === 'M//' || text === 'NONE') return null;
+  if (text.startsWith('M') && !text.startsWith('M-')) text = `-${text.slice(1)}`;
+  const number = Number(text);
+  return Number.isFinite(number) ? number : null;
+}
 
 function renderAirportChartLegend() {
   const el = document.getElementById('airport-chart-legend');
   if (!el) return;
   const selected = airportDetailChart.selectedSeries || defaultAirportChartSelectedSeries();
-  el.innerHTML = AIRPORT_CHART_LEGEND_ITEMS.map((item) => {
-    const on = !!selected[item.name];
-    const color = on ? item.color : '';
-    return `<button type="button" class="airport-chart-legend-item${on ? ' is-on' : ''}" data-series="${item.name}"${color ? ` style="color:${color}"` : ''}><i></i><span>${item.name}</span></button>`;
+  el.innerHTML = AIRPORT_CHART_LEGEND_GROUPS.map((group) => {
+    const groupOn = group.items.some((item) => !!selected[item.name]);
+    const buttons = group.items.map((item) => {
+      const on = !!selected[item.name];
+      const color = on ? item.color : '';
+      return `<button type="button" class="airport-chart-legend-item${on ? ' is-on' : ''}" data-series="${item.name}"${color ? ` style="color:${color}"` : ''}><i></i><span>${item.name}</span></button>`;
+    }).join('');
+    return `<div class="airport-chart-legend-group${groupOn ? ' is-on' : ''}" data-group="${group.id}">${buttons}</div>`;
   }).join('');
 }
 
@@ -235,10 +261,12 @@ function applyAirportChartTimeWindow(animate) {
   const hours = clampAirportChartHours(airportDetailChart.hours);
   const latestTime = airportDetailChart.latestTime;
   const startTime = latestTime - hours * 3600000;
+  const weatherOn = !!(airportDetailChart.selectedSeries && airportDetailChart.selectedSeries['天气现象']);
   chart.setOption({
     animationDurationUpdate: animate ? 180 : 0,
     animationEasingUpdate: 'cubicOut',
     xAxis: { min: startTime, max: latestTime },
+    grid: { bottom: airportChartWeatherGridBottom(weatherOn) },
   });
   const source = airportDetailChart.allData || airportDetailChart.historyData || [];
   const visible = source.filter((item) => {
@@ -247,8 +275,8 @@ function applyAirportChartTimeWindow(animate) {
   });
   airportDetailChart.filteredData = visible;
   setTimeout(() => {
-    if (airportDetailChart.chart && airportDetailChart.filteredData) {
-      renderWeatherLabels(airportDetailChart.chart, airportDetailChart.filteredData);
+    if (airportDetailChart.chart) {
+      renderWeatherLabels(airportDetailChart.chart);
     }
   }, animate ? 200 : 0);
 }
@@ -261,6 +289,7 @@ const airportDetailChart = {
   historyData: null,        // 历史 METAR 接口返回的解析数据
   filteredData: null,       // 当前时段过滤后的数据点（用于天气标签重绘）
   weatherLabelCount: 0,     // 上次渲染的天气标签数量（用于清除多余标签）
+  hourlyWeather: [],
   latestTime: null,
 };
 
@@ -496,9 +525,7 @@ function loadAirportExtraInfo(airportCode) {
 // 加载历史报文
 function compensateReportsContentScale() {
   const reportsContent = document.querySelector('.airport-reports-section .reports-content');
-  if (!reportsContent) return;
-  const contentHeight = reportsContent.offsetHeight;
-  reportsContent.style.marginBottom = `${-(contentHeight * 0.15)}px`;
+  if (reportsContent) reportsContent.style.marginBottom = '';
 }
 
 function fillReportGroup(elementId, reports, lineClass, emptyText) {
@@ -673,6 +700,7 @@ function initAirportDetailChart(airportCode, hours) {
   paintAirportChartRangeHint(airportDetailChart.hours, false);
   airportDetailChart.historyData = null;
   airportDetailChart.filteredData = null;
+  airportDetailChart.hourlyWeather = [];
   airportDetailChart.weatherLabelCount = 0;
 
   // 监听容器大小变化（仅在尺寸有效时 resize，避免主页面自动更新导致 reflow 时误用错误尺寸）
@@ -681,8 +709,8 @@ function initAirportDetailChart(airportCode, hours) {
     const h = chartDom.getBoundingClientRect().height;
     if (w >= 50 && h >= 50) {
       chart.resize();
-      if (airportDetailChart.filteredData) {
-        renderWeatherLabels(chart, airportDetailChart.filteredData);
+      if (airportDetailChart.chart) {
+        renderWeatherLabels(chart);
       }
     }
   });
@@ -743,6 +771,7 @@ function updateAirportDetailChart(airportCode) {
       rvr_min_val: airport.rvr_min_val,
       metar_min_cloud_height: airport.metar_min_cloud_height,
       metar_temp_val: airport.metar_temp_val,
+      dewPoint: parseMetarDewPoint(airport.dewPoint != null ? airport.dewPoint : airport.metar_dew_point),
       airPressure: airport.airPressure
     };
 
@@ -835,6 +864,9 @@ function updateAirportDetailChart(airportCode) {
   const rvrData = allData.map(item => item.rvr_min_val);
   const cloudHeightData = allData.map(item => item.metar_min_cloud_height);
   const tempData = allData.map(item => item.metar_temp_val);
+  const dewData = allData.map(item => (
+    item.dewPoint != null ? item.dewPoint : parseMetarDewPoint(item.metar_dew_point)
+  ));
   const pressureData = allData.map(item => item.airPressure);
 
   if (!airportDetailChart.selectedSeries || Object.keys(airportDetailChart.selectedSeries).length === 0) {
@@ -843,11 +875,12 @@ function updateAirportDetailChart(airportCode) {
 
   const sel = airportDetailChart.selectedSeries;
   const showWindAxis = !!sel['平均风'] || !!sel['阵风'];
-  const showTempAxis = !!sel['气温'];
+  const showTempAxis = !!sel['气温'] || !!sel['露点温度'];
   const showVisAxis = !!sel['能见度'] || !!sel['RVR'];
   const showCloudAxis = !!sel['云底高'];
   const showPressureAxis = !!sel['气压'];
-  const hasAnySeriesSelected = showWindAxis || showTempAxis || showVisAxis || showCloudAxis || showPressureAxis;
+  const showWeather = !!sel['天气现象'];
+  const hasAnySeriesSelected = showWindAxis || showTempAxis || showVisAxis || showCloudAxis || showPressureAxis || showWeather;
 
   function axisOffsets(shown) {
     const steps = [15, 50, 85];
@@ -920,7 +953,7 @@ function updateAirportDetailChart(airportCode) {
       left: leftAxisCount >= 3 ? '124px' : '94px',
       right: '94px',
       top: '18px',
-      bottom: '70px'
+      bottom: airportChartWeatherGridBottom(showWeather)
     },
     xAxis: {
       type: 'time',
@@ -1086,6 +1119,15 @@ function updateAirportDetailChart(airportCode) {
         itemStyle: { color: '#27ae60' }
       },
       {
+        name: '露点温度',
+        type: 'scatter',
+        data: timeData.map((t, i) => [t, dewData[i]]),
+        yAxisIndex: 1,
+        symbol: 'circle',
+        symbolSize: 10,
+        itemStyle: { color: '#00cec9' }
+      },
+      {
         name: '气压',
         type: 'scatter',
         data: timeData.map((t, i) => [t, pressureData[i]]),
@@ -1167,6 +1209,18 @@ function updateAirportDetailChart(airportCode) {
         lineStyle: { color: '#27ae60', width: 2 }
       },
       {
+        name: '露点温度',
+        type: 'line',
+        data: timeData.map((t, i) => [t, dewData[i]]),
+        smooth: true,
+        yAxisIndex: 1,
+        showSymbol: true,
+        symbol: 'circle',
+        symbolSize: 6,
+        itemStyle: { color: '#00cec9' },
+        lineStyle: { color: '#00cec9', width: 2, type: 'dashed' }
+      },
+      {
         name: '气压',
         type: 'line',
         data: timeData.map((t, i) => [t, pressureData[i]]),
@@ -1189,8 +1243,8 @@ function updateAirportDetailChart(airportCode) {
 
   // 在图表处理完新选项后渲染天气现象标签
   setTimeout(() => {
-    if (airportDetailChart.chart && airportDetailChart.filteredData) {
-      renderWeatherLabels(airportDetailChart.chart, airportDetailChart.filteredData);
+    if (airportDetailChart.chart) {
+      renderWeatherLabels(airportDetailChart.chart);
     }
   }, 0);
 
@@ -1213,42 +1267,71 @@ function updateAirportDetailChart(airportCode) {
   });
 }
 
-// 在横坐标轴时间刻度标签正下方渲染天气现象斜向标签
-// 文字右端（上端）对齐时间刻度标签下方，向左下方 45° 延伸
-function renderWeatherLabels(chart, filteredData) {
+function splitWeatherCodes(text) {
+  if (!text) return [];
+  if (Array.isArray(text)) return text.filter(Boolean);
+  return String(text).split(/[,\s]+/).map((item) => item.trim()).filter(Boolean);
+}
+
+function pushWeatherLabel(graphicItems, idx, xPixel, y, text) {
+  graphicItems.push({
+    id: `wl_${idx}`,
+    type: 'text',
+    z: 5,
+    x: xPixel,
+    y,
+    rotation: 0,
+    style: {
+      text,
+      fontSize: 11,
+      fill: airportDetailChartInk().weather,
+      align: 'center',
+      verticalAlign: 'top',
+    },
+  });
+}
+
+function renderWeatherLabels(chart) {
   const chartDom = document.getElementById('airport-detail-chart');
   if (!chartDom || !chart) return;
 
-  const containerHeight = chartDom.offsetHeight;
-  // grid.bottom = 70px；x 轴刻度文字约 14px 高；再留 2px 间隙
-  const anchorY = containerHeight - 70 + 14 + 2;
-
+  const selected = airportDetailChart.selectedSeries || defaultAirportChartSelectedSeries();
   const graphicItems = [];
   let idx = 0;
-
-  filteredData.forEach(item => {
-    const weather = item.metar_weather;
-    if (!weather) return;
-
-    const xPixel = chart.convertToPixel({ xAxisIndex: 0 }, item.metar_observation_time);
-    if (xPixel == null || isNaN(xPixel)) return;
-
-    graphicItems.push({
-      id: `wl_${idx++}`,
-      type: 'text',
-      z: 5,
-      x: xPixel,
-      y: anchorY,
-      rotation: Math.PI / 4,
-      style: {
-        text: weather,
-        fontSize: 12,
-        fill: airportDetailChartInk().weather,
-        align: 'right',
-        verticalAlign: 'top',
-      },
-    });
-  });
+  if (selected['天气现象']) {
+    const containerHeight = chartDom.offsetHeight;
+    const bottom = airportChartWeatherGridBottom(true);
+    const anchorY = containerHeight - bottom + 16;
+    const latestTime = airportDetailChart.latestTime;
+    const startTime = latestTime - clampAirportChartHours(airportDetailChart.hours) * 3600000;
+    const lineHeight = 13;
+    if (airportChartUsesHourlyWeather()) {
+      (airportDetailChart.hourlyWeather || []).forEach((slot) => {
+        const hour = slot && slot.hour;
+        const codes = splitWeatherCodes(slot && slot.weather);
+        if (hour == null || !codes.length) return;
+        if (latestTime && (hour < startTime || hour > latestTime)) return;
+        const xPixel = chart.convertToPixel({ xAxisIndex: 0 }, hour);
+        if (xPixel == null || isNaN(xPixel)) return;
+        codes.forEach((code, line) => {
+          pushWeatherLabel(graphicItems, idx++, xPixel, anchorY + line * lineHeight, code);
+        });
+      });
+    } else {
+      const source = airportDetailChart.filteredData || airportDetailChart.historyData || [];
+      source.forEach((item) => {
+        const codes = splitWeatherCodes(item && item.metar_weather);
+        const time = item && item.metar_observation_time;
+        if (!codes.length || time == null) return;
+        if (latestTime && (time < startTime || time > latestTime)) return;
+        const xPixel = chart.convertToPixel({ xAxisIndex: 0 }, time);
+        if (xPixel == null || isNaN(xPixel)) return;
+        codes.forEach((code, line) => {
+          pushWeatherLabel(graphicItems, idx++, xPixel, anchorY + line * lineHeight, code);
+        });
+      });
+    }
+  }
 
   // 清除上次渲染中多余的标签（切换到更短时段时数量可能减少）
   const prevCount = airportDetailChart.weatherLabelCount || 0;
@@ -1381,6 +1464,7 @@ function loadMetarHistoryData(airportCode) {
       .then(data => {
         if (data.success && Array.isArray(data.data) && data.data.length > 0) {
           airportDetailChart.historyData = data.data;
+          airportDetailChart.hourlyWeather = data.hourly_weather || [];
           if (airportDetailChart.airportCode === airportCode) {
             updateAirportDetailChart(airportCode);
           }

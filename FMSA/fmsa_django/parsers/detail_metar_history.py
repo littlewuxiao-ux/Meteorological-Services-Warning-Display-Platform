@@ -220,11 +220,36 @@ def chart_points_from_db(airport_code: str, time_mode: str = 'current') -> list[
             'rvr_min_val': row.rvr_min_val,
             'metar_min_cloud_height': row.metar_min_cloud_height,
             'metar_temp_val': row.metar_temp_val,
+            'dewPoint': _dew_to_float(row.metar_dew_point),
             'metar_weather': row.metar_weather,
             'airPressure': row.metar_pressure_val,
         })
     points.sort(key=lambda item: item['metar_observation_time'])
     return points
+
+
+def _hour_weather_codes(rows, hour_ms: int) -> list[str]:
+    seen = []
+    seen_set = set()
+    for item in _union_reports(rows, hour_ms):
+        for code in _split_weather(item.metar_weather):
+            if code not in seen_set:
+                seen_set.add(code)
+                seen.append(code)
+    return seen
+
+
+def hourly_weather_from_db(airport_code: str, time_mode: str = 'current') -> list[dict]:
+    airport = str(airport_code or '').strip().upper()
+    now_ms = _now_ms(time_mode)
+    hours = hourly_slots(now_ms, CHART_HOURS)
+    rows = list(_query_window(airport, hours)) if airport else []
+    result = []
+    for hour in hours:
+        codes = _hour_weather_codes(rows, hour)
+        if codes:
+            result.append({'hour': int(hour), 'weather': codes})
+    return result
 
 
 def _dew_to_float(value) -> Optional[float]:
@@ -334,14 +359,7 @@ def table_from_db(airport_code: str, time_mode: str = 'current') -> dict:
         wind_speed.append(_max_num(item.metar_wind_speed_val for item in union))
         gust.append(_max_num(item.metar_gust_val for item in union))
         pressure.append(None if hourly is None else hourly.metar_pressure_val)
-        seen = []
-        seen_set = set()
-        for item in union:
-            for code in _split_weather(item.metar_weather):
-                if code not in seen_set:
-                    seen_set.add(code)
-                    seen.append(code)
-        weather.append(seen)
+        weather.append(_hour_weather_codes(rows, hour))
     return {
         'hours': hours,
         'now': now_ms,

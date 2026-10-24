@@ -60,10 +60,11 @@ def airport_metar_history_ensure(request, airport_code, time_mode='current'):
 def airport_metar_history(request, airport_code, time_mode='current'):
     """详情页趋势图：读库过去 72 小时。"""
     try:
-        from parsers.detail_metar_history import chart_points_from_db
+        from parsers.detail_metar_history import chart_points_from_db, hourly_weather_from_db
         with cas_user_context(_cas_user_from_request(request)):
             chart_data = chart_points_from_db(airport_code, time_mode=time_mode)
-        return JsonResponse({'success': True, 'data': chart_data})
+            hourly_weather = hourly_weather_from_db(airport_code, time_mode=time_mode)
+        return JsonResponse({'success': True, 'data': chart_data, 'hourly_weather': hourly_weather})
     except Exception as exc:
         logger.error(f'获取历史 METAR 数据失败 [{airport_code}]: {exc}')
         return JsonResponse(

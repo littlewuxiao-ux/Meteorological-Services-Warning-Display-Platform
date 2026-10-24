@@ -1745,10 +1745,10 @@ body.display-timezone-utc .title-row.main-title-row .timeline-row {
   flex-shrink: 0;
   display: flex;
   gap: 0;
-  margin: 0 0 8px;
+  margin: 0 0 10px;
   border: 1px solid rgba(255, 255, 255, 0.35);
   border-radius: 4px;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .airport-extra-switch-btn {
@@ -1764,13 +1764,25 @@ body.display-timezone-utc .title-row.main-title-row .timeline-row {
   letter-spacing: 0.5px;
 }
 
+.airport-extra-switch-btn:first-child {
+  border-radius: 4px 0 0 4px;
+}
+
+.airport-extra-switch-btn:last-child {
+  border-radius: 0 4px 4px 0;
+}
+
 .airport-extra-switch-btn + .airport-extra-switch-btn {
   border-left: 1px solid rgba(255, 255, 255, 0.35);
 }
 
 .airport-extra-switch-btn.active {
-  background: transparent;
-  color: rgba(255, 255, 255, 0.72);
+  background: rgba(255, 255, 255, 0.16);
+  color: #ffffff;
+  position: relative;
+  z-index: 1;
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.38), 0 1px 2px rgba(0, 0, 0, 0.22);
+  transform: translateY(-1px);
 }
 
 .airport-extra-pane-range {
@@ -1798,7 +1810,6 @@ body.display-timezone-utc .title-row.main-title-row .timeline-row {
   display: none;
 }
 
-.airport-reports-section,
 .airport-chart-section,
 .airport-trend-table-section {
   --airport-extra-pane-min-height: 420px;
@@ -1878,9 +1889,60 @@ body.display-timezone-utc .title-row.main-title-row .timeline-row {
   flex-wrap: wrap;
   align-items: center;
   justify-content: center;
-  gap: 10px 16px;
+  gap: 8px;
   min-height: 36px;
   margin: 0 0 8px;
+}
+
+.airport-chart-legend-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.airport-chart-legend-group.is-on {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.28);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+.airport-chart-legend-group[data-group="wind"].is-on {
+  background: rgba(52, 152, 219, 0.18);
+  border-color: rgba(52, 152, 219, 0.55);
+}
+
+.airport-chart-legend-group[data-group="vis"].is-on {
+  background: rgba(243, 156, 18, 0.18);
+  border-color: rgba(243, 156, 18, 0.55);
+}
+
+.airport-chart-legend-group[data-group="cloud"].is-on {
+  background: rgba(155, 89, 182, 0.18);
+  border-color: rgba(155, 89, 182, 0.55);
+}
+
+.airport-chart-legend-group[data-group="temp"].is-on {
+  background: rgba(39, 174, 96, 0.18);
+  border-color: rgba(39, 174, 96, 0.55);
+}
+
+.airport-chart-legend-group[data-group="dew"].is-on {
+  background: rgba(0, 206, 201, 0.18);
+  border-color: rgba(0, 206, 201, 0.55);
+}
+
+.airport-chart-legend-group[data-group="pressure"].is-on {
+  background: rgba(22, 160, 133, 0.18);
+  border-color: rgba(22, 160, 133, 0.55);
+}
+
+.airport-chart-legend-group[data-group="weather"].is-on {
+  background: rgba(189, 195, 199, 0.2);
+  border-color: rgba(189, 195, 199, 0.55);
 }
 
 .airport-chart-legend-item {
@@ -2136,10 +2198,9 @@ body.display-timezone-utc .title-row.main-title-row .timeline-row {
   background-color: #2980b9;
 }
 
-/* 报文内容区：与趋势表同一最小高度 */
+/* 报文内容区：与标题行同宽，高度随报文收缩 */
 .reports-content {
-  flex: 1;
-  min-height: var(--airport-extra-pane-min-height);
+  flex: 0 0 auto;
   overflow-y: visible;
   overflow-x: hidden;
   color: #ffffff;
@@ -2148,9 +2209,7 @@ body.display-timezone-utc .title-row.main-title-row .timeline-row {
   background-color: transparent;
   border: none;
   border-radius: 0;
-  transform: scale(0.85);
-  transform-origin: left top;
-  width: 117.6%;
+  width: 100%;
   margin-bottom: 0;
   scrollbar-gutter: stable;
   display: flex;
@@ -2289,10 +2348,12 @@ body.display-timezone-utc .title-row.main-title-row .timeline-row {
    通过绝对定位+位移始终保持垂直水平居中（高度变化时自动重新居中） */
 #airport-detail-modal .airport-detail-content {
   position: absolute;
-  top: 50%;
+  top: 24px;
   left: 50%;
   margin: 0;
-  transform: translate(-50%, -50%);
+  transform: translateX(-50%);
+  max-height: calc(100vh - 48px);
+  overflow: hidden;
 }
 
 /* 加载状态 */
@@ -2446,12 +2507,60 @@ body.airport-detail-theme-light .airport-extra-switch-btn + .airport-extra-switc
 }
 
 body.airport-detail-theme-light .airport-extra-switch-btn.active {
-  background: transparent;
+  background: #eceff1;
   color: #000;
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.16), 0 1px 2px rgba(0, 0, 0, 0.1);
+  transform: translateY(-1px);
 }
 
 body.airport-detail-theme-light .airport-chart-legend-item {
   color: #000000;
+}
+
+body.airport-detail-theme-light .airport-chart-legend-group {
+  background: rgba(0, 0, 0, 0.03);
+  border-color: rgba(0, 0, 0, 0.16);
+}
+
+body.airport-detail-theme-light .airport-chart-legend-group.is-on {
+  background: rgba(0, 0, 0, 0.04);
+  border-color: rgba(0, 0, 0, 0.16);
+  box-shadow: none;
+}
+
+body.airport-detail-theme-light .airport-chart-legend-group[data-group="wind"].is-on {
+  background: rgba(52, 152, 219, 0.12);
+  border-color: rgba(52, 152, 219, 0.45);
+}
+
+body.airport-detail-theme-light .airport-chart-legend-group[data-group="vis"].is-on {
+  background: rgba(243, 156, 18, 0.14);
+  border-color: rgba(243, 156, 18, 0.45);
+}
+
+body.airport-detail-theme-light .airport-chart-legend-group[data-group="cloud"].is-on {
+  background: rgba(155, 89, 182, 0.12);
+  border-color: rgba(155, 89, 182, 0.45);
+}
+
+body.airport-detail-theme-light .airport-chart-legend-group[data-group="temp"].is-on {
+  background: rgba(39, 174, 96, 0.12);
+  border-color: rgba(39, 174, 96, 0.45);
+}
+
+body.airport-detail-theme-light .airport-chart-legend-group[data-group="dew"].is-on {
+  background: rgba(0, 184, 148, 0.12);
+  border-color: rgba(0, 184, 148, 0.45);
+}
+
+body.airport-detail-theme-light .airport-chart-legend-group[data-group="pressure"].is-on {
+  background: rgba(22, 160, 133, 0.12);
+  border-color: rgba(22, 160, 133, 0.45);
+}
+
+body.airport-detail-theme-light .airport-chart-legend-group[data-group="weather"].is-on {
+  background: rgba(127, 140, 141, 0.12);
+  border-color: rgba(127, 140, 141, 0.4);
 }
 
 body.airport-detail-theme-light .airport-reports-section,
