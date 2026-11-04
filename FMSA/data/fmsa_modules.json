@@ -1,20 +1,20 @@
 {
   "version": 1,
-  "options": {
-    "report_lang": "original"
-  },
   "modules": {
     "core": true,
     "home": true,
-    "nwp": true,
     "map": true,
     "plain": true,
-    "popup": true,
-    "import_alert": true,
     "trend": true,
-    "radar": true,
-    "satellite": true,
+    "import_alert": true,
+    "popup": true,
     "awc": true,
-    "contact": true
+    "contact": true,
+    "nwp": true,
+    "radar": true,
+    "satellite": true
+  },
+  "options": {
+    "report_lang": "original"
   }
 }
