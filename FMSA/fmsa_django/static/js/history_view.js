@@ -1,11 +1,10 @@
 /**
- * 历史天气统计视图。进入后只加载规则；未点确定不查询。
+ * 历史天气统计视图。规则组在设置模块中维护；未点确定不查询。
  */
 (function () {
   'use strict';
 
   let bound = false;
-  let loaded = false;
   let querySeq = 0;
   let lastRows = [];
   let lastRange = null;
@@ -97,114 +96,6 @@
     } catch (err) { /* 用户稍后手填 */ }
   }
 
-  function paramFields(values, extra) {
-    const v = values || {};
-    const extraHtml = extra || '';
-    return `
-      <label class="hs-field" title="ATA/ATD 前后各看多少小时实况">已完成航班实况抓取范围
-        <input type="number" min="0" max="24" step="1" data-field="done_hours" value="${esc(v.done_hours ?? 2)}">小时
-      </label>
-      <label class="hs-field" title="飞行中、即将起飞看过去多少小时到查询截止">未落地/未起飞航班实况抓取范围
-        <input type="number" min="0" max="24" step="1" data-field="open_hours" value="${esc(v.open_hours ?? 4)}">小时
-      </label>
-      <label class="hs-field">实况告警等级抓取范围
-        <select data-field="alert_level">
-          <option value="G"${v.alert_level === 'G' ? ' selected' : ''}>绿色及以上</option>
-          <option value="Y"${v.alert_level !== 'R' && v.alert_level !== 'G' ? ' selected' : ''}>黄色及以上</option>
-          <option value="R"${v.alert_level === 'R' ? ' selected' : ''}>仅红色</option>
-        </select>
-      </label>
-      <label class="hs-field" title="两份命中报观测时间差达到该小时数则拆成两段">气象要素分段间隔
-        <input type="number" min="0" max="24" step="1" data-field="gap_hours" value="${esc(v.gap_hours ?? 2)}">小时
-      </label>
-      ${extraHtml}
-    `;
-  }
-
-  function renderGroups(config) {
-    const wrap = document.getElementById('history-groups');
-    if (!wrap) return;
-    const general = (config && config.general) || {};
-    const special = (config && config.special) || [];
-    let html = `<div class="hs-group" data-kind="general">
-      <div class="hs-group-title">通用组</div>
-      <div class="hs-group-fields">${paramFields(general)}</div>
-    </div>`;
-    special.forEach((group, index) => {
-      html += specialGroupHtml(index, group);
-    });
-    wrap.innerHTML = html;
-    const addBtn = document.getElementById('history-add-group');
-    if (addBtn) addBtn.disabled = special.length >= 3;
-  }
-
-  function specialGroupHtml(index, group) {
-    const g = group || {};
-    return `<div class="hs-group" data-kind="special" data-index="${index}">
-      <div class="hs-group-title">
-        <span>特殊组 ${index + 1}</span>
-        <button type="button" class="hs-remove" data-remove="${index}">删除</button>
-      </div>
-      <div class="hs-group-fields">
-        ${paramFields(g, `<label class="hs-field hs-airports">适用机场四字代码<input type="text" data-field="airports_text" value="${esc(g.airports_text || (g.airports || []).join(','))}" placeholder="ZBAA,ZSPD">（逗号分隔）</label>`)}
-      </div>
-    </div>`;
-  }
-
-  function readField(box, field, fallback) {
-    const el = box ? box.querySelector(`[data-field="${field}"]`) : null;
-    if (!el) return fallback;
-    if (el.type === 'number') {
-      const n = parseFloat(el.value);
-      return Number.isFinite(n) ? n : fallback;
-    }
-    return el.value || fallback;
-  }
-
-  function collectParams(box) {
-    return {
-      done_hours: readField(box, 'done_hours', 2),
-      open_hours: readField(box, 'open_hours', 4),
-      alert_level: readField(box, 'alert_level', 'Y'),
-      gap_hours: readField(box, 'gap_hours', 2),
-    };
-  }
-
-  function collectConfig() {
-    const generalBox = document.querySelector('#history-groups .hs-group[data-kind="general"]');
-    const special = [];
-    document.querySelectorAll('#history-groups .hs-group[data-kind="special"]').forEach((box, index) => {
-      special.push({
-        name: `特殊组${index + 1}`,
-        ...collectParams(box),
-        airports_text: readField(box, 'airports_text', ''),
-      });
-    });
-    return {
-      general: collectParams(generalBox),
-      special,
-    };
-  }
-
-  async function loadConfig() {
-    const res = await fetch(apiUrl('history-stats/config/'), { headers: headers() });
-    const data = await res.json();
-    if (!data.success) throw new Error(data.error || '读取规则失败');
-    renderGroups(data.config || {});
-  }
-
-  async function saveConfig() {
-    const res = await fetch(apiUrl('history-stats/config/'), {
-      method: 'PUT',
-      headers: headers(),
-      body: JSON.stringify({ config: collectConfig() }),
-    });
-    const data = await res.json();
-    if (!data.success) throw new Error(data.error || '保存失败');
-    renderGroups(data.config || collectConfig());
-    return data.config;
-  }
-
   function badgeHtml(badge) {
     if (!badge || !badge.text) return '';
     const level = badge.level === 'R' || badge.level === 'Y' || badge.level === 'G' ? badge.level : 'N';
@@ -215,10 +106,12 @@
     const elements = row.element_badges || [];
     const weather = row.weather_badges || [];
     const fallback = (!elements.length && !weather.length) ? (row.badges || []) : [];
-    const row1 = (elements.length ? elements : fallback).map(badgeHtml).join('');
-    const row2 = weather.map(badgeHtml).join('');
-    if (!row1 && !row2) return '';
-    return `<div class="popup-warning-badges"><div class="popup-warning-row">${row1}</div><div class="popup-warning-row">${row2}</div></div>`;
+    const all = (elements.length || weather.length)
+      ? elements.concat(weather)
+      : fallback;
+    const html = all.map(badgeHtml).join('');
+    if (!html) return '';
+    return `<div class="popup-warning-badges"><div class="popup-warning-row">${html}</div></div>`;
   }
 
   function typeHtml(name) {
@@ -245,7 +138,7 @@
       else groups.push({ airport: row.airport, rows: [row] });
     });
     const COLS = 6;
-    let html = '<table class="hs-table"><thead><tr><th>机场</th><th>时段</th><th>告警类型</th><th>影响运行的类型</th><th>天气</th><th>原文</th><th>复制</th></tr></thead><tbody>';
+    let html = '<table class="hs-table"><thead><tr><th>机场</th><th>时段</th><th>影响运行的类型</th><th>告警类型</th><th>天气</th><th>原文</th><th>复制</th></tr></thead><tbody>';
     let rowIndex = 0;
     groups.forEach((group) => {
       group.rows.forEach((row, index) => {
@@ -254,9 +147,9 @@
         if (index === 0) {
           html += `<td class="hs-airport" rowspan="${group.rows.length}">${esc(group.airport)}</td>`;
         }
-        html += `<td>${timeHtml(row.start_ms, row.end_ms)}</td>`;
-        html += `<td class="hs-badges">${popupBadgeHtml(row)}</td>`;
+        html += `<td class="hs-period">${timeHtml(row.start_ms, row.end_ms)}</td>`;
         html += `<td class="hs-types">${(row.types || []).map(typeHtml).join('')}</td>`;
+        html += `<td class="hs-badges">${popupBadgeHtml(row)}</td>`;
         html += `<td class="hs-plain">${esc(row.plain || '')}</td>`;
         html += `<td class="hs-action"><button type="button" class="hs-text-btn" data-raw="${id}">显示原文</button></td>`;
         html += `<td class="hs-action"><button type="button" class="hs-text-btn" data-copy="${id}">复制</button></td>`;
@@ -301,18 +194,40 @@
     syncAirportRowspan(data.getAttribute('data-airport'));
   }
 
-  function copyRow(id) {
-    const row = lastRows[Number(id)];
-    if (!row) return;
+  function rowCopyText(row) {
     const span = formatRangeLabel(row.start_ms, row.end_ms).replace(' → ', '至');
     const weather = row.plain || '无满足告警条件的天气';
-    const text = `${row.airport} ${span}，${weather}`;
-    const done = () => setStatus('已复制本行天气');
+    return `${row.airport} ${span}，${weather}`;
+  }
+
+  function copyText(text, okMsg) {
+    const done = () => setStatus(okMsg);
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(text).then(done).catch(() => fallbackCopy(text, done));
     } else {
       fallbackCopy(text, done);
     }
+  }
+
+  function copyRow(id) {
+    const row = lastRows[Number(id)];
+    if (!row) return;
+    copyText(rowCopyText(row), '已复制本行天气');
+  }
+
+  function copyAll() {
+    if (!lastRows.length) {
+      setStatus('没有可复制的内容', true);
+      return;
+    }
+    const lines = [];
+    let prev = null;
+    lastRows.forEach((row) => {
+      if (prev && prev !== row.airport) lines.push('');
+      prev = row.airport;
+      lines.push(rowCopyText(row));
+    });
+    copyText(lines.join('\n'), '已复制全部机场天气');
   }
 
   function fallbackCopy(text, done) {
@@ -331,7 +246,7 @@
     setStatus('正在查询…');
     try {
       const kind = preset();
-      const body = { preset: kind, config: collectConfig() };
+      const body = { preset: kind };
       if (kind === 'custom') {
         body.start_ms = inputToMs(document.getElementById('history-start').value);
         body.end_ms = inputToMs(document.getElementById('history-end').value);
@@ -369,39 +284,10 @@
         if (preset() === 'custom') await fillCustomDefaults();
       });
     });
-    const addBtn = document.getElementById('history-add-group');
-    if (addBtn) {
-      addBtn.addEventListener('click', () => {
-        const wrap = document.getElementById('history-groups');
-        const count = wrap ? wrap.querySelectorAll('.hs-group[data-kind="special"]').length : 0;
-        if (count >= 3) return;
-        wrap.insertAdjacentHTML('beforeend', specialGroupHtml(count, {}));
-        addBtn.disabled = count + 1 >= 3;
-      });
-    }
-    const groups = document.getElementById('history-groups');
-    if (groups) {
-      groups.addEventListener('click', (event) => {
-        const btn = event.target.closest('[data-remove]');
-        if (!btn) return;
-        const cfg = collectConfig();
-        cfg.special.splice(Number(btn.getAttribute('data-remove')), 1);
-        renderGroups(cfg);
-      });
-    }
-    const saveBtn = document.getElementById('history-save');
-    if (saveBtn) {
-      saveBtn.addEventListener('click', async () => {
-        try {
-          await saveConfig();
-          setStatus('规则已保存');
-        } catch (err) {
-          setStatus(err.message || '保存失败', true);
-        }
-      });
-    }
     const queryBtn = document.getElementById('history-query');
     if (queryBtn) queryBtn.addEventListener('click', runQuery);
+    const copyAllBtn = document.getElementById('history-copy-all');
+    if (copyAllBtn) copyAllBtn.addEventListener('click', copyAll);
     const tableWrap = document.getElementById('history-table-wrap');
     if (tableWrap) {
       tableWrap.addEventListener('click', (event) => {
@@ -426,14 +312,6 @@
     const wrap = document.getElementById('history-table-wrap');
     if (wrap && !lastRows.length) {
       wrap.innerHTML = '<div class="hs-empty">选择时段后点击确定查询</div>';
-    }
-    if (!loaded) {
-      try {
-        await loadConfig();
-        loaded = true;
-      } catch (err) {
-        setStatus(err.message || '读取规则失败', true);
-      }
     }
     if (preset() === 'custom') fillCustomDefaults();
   }

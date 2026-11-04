@@ -32,15 +32,22 @@ def _ms(value):
 @csrf_exempt
 def history_stats_config(request, time_mode='current'):
     identity = resolve_access_identity(request)
-    if not has_perm(identity, 'view_history', 'display'):
-        return JsonResponse({'success': False, 'error': '无历史视图权限'}, status=403)
-    from utils.user_settings import settings_subject
+    can_settings = has_perm(identity, 'settings_history_stats', 'display')
+    can_view = has_perm(identity, 'view_history', 'display')
+    if not (can_settings or can_view):
+        return JsonResponse({'success': False, 'error': '无历史统计权限'}, status=403)
+    from utils.user_settings import scope_meta, settings_subject
 
     user, _editing = settings_subject(request, time_mode)
     if request.method == 'GET':
-        return JsonResponse({'success': True, 'config': read_config(user)})
-    if not has_perm(identity, 'view_history', 'write'):
-        return JsonResponse({'success': False, 'error': '无历史视图写入权限'}, status=403)
+        return JsonResponse({
+            'success': True,
+            'config': read_config(user),
+            **scope_meta(request, time_mode),
+        })
+    can_write = has_perm(identity, 'settings_history_stats', 'write') or has_perm(identity, 'view_history', 'write')
+    if not can_write:
+        return JsonResponse({'success': False, 'error': '无历史统计写入权限'}, status=403)
     data = _body(request)
     payload = data.get('config') if isinstance(data.get('config'), dict) else data
     config, errors = save_config(payload, user)

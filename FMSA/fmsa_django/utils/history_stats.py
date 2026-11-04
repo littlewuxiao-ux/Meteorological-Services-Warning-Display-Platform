@@ -734,6 +734,37 @@ def _segment_reports(reports: list, gap_ms: int) -> list:
     return segments
 
 
+def _is_later_metar(row, last_obs: int, last_sqc: str) -> bool:
+    obs = row.metar_observation_time
+    if obs is None:
+        return False
+    if obs > last_obs:
+        return True
+    return obs == last_obs and (row.sqc or '') > (last_sqc or '')
+
+
+def _metar_after(airport: str, last_obs: int, last_sqc: str, known: list):
+    from runtime_db.models import Metar
+
+    later = [row for row in (known or []) if _is_later_metar(row, last_obs, last_sqc)]
+    if later:
+        later.sort(key=lambda row: (row.metar_observation_time, row.sqc or ''))
+        return later[0]
+    nxt = (
+        Metar.objects.filter(airport_4code=airport, metar_observation_time__gt=last_obs)
+        .order_by('metar_observation_time', 'sqc')
+        .first()
+    )
+    if nxt:
+        return nxt
+    for row in Metar.objects.filter(
+        airport_4code=airport, metar_observation_time=last_obs,
+    ).order_by('sqc'):
+        if _is_later_metar(row, last_obs, last_sqc):
+            return row
+    return None
+
+
 def query_history(preset: str, start_ms=None, end_ms=None, time_mode='current', token=None, user_code=None, config=None) -> dict:
     from runtime_db.models import Metar
     from utils.flight_selection import selected_carrier_codes
@@ -825,18 +856,30 @@ def query_history(preset: str, start_ms=None, end_ms=None, time_mode='current', 
                 if any(name in item['types'] for item in segment):
                     types.append(name)
             metars = [item['metar'] for item in segment]
+            last = segment[-1]
             start_ms = segment[0]['obs']
-            end_ms = segment[-1]['obs']
+            end_ms = last['obs']
+            nxt = _metar_after(
+                airport, last['obs'], last['metar'].sqc, grouped.get(airport) or [],
+            )
+            if nxt and nxt.metar_observation_time:
+                end_ms = nxt.metar_observation_time
             popup = popup_badges_for_metars(metars, params['alert_level'])
             reports = []
-            for metar in grouped.get(airport) or []:
+            seen = set()
+            for metar in list(grouped.get(airport) or []) + ([nxt] if nxt else []):
                 obs = metar.metar_observation_time
                 if obs is None or obs < start_ms or obs > end_ms:
                     continue
+                key = (obs, metar.sqc or metar.metar_content or '')
+                if key in seen:
+                    continue
+                seen.add(key)
                 reports.append({
                     'obs_ms': obs,
                     'content': metar.metar_content or '',
                 })
+            reports.sort(key=lambda item: item['obs_ms'])
             rows.append({
                 'airport': airport,
                 'start_ms': start_ms,

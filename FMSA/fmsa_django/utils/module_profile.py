@@ -69,8 +69,8 @@ MODULE_META = [
         'locked': False,
         'data': '查询时取航班 API 和本地实况；缺报时补拉历史报文。',
         'program': '无',
-        'human': '规则组按用户保存在本视图',
-        'config': '无（规则在历史视图内）',
+        'human': '规则组按用户保存在设置模块',
+        'config': '历史统计规则组',
     },
     {
         'key': 'nwp',
@@ -350,6 +350,7 @@ def permissions_for_runtime() -> Dict[str, dict]:
         'settings_weather_alert': always,
         'settings_radar_alert': mapped,
         'settings_trend_alert': trend,
+        'settings_history_stats': history,
         'settings_map_style': mapped,
         'unused': off,
     }

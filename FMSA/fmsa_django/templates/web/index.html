@@ -308,17 +308,8 @@
         <input type="datetime-local" id="history-end">
       </div>
       <button type="button" class="hs-query" id="history-query">确定</button>
+      <button type="button" class="hs-copy-all" id="history-copy-all">全部复制</button>
       <span class="hs-status" id="history-status"></span>
-    </div>
-  </div>
-  <div class="hs-rules">
-    <div class="hs-rules-box">
-      <div class="hs-rules-head">
-        <span>规则组</span>
-        <button type="button" class="hs-add" id="history-add-group">新增特殊组</button>
-        <button type="button" class="hs-save" id="history-save">保存规则</button>
-      </div>
-      <div id="history-groups"></div>
     </div>
   </div>
   <div class="hs-table-wrap" id="history-table-wrap">
@@ -389,6 +380,7 @@
         <button class="settings-tab" data-tab="weather-alert">天气告警等级</button>
         <button class="settings-tab" data-tab="radar-alert">雷达告警</button>
         <button class="settings-tab" data-tab="trend-alert">实况趋势告警</button>
+        <button class="settings-tab" data-tab="history-stats">历史统计</button>
         <button class="settings-tab" data-tab="map-style">外观样式</button>
       </div>
       <div class="settings-tab-group settings-tab-group-global">
@@ -735,6 +727,17 @@
         <div class="settings-msg" id="trend-alert-msg"></div>
         <div id="trend-alert-editor"></div>
         <datalist id="trend-weather-list"></datalist>
+      </div>
+
+      <div class="settings-tab-pane" id="settings-pane-history-stats">
+        <div class="radar-settings-toolbar">
+          <button type="button" class="settings-btn-cancel" id="history-add-group">新增特殊组</button>
+          <button type="button" class="settings-btn-save" id="history-save">保存规则</button>
+          <button type="button" class="settings-btn-cancel settings-restore-btn" data-group="history_stats_config" data-msg="history-stats-msg">恢复默认</button>
+          <span class="settings-hint">通用组适用于全部机场；特殊组按四字代码覆盖通用组，最多 3 个。</span>
+        </div>
+        <div class="settings-msg" id="history-stats-msg"></div>
+        <div id="history-groups"></div>
       </div>
 
       <!-- Tab11: 外观样式（地图样式 + 机场详细信息设置） -->

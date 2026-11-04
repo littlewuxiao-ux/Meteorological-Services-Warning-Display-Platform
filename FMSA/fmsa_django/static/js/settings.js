@@ -166,6 +166,9 @@
       case 'trend-alert':
         if (window.TrendAlertSettings) await window.TrendAlertSettings.load();
         break;
+      case 'history-stats':
+        if (window.HistoryStatsSettings) await window.HistoryStatsSettings.load();
+        break;
     }
   }
 
@@ -1717,6 +1720,7 @@ const modeBtn = document.getElementById('threshold-mode-btn');
           prefix_area: '将全部机场区域恢复为默认模板，当前改动都会被覆盖。确定恢复？',
           taf_import: '将全部预报入库告警恢复为默认模板，当前改动都会被覆盖。确定恢复？',
           weather_type: '将全部天气类型恢复为默认模板，当前改动都会被覆盖。确定恢复？',
+          history_stats_config: '将历史统计规则组恢复为默认模板，当前改动都会被覆盖。确定恢复？',
         };
         const hint = wholeTable[group]
           || (group === 'airport_alert_thresholds'
@@ -1735,6 +1739,7 @@ const modeBtn = document.getElementById('threshold-mode-btn');
           prefixHideWanted = null;
         }
         if (group === 'trend_alert_config' && window.TrendAlertSettings) await window.TrendAlertSettings.load();
+        else if (group === 'history_stats_config' && window.HistoryStatsSettings) await window.HistoryStatsSettings.load();
         else await loadTab(currentSettingsTab);
       });
     });
@@ -1945,6 +1950,7 @@ const modeBtn = document.getElementById('threshold-mode-btn');
       'radar-alert': 'settings_radar_alert',
       'map-style': 'settings_map_style',
       'trend-alert': 'settings_trend_alert',
+      'history-stats': 'settings_history_stats',
     };
     Object.keys(TAB_PERM).forEach((tab) => {
       const btn = document.querySelector(`.settings-tab[data-tab="${tab}"]`);

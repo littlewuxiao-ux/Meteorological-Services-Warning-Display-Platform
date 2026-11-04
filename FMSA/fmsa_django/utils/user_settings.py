@@ -250,8 +250,8 @@ def save_json_config(model, user_code, config):
 
 def restore_group(user_code, group):
     from config_db.models import (
-        AirportAlertThresholds, Carrier, DataRefreshTimer, PopupSettings,
-        RadarAlertConfig, TrendAlertConfig, WeatherAlertLevels,
+        AirportAlertThresholds, Carrier, DataRefreshTimer, HistoryStatsConfig,
+        PopupSettings, RadarAlertConfig, TrendAlertConfig, WeatherAlertLevels,
     )
 
     if user_code == TEMPLATE:
@@ -275,6 +275,9 @@ def restore_group(user_code, group):
         return
     if group == 'trend_alert_config':
         TrendAlertConfig.objects.filter(user_code=user_code).delete()
+        return
+    if group == 'history_stats_config':
+        HistoryStatsConfig.objects.filter(user_code=user_code).delete()
         return
     if group == 'popup':
         PopupSettings.objects.filter(user_code=user_code).delete()
