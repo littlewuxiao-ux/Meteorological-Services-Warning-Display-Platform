@@ -1958,6 +1958,25 @@ const modeBtn = document.getElementById('threshold-mode-btn');
       const ok = typeof hasAccess !== 'function' || hasAccess(TAB_PERM[tab], 'display');
       btn.style.display = ok ? '' : 'none';
     });
+    const visible = (group) => [...document.querySelectorAll(`.settings-tab-group-${group} .settings-tab`)]
+      .filter((btn) => btn.style.display !== 'none');
+    const personal = visible('personal');
+    const global = visible('global');
+    const pCount = personal.length;
+    const gCount = global.length;
+    const cols = Math.max(pCount + gCount, 1);
+    const bar = document.querySelector('.settings-tabs');
+    if (bar) bar.style.gridTemplateColumns = `repeat(${cols}, minmax(0, 1fr))`;
+    const pTitle = document.querySelector('.settings-group-title[data-group="personal"]');
+    const gTitle = document.querySelector('.settings-group-title[data-group="global"]');
+    if (pTitle) {
+      pTitle.style.display = pCount ? '' : 'none';
+      pTitle.style.gridColumn = pCount ? `1 / ${pCount + 1}` : '';
+    }
+    if (gTitle) {
+      gTitle.style.display = gCount ? '' : 'none';
+      gTitle.style.gridColumn = gCount ? `${pCount + 1} / ${pCount + gCount + 1}` : '';
+    }
   }
 
   // ========== 机场区域：单列，按区域编辑 ==========

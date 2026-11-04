@@ -267,6 +267,10 @@
   vertical-align: middle;
 }
 
+.hs-copy {
+  background: #f4f6f7;
+}
+
 .hs-text-btn {
   height: 28px;
   padding: 0 10px;

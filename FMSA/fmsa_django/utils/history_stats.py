@@ -576,6 +576,55 @@ def _wx_tokens(metar) -> list:
     return [part.strip() for part in re.split(r'[\s,]+', text) if part.strip()]
 
 
+def _phenomenon_plain_names(metars: list, threshold: str) -> list:
+    from parsers.plain_language import weather_zh
+    from utils.popup_utils import _as_dict, _clean_text
+    from utils.user_settings import current_settings_user, weather_row
+
+    names = []
+    seen = set()
+    user = current_settings_user()
+
+    def add(code):
+        token = str(code or '').strip()
+        if not token or token.lower() == 'none':
+            return
+        name = weather_zh(token) or token
+        if name and name not in seen:
+            seen.add(name)
+            names.append(name)
+
+    def token_level(token):
+        row = weather_row(user, token)
+        if row is None:
+            body = token.lstrip('+-')
+            if body.startswith('VC'):
+                body = body[2:]
+            if body != token:
+                row = weather_row(user, body)
+        return getattr(row, 'alert_level', None) if row else None
+
+    for metar in metars:
+        weather = _as_dict(_as_dict(metar.metar_elements).get('weather'))
+        items = [item for item in (weather.get('items') or []) if isinstance(item, dict)]
+        if items:
+            for item in items:
+                if not meets_level(item.get('alert'), threshold):
+                    continue
+                code = _clean_text(item.get('code')) or _clean_text(item.get('raw'))
+                for token in re.split(r'[\s,]+', code) if code else []:
+                    add(token)
+            continue
+        for token in _wx_tokens(metar):
+            level = token_level(token)
+            if level:
+                if meets_level(level, threshold):
+                    add(token)
+            elif meets_level(metar.metar_weather_warning, threshold):
+                add(token)
+    return names
+
+
 def build_plain(metars: list, threshold: str, popup: dict = None) -> str:
     popup = popup or popup_badges_for_metars(metars, threshold)
     labels = {item.get('text') for item in (popup.get('elements') or [])}
@@ -605,11 +654,7 @@ def build_plain(metars: list, threshold: str, popup: dict = None) -> str:
         parts.append(f'能见度最低 {int(min(vis))} 米')
     if 'RVR' in labels and rvr:
         parts.append(f'RVR最低 {int(min(rvr))} 米')
-    wx_names = []
-    for item in popup.get('weather') or []:
-        name = (item.get('text') or '').strip()
-        if name and name not in wx_names:
-            wx_names.append(name)
+    wx_names = _phenomenon_plain_names(metars, threshold)
     if wx_names:
         parts.append('天气现象：' + '、'.join(wx_names))
     if '云底高' in labels and clouds:

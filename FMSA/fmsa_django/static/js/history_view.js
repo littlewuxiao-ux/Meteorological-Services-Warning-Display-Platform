@@ -137,7 +137,7 @@
       if (last && last.airport === row.airport) last.rows.push(row);
       else groups.push({ airport: row.airport, rows: [row] });
     });
-    const COLS = 6;
+    const COLS = 5;
     let html = '<table class="hs-table"><thead><tr><th>机场</th><th>时段</th><th>影响运行的类型</th><th>告警类型</th><th>天气</th><th>原文</th><th>复制</th></tr></thead><tbody>';
     let rowIndex = 0;
     groups.forEach((group) => {
@@ -152,7 +152,9 @@
         html += `<td class="hs-badges">${popupBadgeHtml(row)}</td>`;
         html += `<td class="hs-plain">${esc(row.plain || '')}</td>`;
         html += `<td class="hs-action"><button type="button" class="hs-text-btn" data-raw="${id}">显示原文</button></td>`;
-        html += `<td class="hs-action"><button type="button" class="hs-text-btn" data-copy="${id}">复制</button></td>`;
+        if (index === 0) {
+          html += `<td class="hs-action hs-copy" rowspan="${group.rows.length}"><button type="button" class="hs-text-btn" data-copy="${esc(group.airport)}">复制</button></td>`;
+        }
         html += '</tr>';
         html += `<tr class="hs-raw" data-raw-for="${id}" hidden><td colspan="${COLS}">${rawReportsHtml(row)}</td></tr>`;
       });
@@ -180,8 +182,11 @@
       const raw = tr.nextElementSibling;
       if (raw && raw.classList.contains('hs-raw') && !raw.hidden) extra += 1;
     });
-    const td = dataRows[0].querySelector('td.hs-airport');
-    if (td) td.rowSpan = dataRows.length + extra;
+    const span = dataRows.length + extra;
+    const airportTd = dataRows[0].querySelector('td.hs-airport');
+    if (airportTd) airportTd.rowSpan = span;
+    const copyTd = dataRows[0].querySelector('td.hs-copy');
+    if (copyTd) copyTd.rowSpan = span;
   }
 
   function toggleRaw(id) {
@@ -209,10 +214,10 @@
     }
   }
 
-  function copyRow(id) {
-    const row = lastRows[Number(id)];
-    if (!row) return;
-    copyText(rowCopyText(row), '已复制本行天气');
+  function copyAirport(airport) {
+    const rows = lastRows.filter((row) => row.airport === airport);
+    if (!rows.length) return;
+    copyText(rows.map(rowCopyText).join('\n'), `已复制${airport}机场天气`);
   }
 
   function copyAll() {
@@ -297,7 +302,7 @@
           return;
         }
         const copyBtn = event.target.closest('[data-copy]');
-        if (copyBtn) copyRow(copyBtn.getAttribute('data-copy'));
+        if (copyBtn) copyAirport(copyBtn.getAttribute('data-copy'));
       });
     }
     const tz = document.getElementById('timezone-toggle-input');

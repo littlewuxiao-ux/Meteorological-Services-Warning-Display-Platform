@@ -4641,10 +4641,10 @@ body.is-superuser .settings-modal-header h3 {
   background-color: #c62828;
 }
 
-/* Tab bar:首行两大类 colspan 式,次行 11 子项对齐归属 */
+/* Tab bar:首行两大类 colspan 式,次行子项对齐归属 */
 .settings-tabs {
   display: grid;
-  grid-template-columns: repeat(11, minmax(0, 1fr));
+  grid-template-columns: repeat(12, minmax(0, 1fr));
   border-bottom: 2px solid #d8dee4;
   flex-shrink: 0;
   background: #f8f9fa;
@@ -4665,14 +4665,14 @@ body.is-superuser .settings-modal-header h3 {
   border-bottom: 1px solid #d8dee4;
 }
 .settings-group-title[data-group="personal"] {
-  grid-column: 1 / 8;
+  grid-column: 1 / 9;
   grid-row: 1;
   background: linear-gradient(180deg, #e3f2e9, #cfe7d8);
   color: #14532d;
   border-right: 1px solid #bcd8c6;
 }
 .settings-group-title[data-group="global"] {
-  grid-column: 8 / 12;
+  grid-column: 9 / 13;
   grid-row: 1;
   background: linear-gradient(180deg, #e8edf2, #d5dde5);
   color: #2c3e50;
