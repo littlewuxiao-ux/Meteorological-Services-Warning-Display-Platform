@@ -64,11 +64,6 @@
   padding: 0 6px;
 }
 
-.hs-range {
-  color: #3d4f63;
-  font-size: 12px;
-}
-
 .hs-query,
 .hs-save,
 .hs-add {
@@ -119,20 +114,27 @@
 }
 
 .hs-group {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 10px 12px;
   border: 1px solid #d5deea;
   border-radius: 4px;
-  padding: 8px 10px;
-  margin-bottom: 8px;
+  padding: 6px 10px;
+  margin-bottom: 6px;
   background: #f8fafc;
+  overflow-x: auto;
 }
 
 .hs-group-title {
   display: flex;
-  justify-content: space-between;
+  flex: 0 0 auto;
   align-items: center;
+  gap: 8px;
   font-size: 13px;
   font-weight: 700;
-  margin-bottom: 6px;
+  white-space: nowrap;
+  margin: 0;
 }
 
 .hs-remove {
@@ -145,16 +147,19 @@
 
 .hs-group-fields {
   display: flex;
-  flex-wrap: wrap;
+  flex: 1;
+  flex-wrap: nowrap;
+  align-items: center;
   gap: 8px 14px;
 }
 
-.hs-group-fields label {
-  display: flex;
+.hs-field {
+  display: inline-flex;
   align-items: center;
   gap: 6px;
   font-size: 12px;
   color: #243140;
+  white-space: nowrap;
 }
 
 .hs-group-fields input,
@@ -165,12 +170,12 @@
   padding: 0 6px;
 }
 
-.hs-airports {
-  min-width: 280px;
+.hs-field input[type="number"] {
+  width: 52px;
 }
 
 .hs-airports input {
-  width: 220px;
+  width: 168px;
 }
 
 .hs-table-wrap {
@@ -216,6 +221,14 @@
 .hs-badges,
 .hs-types {
   white-space: normal;
+}
+
+.hs-badges .popup-warning-badges {
+  align-items: flex-start;
+}
+
+.hs-badges .popup-warning-row {
+  justify-content: flex-start;
 }
 
 .hs-badges .warning-badge,

@@ -439,16 +439,106 @@ def actual_badges(metar, threshold: str) -> list:
     return [item for item in out if item.get('text')]
 
 
-def _dedupe_badges(items: list) -> list:
-    seen = set()
-    out = []
-    for item in items:
-        key = (item.get('text'), item.get('level'))
-        if key in seen:
-            continue
-        seen.add(key)
-        out.append(item)
-    return out
+def _better_level(current, candidate) -> str:
+    cand = str(candidate or '').upper()
+    if cand not in ALERT_LEVELS:
+        return current
+    if current is None or ALERT_RANK.get(cand, 0) > ALERT_RANK.get(str(current).upper(), 0):
+        return cand
+    return current
+
+
+def _field_warning(metar, field: str, element_path=None):
+    level = getattr(metar, field, None)
+    if str(level or '').upper() in ALERT_RANK:
+        return str(level).upper()
+    if not element_path:
+        return None
+    from utils.popup_utils import _as_dict
+    cursor = _as_dict(metar.metar_elements)
+    for key in element_path:
+        if not isinstance(cursor, dict):
+            return None
+        cursor = cursor.get(key)
+    if isinstance(cursor, dict):
+        alert = cursor.get('alert') or cursor.get('warning')
+        return str(alert).upper() if alert else None
+    return None
+
+
+def _weather_type_entries(metar) -> list:
+    from utils.popup_utils import _as_dict, weather_type_display_name
+    import json
+
+    raw = metar.metar_weather_type
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw) if raw else {}
+        except (TypeError, ValueError):
+            raw = {}
+    if not isinstance(raw, dict):
+        raw = {}
+    entries = []
+    for code, info in raw.items():
+        if isinstance(info, dict):
+            level = info.get('alert_level')
+            name = weather_type_display_name(code, info.get('cn_name'))
+        else:
+            level = info
+            name = weather_type_display_name(code)
+        entries.append({'code': str(code), 'name': name, 'level': str(level or '').upper()})
+    if entries:
+        return entries
+    from parsers.plain_language import weather_zh
+    warning = str(metar.metar_weather_warning or '').upper()
+    for token in _wx_tokens(metar):
+        entries.append({
+            'code': token,
+            'name': weather_zh(token) or token,
+            'level': warning,
+        })
+    return entries
+
+
+def popup_badges_for_metars(metars: list, threshold: str) -> dict:
+    """实况弹窗同款徽章：要素中文名 + 天气现象中文名，实心色块为该段最高等级。不含趋势。"""
+    element_specs = (
+        ('风速', 'metar_wind_warning', ('wind',)),
+        ('能见度', 'metar_visibility_warning', ('visibility',)),
+        ('RVR', 'metar_rvr_warning', None),
+        ('云底高', 'metar_cloud_warning', ('clouds',)),
+        ('气温', 'metar_temperature_warning', ('temperature',)),
+        ('风切变', 'metar_ws_warning', None),
+    )
+    elements = []
+    for label, field, path in element_specs:
+        best = None
+        for metar in metars:
+            level = _field_warning(metar, field, path)
+            if field == 'metar_rvr_warning':
+                from utils.popup_utils import _as_dict
+                for item in _as_dict(metar.metar_elements).get('rvr') or []:
+                    if isinstance(item, dict):
+                        level = _better_level(level, item.get('alert'))
+            best = _better_level(best, level)
+        if meets_level(best, threshold):
+            elements.append({'text': label, 'level': best})
+
+    weather = []
+    best_wx = {}
+    for metar in metars:
+        for item in _weather_type_entries(metar):
+            if not meets_level(item['level'], threshold):
+                continue
+            prev = best_wx.get(item['code'])
+            if prev is None or ALERT_RANK.get(item['level'], 0) > ALERT_RANK.get(prev['level'], 0):
+                best_wx[item['code']] = {'text': item['name'], 'level': item['level']}
+    weather.extend(best_wx.values())
+    return {
+        'elements': elements,
+        'weather': weather,
+        'all': elements + weather,
+    }
 
 
 def _wx_tokens(metar) -> list:
@@ -707,13 +797,15 @@ def query_history(preset: str, start_ms=None, end_ms=None, time_mode='current', 
             for name in TYPE_ORDER:
                 if any(name in item['types'] for item in segment):
                     types.append(name)
-            badges = _dedupe_badges([badge for item in segment for badge in item['badges']])
             metars = [item['metar'] for item in segment]
+            popup = popup_badges_for_metars(metars, params['alert_level'])
             rows.append({
                 'airport': airport,
                 'start_ms': segment[0]['obs'],
                 'end_ms': segment[-1]['obs'],
-                'badges': badges,
+                'badges': popup['all'],
+                'element_badges': popup['elements'],
+                'weather_badges': popup['weather'],
                 'types': types,
                 'plain': build_plain(metars),
             })
