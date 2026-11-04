@@ -21,6 +21,7 @@ CORE_KEY = 'core'
 # 可勾选模块。nwp 挂在主页下；雷达/卫星由地图视图带动，均不单独计入「至少勾选 1 个」。
 OPTIONAL_KEYS = (
     'home',
+    'history',
     'map',
     'plain',
     'trend',
@@ -60,6 +61,16 @@ MODULE_META = [
         'program': '无',
         'human': '无',
         'config': '无',
+    },
+    {
+        'key': 'history',
+        'group': 'view',
+        'name': '历史视图',
+        'locked': False,
+        'data': '查询时取航班 API 和本地实况；缺报时补拉历史报文。',
+        'program': '无',
+        'human': '规则组按用户保存在本视图',
+        'config': '无（规则在历史视图内）',
     },
     {
         'key': 'nwp',
@@ -297,6 +308,7 @@ def permissions_for_runtime() -> Dict[str, dict]:
 
     always = flag(True)
     home = flag(bool(on.get('home')))
+    history = flag(bool(on.get('history')))
     nwp = flag(bool(on.get('home')) and bool(on.get('nwp')))
     mapped = flag(bool(on.get('map')))
     plain = flag(bool(on.get('plain')))
@@ -314,6 +326,7 @@ def permissions_for_runtime() -> Dict[str, dict]:
         'settings_btn': always,
         'metar_popup': popup,
         'view_home': home,
+        'view_history': history,
         'view_map': mapped,
         'map_radar': mapped,
         'map_radar_nav': mapped,

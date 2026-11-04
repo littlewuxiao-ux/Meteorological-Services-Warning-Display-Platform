@@ -31,6 +31,7 @@ from .radar_views import (
 )
 from .map_style_views import map_style_config
 from .trend_views import trend_alert_config, trend_alert_results, trend_alert_handle
+from .history_views import history_stats_config, history_stats_query, history_stats_range
 
 app_name = 'api'
 
@@ -139,4 +140,9 @@ urlpatterns = [
     path('trend-alert/config/', trend_alert_config, name='trend_alert_config'),
     path('trend-alert/results/', trend_alert_results, name='trend_alert_results'),
     path('trend-alert/handle/', trend_alert_handle, name='trend_alert_handle'),
+
+    # 历史天气统计
+    path('history-stats/config/', history_stats_config, name='history_stats_config'),
+    path('history-stats/range/', history_stats_range, name='history_stats_range'),
+    path('history-stats/query/', history_stats_query, name='history_stats_query'),
 ] 

@@ -103,7 +103,7 @@ _wx_cache: dict = {}
 _TX_TN_RE = re.compile(r'\bT(X|N)(M?\d{2})/(\d{4})Z\b', re.IGNORECASE)
 _TREND_RE = re.compile(r'\b(?:TEMPO|BECMG|INTER)\b.*?(?=\sRMK\b|$)', re.IGNORECASE | re.DOTALL)
 _METAR_WS_RE = re.compile(
-    r'\bWS(?:\s+ALL)?(?:\s+RWY\d*[LCR]?)?(?:\s+R?\d{2}[LCR]?)?',
+    r'\bWS\b(?:\s+ALL)?(?:\s+RWY\d*[LCR]?)?(?:\s+R?\d{2}[LCR]?)?',
     re.IGNORECASE,
 )
 

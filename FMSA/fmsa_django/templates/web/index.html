@@ -4,6 +4,7 @@
 {% block extra_css %}
 <link rel="stylesheet" href="{% static 'css/views.css' %}">
 <link rel="stylesheet" href="{% static 'css/trend.css' %}">
+<link rel="stylesheet" href="{% static 'css/history.css' %}">
 {% endblock %}
 
 {% block content %}
@@ -289,6 +290,39 @@
 <!-- 中文（明语）模式面板：替换机场行 / 实况信息标题 / 时间轴及以下内容，功能区不变 -->
 <section id="plain-panel" style="display:none;">
   <div class="plain-loading">正在加载数据...</div>
+</section>
+
+<section id="history-panel" style="display:none;">
+  <div class="hs-toolbar">
+    <div class="hs-title">历史</div>
+    <div class="hs-main">
+      <div class="hs-presets">
+        <label><input type="radio" name="history-preset" value="day" checked>白班</label>
+        <label><input type="radio" name="history-preset" value="night">夜班</label>
+        <label><input type="radio" name="history-preset" value="daynight">昼夜</label>
+        <label><input type="radio" name="history-preset" value="custom">自定义</label>
+      </div>
+      <div class="hs-custom" id="history-custom-range" hidden>
+        <input type="datetime-local" id="history-start">
+        <span>至</span>
+        <input type="datetime-local" id="history-end">
+      </div>
+      <span class="hs-range" id="history-range-label"></span>
+      <button type="button" class="hs-query" id="history-query">确定</button>
+      <span class="hs-status" id="history-status"></span>
+    </div>
+  </div>
+  <div class="hs-rules">
+    <div class="hs-rules-head">
+      <span>规则组</span>
+      <button type="button" class="hs-add" id="history-add-group">新增特殊组</button>
+      <button type="button" class="hs-save" id="history-save">保存规则</button>
+    </div>
+    <div id="history-groups"></div>
+  </div>
+  <div class="hs-table-wrap" id="history-table-wrap">
+    <div class="hs-empty">选择时段后点击确定查询</div>
+  </div>
 </section>
 
 <section id="trend-panel" style="display:none;">

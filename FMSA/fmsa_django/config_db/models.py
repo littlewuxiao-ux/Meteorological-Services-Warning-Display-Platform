@@ -331,3 +331,20 @@ class TrendAlertConfig(models.Model):
 
     def __str__(self):
         return f'TrendAlertConfig#{self.pk}'
+
+
+class HistoryStatsConfig(models.Model):
+    """历史天气统计规则。每个用户一行 JSON，没改过则读 default。"""
+
+    user_code = models.CharField(max_length=12, unique=True, verbose_name='用户代码')
+    config = models.JSONField(default=dict, verbose_name='配置JSON')
+    updated_at = models.DateTimeField(auto_now=True, verbose_name='更新时间')
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='创建时间')
+
+    class Meta:
+        db_table = 'history_stats_config'
+        verbose_name = '历史天气统计配置'
+        verbose_name_plural = '历史天气统计配置'
+
+    def __str__(self):
+        return f'HistoryStatsConfig#{self.pk}'

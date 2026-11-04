@@ -11,6 +11,7 @@
 body.has-view-nav .main-title-row,
 body.has-view-nav .content-section,
 body.has-view-nav #plain-panel,
+body.has-view-nav #history-panel,
 body.has-view-nav #trend-panel,
 body.has-view-nav #import-alert-panel {
   margin-left: var(--view-nav-width);

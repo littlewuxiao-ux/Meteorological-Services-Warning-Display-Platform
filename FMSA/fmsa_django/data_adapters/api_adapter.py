@@ -118,7 +118,7 @@ class APIDataAdapter(BaseDataAdapter):
             self.headers['token'] = token
             logger.info("Token已更新")
     
-    def get_flight_data(self) -> pd.DataFrame:
+    def get_flight_data(self, start_ms: int = None, end_ms: int = None) -> pd.DataFrame:
         """
         获取航班数据
         
@@ -126,14 +126,15 @@ class APIDataAdapter(BaseDataAdapter):
             DataFrame: 航班数据
         """
         try:
-            # 计算时间范围（当前时间前24小时到后48小时）
-            now = datetime.now()
-            start_time = now - timedelta(hours=24)
-            end_time = now + timedelta(hours=48)
-            
-            # 转换为毫秒级时间戳
-            start_timestamp = int(start_time.timestamp() * 1000)
-            end_timestamp = int(end_time.timestamp() * 1000)
+            if start_ms is None or end_ms is None:
+                now = datetime.now()
+                start_time = now - timedelta(hours=24)
+                end_time = now + timedelta(hours=48)
+                start_timestamp = int(start_time.timestamp() * 1000)
+                end_timestamp = int(end_time.timestamp() * 1000)
+            else:
+                start_timestamp = int(start_ms)
+                end_timestamp = int(end_ms)
             
             # 准备请求数据（纳入 ATA 供 events）
             request_data = {
@@ -143,7 +144,7 @@ class APIDataAdapter(BaseDataAdapter):
                 "excludeHaveAta": False
             }
             
-            logger.info(f"请求航班数据: {start_time} 到 {end_time}")
+            logger.info(f"请求航班数据: {start_timestamp} 到 {end_timestamp}")
             
             # 发送请求
             response_data = self._make_post_request(self.endpoints['flight'], request_data)

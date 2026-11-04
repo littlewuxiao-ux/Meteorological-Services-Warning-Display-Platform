@@ -182,6 +182,9 @@ function refreshAllTimezoneDisplays() {
     if (typeof refreshPopupHistoryTimezone === 'function') {
         refreshPopupHistoryTimezone();
     }
+    if (typeof refreshHistoryTimezone === 'function') {
+        refreshHistoryTimezone();
+    }
 }
 
 // 初始化时间模式开关

@@ -10,6 +10,18 @@
   const VIEWS = [
     { key: 'home', module: 'view_home', label: '主页', icon: '☰', script: null },
     {
+      key: 'history',
+      module: 'view_history',
+      label: '历史',
+      icon:
+        '<svg viewBox="0 0 1024 1024" width="18" height="18" aria-hidden="true">' +
+        '<path fill="currentColor" d="M512 96C282.624 96 96 282.624 96 512s186.624 416 416 416 416-186.624 416-416S741.376 96 512 96z m0 768A352 352 0 1 1 864 512 352.384 352.384 0 0 1 512 864z"/>' +
+        '<path fill="currentColor" d="M544 320h-64v224l160 96 32-52.48-128-76.8z"/>' +
+        '</svg>',
+      css: ['css/history.css'],
+      script: 'js/history_view.js',
+    },
+    {
       key: 'map',
       module: 'view_map',
       label: '地图',
@@ -332,6 +344,11 @@
     if (panel) panel.style.display = visible ? 'flex' : 'none';
   }
 
+  function setHistoryPanelVisible(visible) {
+    const panel = document.getElementById('history-panel');
+    if (panel) panel.style.display = visible ? 'flex' : 'none';
+  }
+
   // ── 切换 ───────────────────────────────────────────────
 
   async function switchView(key, options) {
@@ -368,6 +385,9 @@
       if (_current === 'import' && typeof stopImportView === 'function') {
         stopImportView();
       }
+      if (_current === 'history' && typeof stopHistoryView === 'function') {
+        stopHistoryView();
+      }
 
       _current = key;
       document.body.classList.toggle('plain-mode', key === 'plain');
@@ -376,6 +396,7 @@
         setListAreaVisible(false);
         setTrendPanelVisible(false);
         setImportPanelVisible(false);
+        setHistoryPanelVisible(false);
         setPlainPanelVisible(true);
         window._viewMode = 'plain';
         if (typeof hideFlightMarksLegend === 'function') hideFlightMarksLegend();
@@ -388,6 +409,7 @@
         setPlainPanelVisible(false);
         setTrendPanelVisible(false);
         setImportPanelVisible(false);
+        setHistoryPanelVisible(false);
         setListAreaVisible(true);
         if (typeof hideFlightMarksLegend === 'function') hideFlightMarksLegend();
         if (typeof removeMarksPastHandle === 'function') {
@@ -404,6 +426,7 @@
         setPlainPanelVisible(false);
         setListAreaVisible(false);
         setImportPanelVisible(false);
+        setHistoryPanelVisible(false);
         setTrendPanelVisible(true);
         window._viewMode = 'trend';
         if (typeof hideFlightMarksLegend === 'function') hideFlightMarksLegend();
@@ -416,6 +439,7 @@
         setPlainPanelVisible(false);
         setTrendPanelVisible(false);
         setListAreaVisible(false);
+        setHistoryPanelVisible(false);
         setImportPanelVisible(true);
         window._viewMode = 'import';
         if (typeof hideFlightMarksLegend === 'function') hideFlightMarksLegend();
@@ -424,10 +448,24 @@
         }
         await ensureViewAssets(view);
         if (typeof startImportView === 'function') startImportView();
+      } else if (key === 'history') {
+        setPlainPanelVisible(false);
+        setTrendPanelVisible(false);
+        setImportPanelVisible(false);
+        setListAreaVisible(false);
+        setHistoryPanelVisible(true);
+        window._viewMode = 'history';
+        if (typeof hideFlightMarksLegend === 'function') hideFlightMarksLegend();
+        if (typeof removeMarksPastHandle === 'function') {
+          removeMarksPastHandle('home');
+        }
+        await ensureViewAssets(view);
+        if (typeof startHistoryView === 'function') startHistoryView();
       } else {
         setPlainPanelVisible(false);
         setTrendPanelVisible(false);
         setImportPanelVisible(false);
+        setHistoryPanelVisible(false);
         setListAreaVisible(true);
         window._viewMode = 'list';
         if (typeof ensureMarksPastHandle === 'function') {
@@ -474,6 +512,7 @@
       setPlainPanelVisible(false);
       setTrendPanelVisible(false);
       setImportPanelVisible(false);
+      setHistoryPanelVisible(false);
       showBlocked();
       window.__viewNavReady = true;
       return;
