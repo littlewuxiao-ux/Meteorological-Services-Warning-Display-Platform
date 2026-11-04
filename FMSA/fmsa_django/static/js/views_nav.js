@@ -10,18 +10,6 @@
   const VIEWS = [
     { key: 'home', module: 'view_home', label: '主页', icon: '☰', script: null },
     {
-      key: 'history',
-      module: 'view_history',
-      label: '历史',
-      icon:
-        '<svg viewBox="0 0 1024 1024" width="18" height="18" aria-hidden="true">' +
-        '<path fill="currentColor" d="M512 96C282.624 96 96 282.624 96 512s186.624 416 416 416 416-186.624 416-416S741.376 96 512 96z m0 768A352 352 0 1 1 864 512 352.384 352.384 0 0 1 512 864z"/>' +
-        '<path fill="currentColor" d="M544 320h-64v224l160 96 32-52.48-128-76.8z"/>' +
-        '</svg>',
-      css: ['css/history.css'],
-      script: 'js/history_view.js',
-    },
-    {
       key: 'map',
       module: 'view_map',
       label: '地图',
@@ -58,6 +46,18 @@
         '<path fill="currentColor" d="M453.23 264.88h118.1v60.49h-118.1zM453.23 146.63h118.1v60.49h-118.1zM479.21 664.24c18.19 20.4 47.65 20.4 65.78 0l131.55-147.75c18.07-20.28 18.07-53.15 0.18-73.55h-105.4v-60.5H453.23v60.49H347.48c-17.89 20.4-17.89 53.21 0.18 73.55z"/>' +
         '</svg>',
       script: null,
+    },
+    {
+      key: 'history',
+      module: 'view_history',
+      label: '历史',
+      icon:
+        '<svg viewBox="0 0 1024 1024" width="18" height="18" aria-hidden="true">' +
+        '<path fill="currentColor" d="M512 96C282.624 96 96 282.624 96 512s186.624 416 416 416 416-186.624 416-416S741.376 96 512 96z m0 768A352 352 0 1 1 864 512 352.384 352.384 0 0 1 512 864z"/>' +
+        '<path fill="currentColor" d="M544 320h-64v224l160 96 32-52.48-128-76.8z"/>' +
+        '</svg>',
+      css: ['css/history.css'],
+      script: 'js/history_view.js',
     },
   ];
   const STORAGE_KEY = 'fmsa_active_view';

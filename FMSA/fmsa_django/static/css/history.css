@@ -98,9 +98,16 @@
 }
 
 .hs-rules {
-  padding: 10px 14px 4px;
-  background: #fff;
+  padding: 10px 14px;
+  background: #ecf0f1;
   border-bottom: 1px solid #d5deea;
+}
+
+.hs-rules-box {
+  border: 1px solid #d5deea;
+  border-radius: 6px;
+  background: #fff;
+  padding: 8px 10px 6px;
 }
 
 .hs-rules-head {
@@ -111,6 +118,10 @@
   font-size: 13px;
   font-weight: 700;
   color: #1b2838;
+}
+
+.hs-rules-box .hs-group:last-child {
+  margin-bottom: 0;
 }
 
 .hs-group {
@@ -207,7 +218,8 @@
 
 .hs-table th {
   background: #eef2f6;
-  text-align: left;
+  text-align: center;
+  vertical-align: middle;
 }
 
 .hs-airport {
@@ -254,4 +266,63 @@
 .hs-plain {
   line-height: 1.45;
   color: #243140;
+}
+
+.hs-action {
+  width: 88px;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.hs-text-btn {
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid #1b2838;
+  border-radius: 4px;
+  background: #fff;
+  color: #1b2838;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.hs-text-btn:hover {
+  background: #1b2838;
+  color: #fff;
+}
+
+.hs-raw td {
+  background: #f7f9fb;
+}
+
+.hs-raw-item {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 6px 4px;
+  border-bottom: 1px dashed #d5deea;
+}
+
+.hs-raw-item:last-child {
+  border-bottom: none;
+}
+
+.hs-raw-time {
+  flex: 0 0 150px;
+  color: #3d4f63;
+  font-size: 12px;
+}
+
+.hs-raw-text {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-all;
+  font-family: Consolas, 'Courier New', monospace;
+  font-size: 12px;
+  color: #1b2838;
+}
+
+.hs-raw-empty {
+  color: #66788a;
+  font-size: 12px;
 }

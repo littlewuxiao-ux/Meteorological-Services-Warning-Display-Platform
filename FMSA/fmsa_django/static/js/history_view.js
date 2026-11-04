@@ -244,10 +244,13 @@
       if (last && last.airport === row.airport) last.rows.push(row);
       else groups.push({ airport: row.airport, rows: [row] });
     });
-    let html = '<table class="hs-table"><thead><tr><th>机场</th><th>天气时段</th><th>徽章</th><th>影响运行</th><th>明语</th></tr></thead><tbody>';
+    const COLS = 6;
+    let html = '<table class="hs-table"><thead><tr><th>机场</th><th>时段</th><th>告警类型</th><th>影响运行的类型</th><th>天气</th><th>原文</th><th>复制</th></tr></thead><tbody>';
+    let rowIndex = 0;
     groups.forEach((group) => {
       group.rows.forEach((row, index) => {
-        html += '<tr>';
+        const id = rowIndex++;
+        html += `<tr class="hs-data" data-row="${id}" data-airport="${esc(group.airport)}">`;
         if (index === 0) {
           html += `<td class="hs-airport" rowspan="${group.rows.length}">${esc(group.airport)}</td>`;
         }
@@ -255,11 +258,70 @@
         html += `<td class="hs-badges">${popupBadgeHtml(row)}</td>`;
         html += `<td class="hs-types">${(row.types || []).map(typeHtml).join('')}</td>`;
         html += `<td class="hs-plain">${esc(row.plain || '')}</td>`;
+        html += `<td class="hs-action"><button type="button" class="hs-text-btn" data-raw="${id}">显示原文</button></td>`;
+        html += `<td class="hs-action"><button type="button" class="hs-text-btn" data-copy="${id}">复制</button></td>`;
         html += '</tr>';
+        html += `<tr class="hs-raw" data-raw-for="${id}" hidden><td colspan="${COLS}">${rawReportsHtml(row)}</td></tr>`;
       });
     });
     html += '</tbody></table>';
     wrap.innerHTML = html;
+  }
+
+  function rawReportsHtml(row) {
+    const reports = row.reports || [];
+    if (!reports.length) return '<div class="hs-raw-empty">该时段没有报文</div>';
+    return reports.map((item) => {
+      const when = formatRangeLabel(item.obs_ms, item.obs_ms).split(' → ')[0] || '';
+      return `<div class="hs-raw-item"><div class="hs-raw-time">${esc(when)}</div><pre class="hs-raw-text">${esc(item.content || '')}</pre></div>`;
+    }).join('');
+  }
+
+  function syncAirportRowspan(airport) {
+    const wrap = document.getElementById('history-table-wrap');
+    if (!wrap) return;
+    const dataRows = [...wrap.querySelectorAll(`tr.hs-data[data-airport="${airport}"]`)];
+    if (!dataRows.length) return;
+    let extra = 0;
+    dataRows.forEach((tr) => {
+      const raw = tr.nextElementSibling;
+      if (raw && raw.classList.contains('hs-raw') && !raw.hidden) extra += 1;
+    });
+    const td = dataRows[0].querySelector('td.hs-airport');
+    if (td) td.rowSpan = dataRows.length + extra;
+  }
+
+  function toggleRaw(id) {
+    const raw = document.querySelector(`tr.hs-raw[data-raw-for="${id}"]`);
+    const data = document.querySelector(`tr.hs-data[data-row="${id}"]`);
+    const btn = data ? data.querySelector('[data-raw]') : null;
+    if (!raw || !data) return;
+    raw.hidden = !raw.hidden;
+    if (btn) btn.textContent = raw.hidden ? '显示原文' : '收起原文';
+    syncAirportRowspan(data.getAttribute('data-airport'));
+  }
+
+  function copyRow(id) {
+    const row = lastRows[Number(id)];
+    if (!row) return;
+    const span = formatRangeLabel(row.start_ms, row.end_ms).replace(' → ', '至');
+    const weather = row.plain || '无满足告警条件的天气';
+    const text = `${row.airport} ${span}，${weather}`;
+    const done = () => setStatus('已复制本行天气');
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done).catch(() => fallbackCopy(text, done));
+    } else {
+      fallbackCopy(text, done);
+    }
+  }
+
+  function fallbackCopy(text, done) {
+    const box = document.createElement('textarea');
+    box.value = text;
+    document.body.appendChild(box);
+    box.select();
+    try { document.execCommand('copy'); done(); } catch (err) { setStatus('复制失败', true); }
+    box.remove();
   }
 
   async function runQuery() {
@@ -340,6 +402,18 @@
     }
     const queryBtn = document.getElementById('history-query');
     if (queryBtn) queryBtn.addEventListener('click', runQuery);
+    const tableWrap = document.getElementById('history-table-wrap');
+    if (tableWrap) {
+      tableWrap.addEventListener('click', (event) => {
+        const rawBtn = event.target.closest('[data-raw]');
+        if (rawBtn) {
+          toggleRaw(rawBtn.getAttribute('data-raw'));
+          return;
+        }
+        const copyBtn = event.target.closest('[data-copy]');
+        if (copyBtn) copyRow(copyBtn.getAttribute('data-copy'));
+      });
+    }
     const tz = document.getElementById('timezone-toggle-input');
     if (tz) tz.addEventListener('change', () => {
       if (panel.style.display !== 'none' && lastRows.length) renderRows(lastRows);

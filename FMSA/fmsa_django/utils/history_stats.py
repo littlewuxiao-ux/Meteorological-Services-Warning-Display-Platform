@@ -466,8 +466,33 @@ def _field_warning(metar, field: str, element_path=None):
     return None
 
 
-def _weather_type_entries(metar) -> list:
-    from utils.popup_utils import _as_dict, weather_type_display_name
+def _weather_type_cn_map() -> dict:
+    from config_db.models import WeatherTypeInfo
+
+    mapping = {}
+    for row in WeatherTypeInfo.objects.all():
+        code = str(row.weather_type_code or '').strip()
+        name = str(row.description_cn or '').strip()
+        if code and name:
+            mapping[code] = name
+            mapping[code.upper()] = name
+    return mapping
+
+
+def _weather_type_label(code: str, given_name=None, type_map=None) -> str:
+    from utils.popup_utils import weather_type_display_name
+
+    text = str(given_name or '').strip()
+    if text and text not in ALERT_LEVELS and text != 'N':
+        return text
+    key = str(code or '').strip()
+    mapped = (type_map or {}).get(key) or (type_map or {}).get(key.upper())
+    if mapped:
+        return mapped
+    return weather_type_display_name(key, mapped)
+
+
+def _weather_type_entries(metar, type_map=None) -> list:
     import json
 
     raw = metar.metar_weather_type
@@ -478,14 +503,16 @@ def _weather_type_entries(metar) -> list:
             raw = {}
     if not isinstance(raw, dict):
         raw = {}
+    if type_map is None:
+        type_map = _weather_type_cn_map()
     entries = []
     for code, info in raw.items():
         if isinstance(info, dict):
             level = info.get('alert_level')
-            name = weather_type_display_name(code, info.get('cn_name'))
+            name = _weather_type_label(code, info.get('cn_name'), type_map)
         else:
             level = info
-            name = weather_type_display_name(code)
+            name = _weather_type_label(code, None, type_map)
         entries.append({'code': str(code), 'name': name, 'level': str(level or '').upper()})
     if entries:
         return entries
@@ -526,8 +553,9 @@ def popup_badges_for_metars(metars: list, threshold: str) -> dict:
 
     weather = []
     best_wx = {}
+    type_map = _weather_type_cn_map()
     for metar in metars:
-        for item in _weather_type_entries(metar):
+        for item in _weather_type_entries(metar, type_map):
             if not meets_level(item['level'], threshold):
                 continue
             prev = best_wx.get(item['code'])
@@ -548,8 +576,9 @@ def _wx_tokens(metar) -> list:
     return [part.strip() for part in re.split(r'[\s,]+', text) if part.strip()]
 
 
-def build_plain(metars: list) -> str:
-    from parsers.plain_language import weather_zh
+def build_plain(metars: list, threshold: str, popup: dict = None) -> str:
+    popup = popup or popup_badges_for_metars(metars, threshold)
+    labels = {item.get('text') for item in (popup.get('elements') or [])}
 
     speeds = [m.metar_wind_speed_val for m in metars if m.metar_wind_speed_val is not None]
     gusts = [m.metar_gust_val for m in metars if m.metar_gust_val is not None]
@@ -558,47 +587,45 @@ def build_plain(metars: list) -> str:
     clouds = [m.metar_min_cloud_height for m in metars if m.metar_min_cloud_height is not None]
     temps = [m.metar_temp_val for m in metars if m.metar_temp_val is not None]
     shears = []
-    wx = []
     for metar in metars:
-        for token in _wx_tokens(metar):
-            if token not in wx:
-                wx.append(token)
         text = str(metar.metar_ws_dsc or '').strip()
         if text and text.lower() != 'none' and text not in shears:
             shears.append(text)
 
     parts = []
-    wind_bits = []
-    if speeds:
-        wind_bits.append(f'平均风速最大 {int(round(max(speeds)))} 米/秒')
-    if gusts:
-        wind_bits.append(f'阵风最大 {int(round(max(gusts)))} 米/秒')
-    if wind_bits:
-        parts.append('，'.join(wind_bits))
-    if vis:
+    if '风速' in labels:
+        wind_bits = []
+        if speeds:
+            wind_bits.append(f'平均风速最大 {int(round(max(speeds)))} 米/秒')
+        if gusts:
+            wind_bits.append(f'阵风最大 {int(round(max(gusts)))} 米/秒')
+        if wind_bits:
+            parts.append('，'.join(wind_bits))
+    if '能见度' in labels and vis:
         parts.append(f'能见度最低 {int(min(vis))} 米')
-    if rvr:
+    if 'RVR' in labels and rvr:
         parts.append(f'RVR最低 {int(min(rvr))} 米')
-    if wx:
-        names = []
-        for token in wx:
-            name = weather_zh(token) or token
-            if name not in names:
-                names.append(name)
-        parts.append('天气现象：' + '、'.join(names))
-    if clouds:
+    wx_names = []
+    for item in popup.get('weather') or []:
+        name = (item.get('text') or '').strip()
+        if name and name not in wx_names:
+            wx_names.append(name)
+    if wx_names:
+        parts.append('天气现象：' + '、'.join(wx_names))
+    if '云底高' in labels and clouds:
         feet = int(min(clouds)) * 100
         parts.append(f'云底高最低 {feet} 英尺')
-    hot = [t for t in temps if t >= 0]
-    cold = [t for t in temps if t < 0]
-    temp_bits = []
-    if hot:
-        temp_bits.append(f'最高温度 {int(round(max(hot)))}℃')
-    if cold:
-        temp_bits.append(f'最低温度 {int(round(min(cold)))}℃')
-    if temp_bits:
-        parts.append('，'.join(temp_bits))
-    if shears:
+    if '气温' in labels:
+        hot = [t for t in temps if t >= 0]
+        cold = [t for t in temps if t < 0]
+        temp_bits = []
+        if hot:
+            temp_bits.append(f'最高温度 {int(round(max(hot)))}℃')
+        if cold:
+            temp_bits.append(f'最低温度 {int(round(min(cold)))}℃')
+        if temp_bits:
+            parts.append('，'.join(temp_bits))
+    if '风切变' in labels and shears:
         parts.append('风切变：' + '、'.join(shears))
     return '；'.join(parts)
 
@@ -798,16 +825,28 @@ def query_history(preset: str, start_ms=None, end_ms=None, time_mode='current', 
                 if any(name in item['types'] for item in segment):
                     types.append(name)
             metars = [item['metar'] for item in segment]
+            start_ms = segment[0]['obs']
+            end_ms = segment[-1]['obs']
             popup = popup_badges_for_metars(metars, params['alert_level'])
+            reports = []
+            for metar in grouped.get(airport) or []:
+                obs = metar.metar_observation_time
+                if obs is None or obs < start_ms or obs > end_ms:
+                    continue
+                reports.append({
+                    'obs_ms': obs,
+                    'content': metar.metar_content or '',
+                })
             rows.append({
                 'airport': airport,
-                'start_ms': segment[0]['obs'],
-                'end_ms': segment[-1]['obs'],
+                'start_ms': start_ms,
+                'end_ms': end_ms,
                 'badges': popup['all'],
                 'element_badges': popup['elements'],
                 'weather_badges': popup['weather'],
                 'types': types,
-                'plain': build_plain(metars),
+                'plain': build_plain(metars, params['alert_level'], popup),
+                'reports': reports,
             })
 
     return {
