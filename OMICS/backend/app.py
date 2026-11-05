@@ -2019,7 +2019,7 @@ def export_publish_api():
                         return None, black_font
                     if '\u96f7' in v or '\u96f9' in v:
                         return ts_fill, white_font
-                    if any(k in v for k in ('\u5927\u96e8', '\u66b4\u96e8', '\u5f3a\u964d\u6c34')):
+                    if any(k in v for k in ('\u4e2d\u96e8', '\u5927\u96e8', '\u66b4\u96e8', '\u4e2d\u9635\u96e8', '\u5f3a\u9635\u96e8', '\u5927\u9635\u96e8', '\u5f3a\u964d\u6c34')):
                         return heavy_rain_fill, white_font
                     if '\u96e8' in v:
                         return rain_fill, white_font
@@ -2037,7 +2037,7 @@ def export_publish_api():
                     ('\u96f7\u66b4', ts_fill, white_font, lambda v: '\u96f7' in v or '\u96f9' in v),
                     ('\u5927\u98ce', wind_fill, white_font, lambda v: v.startswith('W') or '\u5927\u98ce' in v or '\u98ce' in v),
                     ('\u964d\u96ea', snow_fill, white_font, lambda v: '\u96ea' in v or '\u51bb\u96e8' in v or '\u51b0' in v),
-                    ('\u5f3a\u964d\u6c34', heavy_rain_fill, white_font, lambda v: any(k in v for k in ('\u5927\u96e8', '\u66b4\u96e8', '\u5f3a\u964d\u6c34'))),
+                    ('\u5f3a\u964d\u6c34', heavy_rain_fill, white_font, lambda v: any(k in v for k in ('\u4e2d\u96e8', '\u5927\u96e8', '\u66b4\u96e8', '\u4e2d\u9635\u96e8', '\u5f3a\u9635\u96e8', '\u5927\u9635\u96e8', '\u5f3a\u964d\u6c34'))),
                     ('\u4f4e\u80fd\u89c1\u5ea6', vis_fill, black_font, lambda v: v.isdigit() or '\u4f4e\u80fd\u89c1\u5ea6' in v or '\u96fe' in v or '\u973e' in v or '\u6c99' in v or '\u5c18' in v),
                     ('\u4f4e\u4e91', cloud_fill, white_font, lambda v: '\u4f4e\u4e91' in v),
                     ('\u5176\u4ed6', other_fill, black_font, lambda v: bool(v) and fill_for(v)[0] == other_fill),

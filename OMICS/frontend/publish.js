@@ -1198,16 +1198,24 @@ function buildPublishExportText(timezone = 'auto') {
             const amount = `${lo === hi ? weatherIntensityName[lo - 1] : `${weatherIntensityName[lo - 1]}到${weatherIntensityName[hi - 1]}`}${shower ? '阵雨' : '雨'}`;
             return `${amount}${thunder ? '，伴雷暴' : ''}`;
         };
-        const frontPhenomena = Array.from(new Set(notes.flatMap(note => String(note || '').match(/冻雾|轻雾|高温/g) || [])));
+        const fogNoteLabels = Array.from(new Set(notes.flatMap(note => {
+            const value = String(note || '');
+            if (/冻雾/.test(value)) return ['冻雾'];
+            if (/轻雾/.test(value)) return ['轻雾'];
+            return /有雾|雾/.test(value) ? ['有雾'] : [];
+        })));
+        const frontPhenomena = Array.from(new Set([...fogNoteLabels, ...notes.flatMap(note => String(note || '').match(/高温/g) || [])]));
         const scopedWeatherForHour = index => rows.flatMap((row, rowIndex) => {
-            const weather = weatherForHour([formatCellValue(row?.[index])]).filter(value => !frontPhenomena.includes(value));
+            const weather = weatherForHour([formatCellValue(row?.[index])]).filter(value =>
+                !frontPhenomena.includes(value) && !(fogNoteLabels.length && /雾/.test(value)));
             const note = String(notes[rowIndex] || '');
-            const scope = note.match(/机场终端区|终端区\/本场|终端区|本场/)?.[0] || '';
+            const scope = note.match(/机场\/终端区|机场终端区|终端区\/本场|终端区|本场/)?.[0] || '';
+            const scopeLabel = scope;
             const accompany = /伴(?:短时)?雷暴/.test(note);
             return weather.map(value => {
                 const precipitation = /雨|雪|冰雹|霰|雷暴/.test(value);
                 const phrase = accompany && /雨/.test(value) && !/雷雨/.test(value) ? `${value}，伴短时雷暴` : value;
-                return scope && precipitation ? `${scope}有${phrase}` : phrase;
+                return scopeLabel && precipitation ? `${scopeLabel}有${phrase}` : phrase;
             });
         });
         const weatherPhrases = hourlyValues.map((values, index) => {
@@ -1233,7 +1241,7 @@ function buildPublishExportText(timezone = 'auto') {
         flushWeather(weatherPhrases.length - 1);
         const fogRows = rows.map((row, rowIndex) => ({
             row,
-            enabled: /冻雾|轻雾/.test(String(notes[rowIndex] || ''))
+            enabled: /冻雾|轻雾|雾/.test(String(notes[rowIndex] || ''))
                 || row.some(cell => /冻雾|轻雾|雾/.test(String(cell?.text || '')))
         }));
         const fogValues = hourlyValues.map((values, index) => values.some(value => /冻雾|轻雾|雾/.test(value))
@@ -1283,7 +1291,7 @@ function buildPublishExportText(timezone = 'auto') {
                     const dirs = Array.from(new Set(windItems.map(item => item.dir)));
                     const min = Math.min(...windItems.map(item => item.min));
                     const max = Math.max(...windItems.map(item => item.max));
-                    mergedWindRanges.push(`${formatRange(windStart, index - 1)}${dirs.join('转')}${min === max ? min : `${min}-${max}`}米/秒`);
+                    mergedWindRanges.push(`${formatRange(windStart, index - 1)}有${dirs.join('转')}${min === max ? min : `${min}-${max}`}米/秒`);
                 }
                 windStart = null; windItems = [];
             } else {
@@ -1295,7 +1303,7 @@ function buildPublishExportText(timezone = 'auto') {
             const dirs = Array.from(new Set(windItems.map(item => item.dir)));
             const min = Math.min(...windItems.map(item => item.min));
             const max = Math.max(...windItems.map(item => item.max));
-            mergedWindRanges.push(`${formatRange(windStart, windValues.length - 1)}${dirs.join('转')}${min === max ? min : `${min}-${max}`}米/秒`);
+            mergedWindRanges.push(`${formatRange(windStart, windValues.length - 1)}有${dirs.join('转')}${min === max ? min : `${min}-${max}`}米/秒`);
         }
         const temperatureValues = hourlyValues.map((_, index) => {
             const values = rows.map(row => getCellTemperature(row?.[index])).filter(value => value !== null);
@@ -1320,17 +1328,26 @@ function buildPublishExportText(timezone = 'auto') {
             mergedTemperatureRanges.push(`${formatRange(tempStart, temperatureValues.length - 1)}温度${min === max ? min : `${min}-${max}`}℃`);
         }
         const windNotes = [];
+        const gustNotes = [];
         const remainingNotes = notes.map(note => {
             let value = String(note || '').trim();
+            value = value.replace(/(?:最大)?阵风\s*(\d+(?:\.\d+)?)\s*(?:米\/秒|m\/s)?/gi,
+                (_, speed) => { gustNotes.push(`最大阵风${speed}米/秒`); return ''; });
             value = value.replace(/((?:[东南西北]{2}偏[东南西北]|偏?[东南西北]{1,3})风)\s*[，,]?\s*(?:风速\s*)?(\d+(?:\.\d+)?)(?:\s*[-至]\s*(\d+(?:\.\d+)?))?\s*(?:米\/秒|m\/s)/g,
                 (_, direction, min, max) => { windNotes.push(`${direction}${min}${max ? `-${max}` : ''}米/秒`); return ''; });
-            return value.replace(/冻雾|轻雾|高温|机场终端区|终端区\/本场|终端区|本场|伴(?:短时)?雷暴|适航/g, '')
+            return value.replace(/冻雾|轻雾|有雾|雾|高温|机场\/终端区|机场终端区|终端区\/本场|终端区|本场|伴(?:短时)?雷暴|适航/g, '')
                 .replace(/^[\s，,；;\/]+|[\s，,；;\/]+$/g, '');
         }).filter(Boolean);
         const highTempRanges = mergedTemperatureRanges.map(value => value.replace(/温度/, '有高温，温度'));
-        const leadingNotes = [...new Set(windNotes)].filter(Boolean);
+        const leadingNotes = [...new Set([...windNotes, ...fogNoteLabels])].filter(Boolean);
+        const windOutput = [...mergedWindRanges];
+        const uniqueGustNotes = [...new Set(gustNotes)];
+        if (uniqueGustNotes.length) {
+            if (windOutput.length) windOutput[windOutput.length - 1] += `，${uniqueGustNotes.join('，')}`;
+            else windOutput.push(uniqueGustNotes.join('，'));
+        }
         const noteText = Array.from(new Set(remainingNotes)).join('，');
-        const rowTexts = [...mergedWeatherRanges, ...mergedFogRanges, ...mergedVisibilityRanges, ...mergedWindRanges, ...highTempRanges, noteText].filter(Boolean);
+        const rowTexts = [...mergedWeatherRanges, ...(fogNoteLabels.length ? [] : mergedFogRanges), ...mergedVisibilityRanges, ...windOutput, ...highTempRanges, noteText].filter(Boolean);
         const forecastText = rowTexts.join('；');
         const timeText = [...leadingNotes, forecastText].filter(Boolean).join('，') || '预计天气适航';
         const nameMode = document.querySelector('input[name="export-text-name"]:checked')?.value || 'chinese';
@@ -3746,6 +3763,13 @@ function setupTableInteraction() {
 
     sel.active = true; sel.r1 = sel.r2 = r; sel.c1 = sel.c2 = c; 
     highlightSelection(); e.preventDefault();
+  });
+
+  document.addEventListener('mousedown', e => {
+    if (e.target.closest('#forecast-table td.td-data')) return;
+    table.querySelectorAll('td.td-data.selected').forEach(td => td.classList.remove('selected'));
+    sel.r1 = sel.r2 = sel.c1 = sel.c2 = -1;
+    sel.active = false;
   });
   
   table.addEventListener('mouseover', e => {

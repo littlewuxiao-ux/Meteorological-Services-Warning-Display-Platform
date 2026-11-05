@@ -211,7 +211,11 @@
                 if (tr.style.display === 'none') return;
                 const icao = tr.dataset.icao;
                 // 只保留属于本页机场的行（确认主行 + 其附属行）
-                if (icao && icaoSet.has(icao)) tbody.appendChild(tr.cloneNode(true));
+                if (icao && icaoSet.has(icao)) {
+                    const clone = tr.cloneNode(true);
+                    clone.querySelectorAll('.td-data.selected').forEach(cell => cell.classList.remove('selected'));
+                    tbody.appendChild(clone);
+                }
             });
             tbl.appendChild(tbody);
         }
