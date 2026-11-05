@@ -1199,10 +1199,8 @@ function buildPublishExportText(timezone = 'auto') {
             return `${amount}${thunder ? '，伴雷暴' : ''}`;
         };
         const fogNoteLabels = Array.from(new Set(notes.flatMap(note => {
-            const value = String(note || '');
-            if (/冻雾/.test(value)) return ['冻雾'];
-            if (/轻雾/.test(value)) return ['轻雾'];
-            return /有雾|雾/.test(value) ? ['有雾'] : [];
+            const matches = String(note || '').match(/(?:(?:部分|局部|局地|间歇性|间歇)有雾|有?(?:部分|局部|局地|轻|浓|大|强|薄|冻|冰|低|辐射|平流|蒸汽|团|烟|阵|间歇性|间歇)?雾(?:霾)?)/g) || [];
+            return matches.map(value => `有${value.replace(/^有/, '')}`);
         })));
         const frontPhenomena = Array.from(new Set([...fogNoteLabels, ...notes.flatMap(note => String(note || '').match(/高温/g) || [])]));
         const scopedWeatherForHour = index => rows.flatMap((row, rowIndex) => {
@@ -1329,22 +1327,35 @@ function buildPublishExportText(timezone = 'auto') {
         }
         const windNotes = [];
         const gustNotes = [];
+        const maxWindNotes = [];
         const remainingNotes = notes.map(note => {
             let value = String(note || '').trim();
-            value = value.replace(/(?:最大)?阵风\s*(\d+(?:\.\d+)?)\s*(?:米\/秒|m\/s)?/gi,
-                (_, speed) => { gustNotes.push(`最大阵风${speed}米/秒`); return ''; });
+            value = value.replace(/((?:(?:最大|极大|最高)?\s*(?:阵风|风速)|阵风\s*(?:最大|极大|最高))(?:\s*(?:风速|风力|值))?)\s*(?:(?:可达|达到|达|约|为)\s*|[:：=]\s*)?(\d+(?:\.\d+)?)\s*(?:米(?:\/|每)秒|m\/s)?/gi,
+                (_, label, speed) => {
+                    if (/风速/.test(label) && !/阵风/.test(label)) maxWindNotes.push(`最大风速${speed}米/秒`);
+                    else gustNotes.push(`阵风${speed}米/秒`);
+                    return '';
+                });
             value = value.replace(/((?:[东南西北]{2}偏[东南西北]|偏?[东南西北]{1,3})风)\s*[，,]?\s*(?:风速\s*)?(\d+(?:\.\d+)?)(?:\s*[-至]\s*(\d+(?:\.\d+)?))?\s*(?:米\/秒|m\/s)/g,
                 (_, direction, min, max) => { windNotes.push(`${direction}${min}${max ? `-${max}` : ''}米/秒`); return ''; });
-            return value.replace(/冻雾|轻雾|有雾|雾|高温|机场\/终端区|机场终端区|终端区\/本场|终端区|本场|伴(?:短时)?雷暴|适航/g, '')
+            return value.replace(/(?:部分|局部|局地|间歇性|间歇)有雾|有?(?:部分|局部|局地|轻|浓|大|强|薄|冻|冰|低|辐射|平流|蒸汽|团|烟|阵|间歇性|间歇)?雾(?:霾)?|高温|机场\/终端区|机场终端区|终端区\/本场|终端区|本场|伴(?:短时)?雷暴|适航/g, '')
                 .replace(/^[\s，,；;\/]+|[\s，,；;\/]+$/g, '');
         }).filter(Boolean);
         const highTempRanges = mergedTemperatureRanges.map(value => value.replace(/温度/, '有高温，温度'));
         const leadingNotes = [...new Set([...windNotes, ...fogNoteLabels])].filter(Boolean);
-        const windOutput = [...mergedWindRanges];
         const uniqueGustNotes = [...new Set(gustNotes)];
-        if (uniqueGustNotes.length) {
-            if (windOutput.length) windOutput[windOutput.length - 1] += `，${uniqueGustNotes.join('，')}`;
-            else windOutput.push(uniqueGustNotes.join('，'));
+        const uniqueMaxWindNotes = [...new Set(maxWindNotes)];
+        const gustText = uniqueGustNotes.join('，');
+        const windOutput = gustText
+            ? (() => {
+                const directions = Array.from(new Set(windValues.flatMap(items => items.map(item => item.dir))));
+                const directionText = directions.length ? `有${directions.join('转')}，` : '';
+                return [`${directionText}${gustText}`];
+            })()
+            : [...mergedWindRanges];
+        if (uniqueMaxWindNotes.length) {
+            if (windOutput.length) windOutput[windOutput.length - 1] += `，${uniqueMaxWindNotes.join('，')}`;
+            else windOutput.push(uniqueMaxWindNotes.join('，'));
         }
         const noteText = Array.from(new Set(remainingNotes)).join('，');
         const rowTexts = [...mergedWeatherRanges, ...(fogNoteLabels.length ? [] : mergedFogRanges), ...mergedVisibilityRanges, ...windOutput, ...highTempRanges, noteText].filter(Boolean);
