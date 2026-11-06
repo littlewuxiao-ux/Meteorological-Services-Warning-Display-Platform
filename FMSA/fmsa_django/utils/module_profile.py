@@ -65,12 +65,12 @@ MODULE_META = [
     {
         'key': 'history',
         'group': 'view',
-        'name': '历史视图',
+        'name': '回顾视图',
         'locked': False,
         'data': '查询时取航班 API 和本地实况；缺报时补拉历史报文。',
         'program': '无',
         'human': '规则组按用户保存在设置模块',
-        'config': '历史统计规则组',
+        'config': '回顾规则组',
     },
     {
         'key': 'nwp',

@@ -9,7 +9,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
 from utils.access_control import has_perm, resolve_access_identity
-from utils.history_stats import query_history, read_config, resolve_range, save_config
+from utils.history_stats import element_filter_options, query_history, read_config, resolve_range, save_config
 
 
 def _body(request):
@@ -43,6 +43,7 @@ def history_stats_config(request, time_mode='current'):
         return JsonResponse({
             'success': True,
             'config': read_config(user),
+            'element_options': element_filter_options(),
             **scope_meta(request, time_mode),
         })
     can_write = has_perm(identity, 'settings_history_stats', 'write') or has_perm(identity, 'view_history', 'write')

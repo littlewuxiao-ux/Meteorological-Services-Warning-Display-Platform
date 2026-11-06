@@ -1720,7 +1720,7 @@ const modeBtn = document.getElementById('threshold-mode-btn');
           prefix_area: '将全部机场区域恢复为默认模板，当前改动都会被覆盖。确定恢复？',
           taf_import: '将全部预报入库告警恢复为默认模板，当前改动都会被覆盖。确定恢复？',
           weather_type: '将全部天气类型恢复为默认模板，当前改动都会被覆盖。确定恢复？',
-          history_stats_config: '将历史统计规则组恢复为默认模板，当前改动都会被覆盖。确定恢复？',
+          history_stats_config: '将回顾规则组恢复为默认模板，当前改动都会被覆盖。确定恢复？',
         };
         const hint = wholeTable[group]
           || (group === 'airport_alert_thresholds'

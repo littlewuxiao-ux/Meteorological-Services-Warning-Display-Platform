@@ -17,11 +17,13 @@ MAX_RANGE_MS = 24 * HOUR_MS
 BJ = dt_timezone(timedelta(hours=8))
 ALERT_RANK = {'N': 1, 'G': 2, 'Y': 3, 'R': 4}
 ALERT_LEVELS = ('R', 'Y', 'G')
-TYPE_LAND = '航班落地'
-TYPE_DEP = '航班起飞'
+TYPE_LAND = '落地'
+TYPE_DEP = '起飞'
 TYPE_ENR = '飞行中'
 TYPE_SOON = '即将起飞'
-TYPE_PARK = '飞机停场'
+TYPE_PARK = '停场'
+ELEMENT_FILTER_BASE = ('风速', '能见度', 'RVR', '云底高', '气温', '风切变')
+ELEMENT_FILTER_TREND = '趋势'
 TYPE_ORDER = (TYPE_LAND, TYPE_DEP, TYPE_ENR, TYPE_SOON, TYPE_PARK)
 AIRPORT_RE = re.compile(r'^[A-Z]{4}$')
 
@@ -436,6 +438,14 @@ def actual_badges(metar, threshold: str) -> list:
         badge = _alert_badge(metar.metar_ws_warning, _clean_text(metar.metar_ws_dsc))
         shear = take([badge] if badge else [])
     out.extend(shear)
+
+    trend = take(badges.get('tr'))
+    if not trend:
+        badge = _alert_badge(metar.metar_change_trend_warning, '趋势')
+        trend = take([badge] if badge else [])
+    else:
+        trend = [{'text': '趋势', 'level': item.get('level')} for item in trend]
+    out.extend(trend)
     return [item for item in out if item.get('text')]
 
 
@@ -464,6 +474,31 @@ def _field_warning(metar, field: str, element_path=None):
         alert = cursor.get('alert') or cursor.get('warning')
         return str(alert).upper() if alert else None
     return None
+
+
+def _airport_names(codes: list) -> dict:
+    from config_db.models import AirportInfo
+    from core.airport_directory import display_airport_name
+
+    mapping = {}
+    if codes:
+        for row in AirportInfo.objects.filter(airport_4code__in=codes).values('airport_4code', 'airport_name'):
+            mapping[row['airport_4code']] = display_airport_name(row.get('airport_name'))
+    for code in codes or []:
+        mapping.setdefault(code, display_airport_name(''))
+    return mapping
+
+
+def element_filter_options() -> list:
+    names = list(ELEMENT_FILTER_BASE)
+    seen = set(names)
+    for name in _weather_type_cn_map().values():
+        text = str(name or '').strip()
+        if text and text not in seen:
+            seen.add(text)
+            names.append(text)
+    names.append(ELEMENT_FILTER_TREND)
+    return names
 
 
 def _weather_type_cn_map() -> dict:
@@ -528,7 +563,7 @@ def _weather_type_entries(metar, type_map=None) -> list:
 
 
 def popup_badges_for_metars(metars: list, threshold: str) -> dict:
-    """实况弹窗同款徽章：要素中文名 + 天气现象中文名，实心色块为该段最高等级。不含趋势。"""
+    """实况弹窗同款徽章：要素中文名 + 天气类型中文名 + 趋势。实心色块为该段最高等级。"""
     element_specs = (
         ('风速', 'metar_wind_warning', ('wind',)),
         ('能见度', 'metar_visibility_warning', ('visibility',)),
@@ -536,6 +571,7 @@ def popup_badges_for_metars(metars: list, threshold: str) -> dict:
         ('云底高', 'metar_cloud_warning', ('clouds',)),
         ('气温', 'metar_temperature_warning', ('temperature',)),
         ('风切变', 'metar_ws_warning', None),
+        ('趋势', 'metar_change_trend_warning', None),
     )
     elements = []
     for label, field, path in element_specs:
@@ -635,11 +671,6 @@ def build_plain(metars: list, threshold: str, popup: dict = None) -> str:
     rvr = [m.rvr_min_val for m in metars if m.rvr_min_val is not None]
     clouds = [m.metar_min_cloud_height for m in metars if m.metar_min_cloud_height is not None]
     temps = [m.metar_temp_val for m in metars if m.metar_temp_val is not None]
-    shears = []
-    for metar in metars:
-        text = str(metar.metar_ws_dsc or '').strip()
-        if text and text.lower() != 'none' and text not in shears:
-            shears.append(text)
 
     parts = []
     if '风速' in labels:
@@ -656,7 +687,7 @@ def build_plain(metars: list, threshold: str, popup: dict = None) -> str:
         parts.append(f'RVR最低 {int(min(rvr))} 米')
     wx_names = _phenomenon_plain_names(metars, threshold)
     if wx_names:
-        parts.append('天气现象：' + '、'.join(wx_names))
+        parts.append('、'.join(wx_names))
     if '云底高' in labels and clouds:
         feet = int(min(clouds)) * 100
         parts.append(f'云底高最低 {feet} 英尺')
@@ -670,8 +701,8 @@ def build_plain(metars: list, threshold: str, popup: dict = None) -> str:
             temp_bits.append(f'最低温度 {int(round(min(cold)))}℃')
         if temp_bits:
             parts.append('，'.join(temp_bits))
-    if '风切变' in labels and shears:
-        parts.append('风切变：' + '、'.join(shears))
+    if '风切变' in labels:
+        parts.append('风切变')
     return '；'.join(parts)
 
 
@@ -891,6 +922,7 @@ def query_history(preset: str, start_ms=None, end_ms=None, time_mode='current', 
         rec['types'].add(TYPE_PARK)
 
     rows = []
+    names = _airport_names(sorted(tagged))
     for airport in sorted(tagged):
         params = params_for(cfg, airport)
         gap_ms = int(float(params['gap_hours']) * HOUR_MS)
@@ -927,6 +959,7 @@ def query_history(preset: str, start_ms=None, end_ms=None, time_mode='current', 
             reports.sort(key=lambda item: item['obs_ms'])
             rows.append({
                 'airport': airport,
+                'airport_name': names.get(airport) or '',
                 'start_ms': start_ms,
                 'end_ms': end_ms,
                 'badges': popup['all'],
@@ -945,4 +978,6 @@ def query_history(preset: str, start_ms=None, end_ms=None, time_mode='current', 
         'rows': rows,
         'flight_count': len(flights),
         'airport_count': len(airports),
+        'element_options': element_filter_options(),
+        'airport_names': names,
     }

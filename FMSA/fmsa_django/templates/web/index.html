@@ -294,12 +294,12 @@
 
 <section id="history-panel" style="display:none;">
   <div class="hs-toolbar">
-    <div class="hs-title">历史</div>
+    <div class="hs-title">回顾</div>
     <div class="hs-main">
       <div class="hs-presets">
         <label><input type="radio" name="history-preset" value="day" checked>白班 08:30–17:30</label>
         <label><input type="radio" name="history-preset" value="night">夜班 17:30–次日08:30</label>
-        <label><input type="radio" name="history-preset" value="daynight">昼夜 08:30–次日08:30</label>
+        <label><input type="radio" name="history-preset" value="daynight">白夜 08:30–次日08:30</label>
         <label><input type="radio" name="history-preset" value="custom">自定义</label>
       </div>
       <div class="hs-custom" id="history-custom-range" hidden>
@@ -307,13 +307,17 @@
         <span>至</span>
         <input type="datetime-local" id="history-end">
       </div>
-      <button type="button" class="hs-query" id="history-query">确定</button>
+      <div class="hs-clock-switch" id="history-clock-switch">
+        <button type="button" class="is-on" data-clock="zone">分区时间</button>
+        <button type="button" data-clock="unified">统一时间</button>
+      </div>
+      <button type="button" class="hs-query" id="history-query">查询</button>
       <button type="button" class="hs-copy-all" id="history-copy-all">全部复制</button>
       <span class="hs-status" id="history-status"></span>
     </div>
   </div>
   <div class="hs-table-wrap" id="history-table-wrap">
-    <div class="hs-empty">选择时段后点击确定查询</div>
+    <div class="hs-empty">选择时段后点击查询</div>
   </div>
 </section>
 
@@ -380,7 +384,7 @@
         <button class="settings-tab" data-tab="weather-alert">天气告警等级</button>
         <button class="settings-tab" data-tab="radar-alert">雷达告警</button>
         <button class="settings-tab" data-tab="trend-alert">实况趋势告警</button>
-        <button class="settings-tab" data-tab="history-stats">历史统计</button>
+        <button class="settings-tab" data-tab="history-stats">回顾</button>
         <button class="settings-tab" data-tab="map-style">外观样式</button>
       </div>
       <div class="settings-tab-group settings-tab-group-global">

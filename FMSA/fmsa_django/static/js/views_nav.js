@@ -50,7 +50,7 @@
     {
       key: 'history',
       module: 'view_history',
-      label: '历史',
+      label: '回顾',
       icon:
         '<svg viewBox="0 0 1024 1024" width="18" height="18" aria-hidden="true">' +
         '<path fill="currentColor" d="M512 96C282.624 96 96 282.624 96 512s186.624 416 416 416 416-186.624 416-416S741.376 96 512 96z m0 768A352 352 0 1 1 864 512 352.384 352.384 0 0 1 512 864z"/>' +

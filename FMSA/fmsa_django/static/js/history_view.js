@@ -1,21 +1,40 @@
 /**
- * 历史天气统计视图。规则组在设置模块中维护；未点确定不查询。
+ * 回顾视图。规则组在设置模块中维护；未点查询不拉数。
  */
 (function () {
   'use strict';
+
+  const RESULT_MS = 10 * 60 * 1000;
+  const IDLE_EMPTY = '选择时段后点击查询';
+  const STATUS_OPTIONS = ['落地', '起飞', '飞行中', '即将起飞', '停场'];
+  const ELEMENT_FALLBACK = ['风速', '能见度', 'RVR', '云底高', '气温', '风切变', '趋势'];
+  const TYPE_CLASS = {
+    '落地': 'hs-type-land',
+    '起飞': 'hs-type-dep',
+    '飞行中': 'hs-type-enr',
+    '即将起飞': 'hs-type-soon',
+    '停场': 'hs-type-park',
+  };
+  const TIME_LEVELS = [
+    { key: 'year', label: '年' },
+    { key: 'month', label: '月' },
+    { key: 'day', label: '日' },
+    { key: 'hour', label: '时' },
+    { key: 'minute', label: '分' },
+  ];
 
   let bound = false;
   let querySeq = 0;
   let lastRows = [];
   let lastRange = null;
-
-  const TYPE_CLASS = {
-    '航班落地': 'hs-type-land',
-    '航班起飞': 'hs-type-dep',
-    '飞行中': 'hs-type-enr',
-    '即将起飞': 'hs-type-soon',
-    '飞机停场': 'hs-type-park',
-  };
+  let expireTimer = null;
+  let openFilter = '';
+  let elementOptions = ELEMENT_FALLBACK.slice();
+  let statusSelected = new Set(STATUS_OPTIONS);
+  let elementSelected = new Set(ELEMENT_FALLBACK.filter((name) => name !== '趋势'));
+  let clockMode = 'zone';
+  let nameMode = 'icao';
+  let timeLevel = { year: false, month: false, day: true, hour: true, minute: true };
 
   function apiUrl(path) {
     const mode = (typeof currentTimeMode !== 'undefined' ? currentTimeMode : null) || window.currentTimeMode || 'current';
@@ -65,17 +84,146 @@
     return Number.isFinite(ms) ? ms : null;
   }
 
-  function formatRangeLabel(startMs, endMs) {
-    if (!startMs || !endMs) return '';
-    const fmt = (ms) => {
-      if (typeof formatTimestampPartsByMode === 'function') {
-        const parts = formatTimestampPartsByMode(ms);
-        return [parts.date, parts.time].filter(Boolean).join(' ');
-      }
-      const date = new Date(ms);
-      return `${date.getMonth() + 1}/${date.getDate()} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  function usesUtc(airport) {
+    if (clockMode === 'unified') return window.displayTimezone === 'UTC';
+    return !String(airport || '').toUpperCase().startsWith('Z');
+  }
+
+  function timestampParts(ms, utc) {
+    const date = new Date(Number(ms));
+    if (!Number.isFinite(date.getTime())) {
+      return { year: '', month: '', day: '', hour: '', minute: '' };
+    }
+    const timeZone = utc ? 'UTC' : 'Asia/Shanghai';
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).formatToParts(date);
+    const pick = (type) => {
+      const item = parts.find((part) => part.type === type);
+      return item ? item.value : '';
     };
-    return `${fmt(startMs)} → ${fmt(endMs)}`;
+    let hour = pick('hour');
+    if (hour === '24') hour = '00';
+    return {
+      year: pick('year'),
+      month: pick('month'),
+      day: pick('day'),
+      hour,
+      minute: pick('minute'),
+    };
+  }
+
+  function addHour(parts) {
+    let year = Number(parts.year);
+    let month = Number(parts.month);
+    let day = Number(parts.day);
+    let hour = Number(parts.hour) + 1;
+    if (hour >= 24) {
+      hour = 0;
+      day += 1;
+      const dim = new Date(year, month, 0).getDate();
+      if (day > dim) {
+        day = 1;
+        month += 1;
+        if (month > 12) {
+          month = 1;
+          year += 1;
+        }
+      }
+    }
+    return {
+      year: String(year),
+      month: pad(month),
+      day: pad(day),
+      hour: pad(hour),
+      minute: '00',
+    };
+  }
+
+  function sameDate(a, b) {
+    return a.year === b.year && a.month === b.month && a.day === b.day;
+  }
+
+  function formatTimeParts(parts, utc, omitDate) {
+    let date = '';
+    if (!omitDate) {
+      if (timeLevel.month) {
+        date = timeLevel.year
+          ? `${parts.year}-${parts.month}-${parts.day}`
+          : `${parts.month}-${parts.day}`;
+      } else if (timeLevel.day) {
+        date = `${parts.day}日`;
+      }
+    }
+    let time = '';
+    if (timeLevel.hour && timeLevel.minute) {
+      time = `${parts.hour}:${parts.minute}`;
+      if (utc) time += 'Z';
+    } else if (timeLevel.hour) {
+      time = utc ? `${parts.hour}Z` : `${parts.hour}时`;
+    }
+    if (!date) return time;
+    if (!time) return date;
+    return timeLevel.month ? `${date} ${time}` : `${date}${time}`;
+  }
+
+  function formatRangeLabel(startMs, endMs, airport, opts) {
+    if (!startMs || !endMs) return '';
+    const utc = usesUtc(airport);
+    const start = timestampParts(startMs, utc);
+    let end = timestampParts(endMs, utc);
+    const allowBump = !(opts && opts.noBump);
+    if (allowBump && !timeLevel.minute && start.hour === end.hour && sameDate(start, end)) {
+      end = addHour(end);
+    }
+    const left = formatTimeParts(start, utc, false);
+    const right = formatTimeParts(end, utc, sameDate(start, end));
+    if (!right || left === right) return left;
+    return `${left} → ${right}`;
+  }
+
+  function airportLabel(row) {
+    if (nameMode === 'name') {
+      return row.airport_name || (lastRange && lastRange.airport_names && lastRange.airport_names[row.airport]) || '机场名称未配置';
+    }
+    return row.airport;
+  }
+
+  function setTimeLevel(key, on) {
+    if ((key === 'day' || key === 'hour') && !on) return;
+    if (on) {
+      if (key === 'year') timeLevel.month = true;
+      timeLevel[key] = true;
+    } else {
+      timeLevel[key] = false;
+      if (key === 'month') timeLevel.year = false;
+    }
+  }
+
+  function syncClockSwitch() {
+    document.querySelectorAll('#history-clock-switch [data-clock]').forEach((btn) => {
+      btn.classList.toggle('is-on', btn.getAttribute('data-clock') === clockMode);
+    });
+  }
+
+  function timeLevelHtml() {
+    return `<span class="hs-level-group">${TIME_LEVELS.map((item) => {
+      const on = timeLevel[item.key] ? ' is-on' : '';
+      const locked = item.key === 'day' || item.key === 'hour' ? ' data-locked="1"' : '';
+      return `<button type="button" class="hs-level${on}" data-time-level="${item.key}"${locked}>${item.label}</button>`;
+    }).join('')}</span>`;
+  }
+
+  function airportHeadHtml() {
+    const icaoOn = nameMode === 'icao' ? ' is-on' : '';
+    const nameOn = nameMode === 'name' ? ' is-on' : '';
+    return `<span class="hs-name-switch"><button type="button" class="hs-name-btn${icaoOn}" data-name-mode="icao">ICAO</button><button type="button" class="hs-name-btn${nameOn}" data-name-mode="name">机场</button></span>`;
   }
 
   function syncCustomVisible() {
@@ -96,6 +244,49 @@
     } catch (err) { /* 用户稍后手填 */ }
   }
 
+  function applyElementOptions(names) {
+    const list = (names || []).map((name) => String(name || '').trim()).filter(Boolean);
+    if (!list.length) return;
+    const next = [];
+    const seen = new Set();
+    list.forEach((name) => {
+      if (seen.has(name)) return;
+      seen.add(name);
+      next.push(name);
+      if (name !== '趋势' && !elementSelected.has(name) && !elementOptions.includes(name)) {
+        elementSelected.add(name);
+      }
+    });
+    elementOptions = next;
+  }
+
+  function rowBadges(row) {
+    const elements = row.element_badges || [];
+    const weather = row.weather_badges || [];
+    if (elements.length || weather.length) return elements.concat(weather);
+    return row.badges || [];
+  }
+
+  function rowMatches(row) {
+    const types = row.types || [];
+    const statusHit = types.some((name) => statusSelected.has(name));
+    const elementHit = rowBadges(row).some((badge) => badge && elementSelected.has(badge.text));
+    return statusHit && elementHit;
+  }
+
+  function visibleRows() {
+    return lastRows.filter(rowMatches);
+  }
+
+  function filterMenu(kind, options, selected) {
+    const open = openFilter === kind ? '' : ' hidden';
+    const items = options.map((name) => {
+      const checked = selected.has(name) ? ' checked' : '';
+      return `<label class="hs-filter-item"><input type="checkbox" data-filter-item="${esc(kind)}" value="${esc(name)}"${checked}><span>${esc(name)}</span></label>`;
+    }).join('');
+    return `<button type="button" class="hs-filter-btn" data-filter="${esc(kind)}" aria-label="筛选">▾</button><div class="hs-filter-menu" data-filter-menu="${esc(kind)}"${open}>${items}</div>`;
+  }
+
   function badgeHtml(badge) {
     if (!badge || !badge.text) return '';
     const level = badge.level === 'R' || badge.level === 'Y' || badge.level === 'G' ? badge.level : 'N';
@@ -103,13 +294,7 @@
   }
 
   function popupBadgeHtml(row) {
-    const elements = row.element_badges || [];
-    const weather = row.weather_badges || [];
-    const fallback = (!elements.length && !weather.length) ? (row.badges || []) : [];
-    const all = (elements.length || weather.length)
-      ? elements.concat(weather)
-      : fallback;
-    const html = all.map(badgeHtml).join('');
+    const html = rowBadges(row).map(badgeHtml).join('');
     if (!html) return '';
     return `<div class="popup-warning-badges"><div class="popup-warning-row">${html}</div></div>`;
   }
@@ -118,36 +303,50 @@
     return `<span class="hs-type ${TYPE_CLASS[name] || ''}">${esc(name)}</span>`;
   }
 
-  function timeHtml(startMs, endMs) {
-    const label = formatRangeLabel(startMs, endMs);
+  function timeHtml(row) {
+    const label = formatRangeLabel(row.start_ms, row.end_ms, row.airport);
     return `<div class="hs-time">${esc(label)}</div>`;
   }
 
-  function renderRows(rows) {
+  function showIdle() {
+    const wrap = document.getElementById('history-table-wrap');
+    if (wrap) wrap.innerHTML = `<div class="hs-empty">${IDLE_EMPTY}</div>`;
+  }
+
+  function paintTable() {
     const wrap = document.getElementById('history-table-wrap');
     if (!wrap) return;
-    lastRows = rows || [];
     if (!lastRows.length) {
-      wrap.innerHTML = '<div class="hs-empty">所选时段内没有满足条件的天气</div>';
+      showIdle();
+      return;
+    }
+    const rows = visibleRows();
+    const statusHead = `天气过程发生时的航班状态${filterMenu('status', STATUS_OPTIONS, statusSelected)}`;
+    const elementHead = `天气要素类型${filterMenu('element', elementOptions, elementSelected)}`;
+    const periodHead = `时段${timeLevelHtml()}`;
+    const airportHead = airportHeadHtml();
+    if (!rows.length) {
+      wrap.innerHTML = `<table class="hs-table"><thead><tr><th class="hs-th-airport">${airportHead}</th><th class="hs-th-time">${periodHead}</th><th class="hs-th-filter">${statusHead}</th><th class="hs-th-filter">${elementHead}</th><th>天气</th><th>原文</th><th>复制</th></tr></thead></table><div class="hs-empty">没有符合筛选条件的天气</div>`;
       return;
     }
     const groups = [];
-    lastRows.forEach((row) => {
+    rows.forEach((row) => {
       const last = groups[groups.length - 1];
       if (last && last.airport === row.airport) last.rows.push(row);
       else groups.push({ airport: row.airport, rows: [row] });
     });
     const COLS = 5;
-    let html = '<table class="hs-table"><thead><tr><th>机场</th><th>时段</th><th>影响运行的类型</th><th>告警类型</th><th>天气</th><th>原文</th><th>复制</th></tr></thead><tbody>';
+    let html = `<table class="hs-table"><thead><tr><th class="hs-th-airport">${airportHead}</th><th class="hs-th-time">${periodHead}</th><th class="hs-th-filter">${statusHead}</th><th class="hs-th-filter">${elementHead}</th><th>天气</th><th>原文</th><th>复制</th></tr></thead><tbody>`;
     let rowIndex = 0;
     groups.forEach((group) => {
       group.rows.forEach((row, index) => {
-        const id = rowIndex++;
-        html += `<tr class="hs-data" data-row="${id}" data-airport="${esc(group.airport)}">`;
+        const id = lastRows.indexOf(row);
+        const viewId = rowIndex++;
+        html += `<tr class="hs-data" data-row="${id}" data-view="${viewId}" data-airport="${esc(group.airport)}">`;
         if (index === 0) {
-          html += `<td class="hs-airport" rowspan="${group.rows.length}">${esc(group.airport)}</td>`;
+          html += `<td class="hs-airport" rowspan="${group.rows.length}">${esc(airportLabel(row))}</td>`;
         }
-        html += `<td class="hs-period">${timeHtml(row.start_ms, row.end_ms)}</td>`;
+        html += `<td class="hs-period">${timeHtml(row)}</td>`;
         html += `<td class="hs-types">${(row.types || []).map(typeHtml).join('')}</td>`;
         html += `<td class="hs-badges">${popupBadgeHtml(row)}</td>`;
         html += `<td class="hs-plain">${esc(row.plain || '')}</td>`;
@@ -167,7 +366,7 @@
     const reports = row.reports || [];
     if (!reports.length) return '<div class="hs-raw-empty">该时段没有报文</div>';
     return reports.map((item) => {
-      const when = formatRangeLabel(item.obs_ms, item.obs_ms).split(' → ')[0] || '';
+      const when = formatRangeLabel(item.obs_ms, item.obs_ms, row.airport, { noBump: true }).split(' → ')[0] || '';
       return `<div class="hs-raw-item"><div class="hs-raw-time">${esc(when)}</div><pre class="hs-raw-text">${esc(item.content || '')}</pre></div>`;
     }).join('');
   }
@@ -200,9 +399,9 @@
   }
 
   function rowCopyText(row) {
-    const span = formatRangeLabel(row.start_ms, row.end_ms).replace(' → ', '至');
+    const span = formatRangeLabel(row.start_ms, row.end_ms, row.airport).replace(' → ', '至');
     const weather = row.plain || '无满足告警条件的天气';
-    return `${row.airport} ${span}，${weather}`;
+    return `${airportLabel(row)} ${span}，${weather}`;
   }
 
   function copyText(text, okMsg) {
@@ -215,19 +414,21 @@
   }
 
   function copyAirport(airport) {
-    const rows = lastRows.filter((row) => row.airport === airport);
+    const rows = visibleRows().filter((row) => row.airport === airport);
     if (!rows.length) return;
-    copyText(rows.map(rowCopyText).join('\n'), `已复制${airport}机场天气`);
+    const label = rows[0] ? airportLabel(rows[0]) : airport;
+    copyText(rows.map(rowCopyText).join('\n'), `已复制${label}天气`);
   }
 
   function copyAll() {
-    if (!lastRows.length) {
+    const rows = visibleRows();
+    if (!rows.length) {
       setStatus('没有可复制的内容', true);
       return;
     }
     const lines = [];
     let prev = null;
-    lastRows.forEach((row) => {
+    rows.forEach((row) => {
       if (prev && prev !== row.airport) lines.push('');
       prev = row.airport;
       lines.push(rowCopyText(row));
@@ -242,6 +443,19 @@
     box.select();
     try { document.execCommand('copy'); done(); } catch (err) { setStatus('复制失败', true); }
     box.remove();
+  }
+
+  function clearExpired() {
+    lastRows = [];
+    lastRange = null;
+    openFilter = '';
+    showIdle();
+    setStatus('');
+  }
+
+  function armExpire() {
+    if (expireTimer) clearTimeout(expireTimer);
+    expireTimer = setTimeout(clearExpired, RESULT_MS);
   }
 
   async function runQuery() {
@@ -268,13 +482,36 @@
         return;
       }
       lastRange = data;
-      renderRows(data.rows || []);
-      setStatus(`航班 ${data.flight_count || 0} 条，机场 ${data.airport_count || 0} 个，记录 ${(data.rows || []).length} 段`);
+      applyElementOptions(data.element_options);
+      lastRows = data.rows || [];
+      openFilter = '';
+      paintTable();
+      armExpire();
+      if (!lastRows.length) {
+        const wrap = document.getElementById('history-table-wrap');
+        if (wrap) wrap.innerHTML = '<div class="hs-empty">所选时段内没有满足条件的天气</div>';
+      }
+      setStatus(`航班 ${data.flight_count || 0} 条，机场 ${data.airport_count || 0} 个，记录 ${visibleRows().length} 段`);
     } catch (err) {
       if (seq !== querySeq) return;
       setStatus(err.message || '查询失败', true);
     } finally {
       if (btn) btn.disabled = false;
+    }
+  }
+
+  function toggleFilter(kind) {
+    openFilter = openFilter === kind ? '' : kind;
+    paintTable();
+  }
+
+  function onFilterCheck(kind, name, checked) {
+    const selected = kind === 'status' ? statusSelected : elementSelected;
+    if (checked) selected.add(name);
+    else selected.delete(name);
+    paintTable();
+    if (lastRows.length) {
+      setStatus(`航班 ${lastRange && lastRange.flight_count || 0} 条，机场 ${lastRange && lastRange.airport_count || 0} 个，记录 ${visibleRows().length} 段`);
     }
   }
 
@@ -289,6 +526,16 @@
         if (preset() === 'custom') await fillCustomDefaults();
       });
     });
+    const clockSwitch = document.getElementById('history-clock-switch');
+    if (clockSwitch) {
+      clockSwitch.addEventListener('click', (event) => {
+        const btn = event.target.closest('[data-clock]');
+        if (!btn) return;
+        clockMode = btn.getAttribute('data-clock') === 'unified' ? 'unified' : 'zone';
+        syncClockSwitch();
+        if (lastRows.length) paintTable();
+      });
+    }
     const queryBtn = document.getElementById('history-query');
     if (queryBtn) queryBtn.addEventListener('click', runQuery);
     const copyAllBtn = document.getElementById('history-copy-all');
@@ -296,6 +543,28 @@
     const tableWrap = document.getElementById('history-table-wrap');
     if (tableWrap) {
       tableWrap.addEventListener('click', (event) => {
+        const levelBtn = event.target.closest('[data-time-level]');
+        if (levelBtn) {
+          event.stopPropagation();
+          const key = levelBtn.getAttribute('data-time-level');
+          setTimeLevel(key, !timeLevel[key]);
+          if (lastRows.length) paintTable();
+          return;
+        }
+        const nameBtn = event.target.closest('[data-name-mode]');
+        if (nameBtn) {
+          event.stopPropagation();
+          nameMode = nameBtn.getAttribute('data-name-mode') === 'name' ? 'name' : 'icao';
+          if (lastRows.length) paintTable();
+          return;
+        }
+        const filterBtn = event.target.closest('[data-filter]');
+        if (filterBtn) {
+          event.stopPropagation();
+          toggleFilter(filterBtn.getAttribute('data-filter'));
+          return;
+        }
+        if (event.target.closest('[data-filter-menu]')) return;
         const rawBtn = event.target.closest('[data-raw]');
         if (rawBtn) {
           toggleRaw(rawBtn.getAttribute('data-raw'));
@@ -304,20 +573,39 @@
         const copyBtn = event.target.closest('[data-copy]');
         if (copyBtn) copyAirport(copyBtn.getAttribute('data-copy'));
       });
+      tableWrap.addEventListener('change', (event) => {
+        const box = event.target.closest('[data-filter-item]');
+        if (!box) return;
+        onFilterCheck(box.getAttribute('data-filter-item'), box.value, box.checked);
+      });
     }
+    document.addEventListener('click', (event) => {
+      if (!openFilter) return;
+      if (event.target.closest('.hs-th-filter')) return;
+      openFilter = '';
+      if (lastRows.length) paintTable();
+    });
     const tz = document.getElementById('timezone-toggle-input');
     if (tz) tz.addEventListener('change', () => {
-      if (panel.style.display !== 'none' && lastRows.length) renderRows(lastRows);
+      if (clockMode === 'unified' && panel.style.display !== 'none' && lastRows.length) paintTable();
     });
+  }
+
+  async function loadElementOptions() {
+    try {
+      const res = await fetch(apiUrl('history-stats/config/'), { headers: headers() });
+      const data = await res.json();
+      if (data.success) applyElementOptions(data.element_options);
+    } catch (err) { /* 沿用内置选项 */ }
   }
 
   async function startHistoryView() {
     bindOnce();
+    syncClockSwitch();
     syncCustomVisible();
-    const wrap = document.getElementById('history-table-wrap');
-    if (wrap && !lastRows.length) {
-      wrap.innerHTML = '<div class="hs-empty">选择时段后点击确定查询</div>';
-    }
+    await loadElementOptions();
+    if (lastRows.length) paintTable();
+    else showIdle();
     if (preset() === 'custom') fillCustomDefaults();
   }
 
@@ -328,6 +616,6 @@
   window.startHistoryView = startHistoryView;
   window.stopHistoryView = stopHistoryView;
   window.refreshHistoryTimezone = function () {
-    if (lastRows.length) renderRows(lastRows);
+    if (lastRows.length) paintTable();
   };
 })();
