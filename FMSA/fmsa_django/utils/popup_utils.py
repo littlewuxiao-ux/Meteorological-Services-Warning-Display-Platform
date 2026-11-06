@@ -14,7 +14,7 @@ from django.db.models import Max, Q
 from django.utils import timezone
 
 from config_db.models import AirportInfo, WeatherTypeInfo, PopupSettings
-from runtime_db.models import AircraftParkingInfo, Metar, Flight
+from runtime_db.models import Metar, Flight
 
 logger = logging.getLogger('fmsa.popup')
 
@@ -295,19 +295,8 @@ def classify_popup_record(operation_popup, parking_popup, records, popup_time, n
 
 
 def _latest_parking_codes() -> set:
-    """最新一条停场记录里的机场代码。全列表共用这一次查询。"""
-    latest = AircraftParkingInfo.objects.order_by('-parse_time').first()
-    if not latest or not latest.airport_4code:
-        return set()
-    parking_list = latest.airport_4code
-    if isinstance(parking_list, str):
-        try:
-            parking_list = json.loads(parking_list)
-        except (TypeError, ValueError):
-            return set()
-    if not isinstance(parking_list, (list, tuple, set)):
-        return set()
-    return {str(code) for code in parking_list if code}
+    from utils.aircraft_parking import occupancy_airports
+    return occupancy_airports()
 
 
 def _latest_metar_identity(airport_codes: List[str]) -> Dict[str, tuple]:
@@ -400,7 +389,7 @@ class PopupManager:
                 closest_departure_time_of_arriving_flight = flight.closest_departure_time_of_arriving_flight if flight else None
                 closest_landing_time_of_arriving_flight = flight.closest_landing_time_of_arriving_flight if flight else None
                 closest_departure_time_at_this_airport = flight.closest_departure_time_at_this_airport if flight else None
-                has_parking = metar.airport_4code in parking_codes
+                has_parking = str(metar.airport_4code or '').strip().upper() in parking_codes
                 latest_obs, latest_sqc = latest_identity.get(metar.airport_4code, (None, None))
 
                 metar_weather_type_cn = {}

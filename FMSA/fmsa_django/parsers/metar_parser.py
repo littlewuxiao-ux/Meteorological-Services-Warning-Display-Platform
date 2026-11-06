@@ -38,6 +38,7 @@ class MetarParser:
         self.token = token
         self.user_code = user_code
         self.airport_thresholds = {}  # 缓存机场阈值信息
+        self._parking_airports = None
         
         # 设置当前时间
         self.current_time = TimeManager.get_current_time_utc(time_mode)
@@ -62,6 +63,7 @@ class MetarParser:
         """
         logger.info("开始解析METAR数据")
         start_time = datetime.now()
+        self._parking_airports = None
         
         try:
             from utils.airport_scope import get_monitored_airport_codes
@@ -131,6 +133,7 @@ class MetarParser:
         """
         logger.info(f"开始为指定机场解析METAR数据: {airport_codes}")
         start_time = datetime.now()
+        self._parking_airports = None
         
         try:
             # 清理滞留告警：航班运行已结束但告警尚未处置的记录
@@ -1400,9 +1403,8 @@ class MetarParser:
             是否满足停场类弹窗条件
         """
         try:
-            from runtime_db.models import AircraftParkingInfo
             from django.conf import settings
-            import json
+            from utils.aircraft_parking import occupancy_airports
             
             # 1. 检查告警等级
             alert_met = False
@@ -1442,15 +1444,9 @@ class MetarParser:
             
             airport_4code = parsed_data.get('airport_4code')
             
-            # 2. 检查停场条件
-            parking_condition_met = False
-            latest_parking = AircraftParkingInfo.objects.order_by('-parse_time').first()
-            
-            if latest_parking and latest_parking.airport_4code:
-                parking_list = latest_parking.airport_4code
-                if isinstance(parking_list, str):
-                    parking_list = json.loads(parking_list)
-                parking_condition_met = (airport_4code in parking_list)
+            if self._parking_airports is None:
+                self._parking_airports = occupancy_airports()
+            parking_condition_met = str(airport_4code or '').strip().upper() in self._parking_airports
             
             # 3. 检查en_route条件
             from runtime_db.models import Flight

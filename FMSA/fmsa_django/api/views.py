@@ -1980,18 +1980,10 @@ def get_airport_flight_status(request, time_mode='current'):
                               closest_departure_time_at_this_airport, en_route, has_parking } }
     """
     try:
-        from runtime_db.models import AircraftParkingInfo
+        from utils.aircraft_parking import occupancy_airports
 
         flights = Flight.objects.all()
-
-        parking_airports = set()
-        latest_parking = AircraftParkingInfo.objects.order_by('-parse_time').first()
-        if latest_parking and latest_parking.airport_4code:
-            parking_list = latest_parking.airport_4code
-            if isinstance(parking_list, str):
-                parking_list = json.loads(parking_list)
-            if isinstance(parking_list, list):
-                parking_airports = set(parking_list)
+        parking_airports = occupancy_airports()
 
         result = {}
         for flight in flights:
@@ -2001,7 +1993,7 @@ def get_airport_flight_status(request, time_mode='current'):
                 'closest_landing_time_of_arriving_flight': flight.closest_landing_time_of_arriving_flight,
                 'closest_departure_time_at_this_airport': flight.closest_departure_time_at_this_airport,
                 'en_route': bool(flight.en_route) if flight.en_route is not None else False,
-                'has_parking': code in parking_airports,
+                'has_parking': str(code or '').strip().upper() in parking_airports,
             }
 
         return JsonResponse({'success': True, 'data': result})

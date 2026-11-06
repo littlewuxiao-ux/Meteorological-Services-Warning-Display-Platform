@@ -7,7 +7,7 @@
   const RESULT_MS = 10 * 60 * 1000;
   const IDLE_EMPTY = '选择时段后点击查询';
   const STATUS_OPTIONS = ['落地', '起飞', '飞行中', '即将起飞', '停场'];
-  const ELEMENT_FALLBACK = ['风速', '能见度', 'RVR', '云底高', '气温', '风切变', '趋势'];
+  const ELEMENT_FALLBACK = ['风速', '能见度', 'RVR', '云底高', '高温', '低温', '风切变', '趋势'];
   const TYPE_CLASS = {
     '落地': 'hs-type-land',
     '起飞': 'hs-type-dep',
@@ -261,7 +261,16 @@
   }
 
   function applyElementOptions(names) {
-    const list = (names || []).map((name) => String(name || '').trim()).filter(Boolean);
+    const list = [];
+    (names || []).forEach((name) => {
+      const text = String(name || '').trim();
+      if (!text) return;
+      if (text === '气温') {
+        list.push('高温', '低温');
+        return;
+      }
+      list.push(text);
+    });
     if (!list.length) return;
     const next = [];
     const seen = new Set();
@@ -283,11 +292,28 @@
     return row.badges || [];
   }
 
+  function visibleTypes(row) {
+    return (row.types || []).filter((name) => statusSelected.has(name));
+  }
+
+  function visibleBadges(row) {
+    return rowBadges(row).filter((badge) => badge && elementSelected.has(badge.text));
+  }
+
+  function visiblePlain(row) {
+    const parts = row.plain_parts || [];
+    if (parts.length) {
+      return parts
+        .filter((part) => (part.labels || []).some((name) => elementSelected.has(name)))
+        .map((part) => part.text)
+        .filter(Boolean)
+        .join('；');
+    }
+    return row.plain || '';
+  }
+
   function rowMatches(row) {
-    const types = row.types || [];
-    const statusHit = types.some((name) => statusSelected.has(name));
-    const elementHit = rowBadges(row).some((badge) => badge && elementSelected.has(badge.text));
-    return statusHit && elementHit;
+    return visibleTypes(row).length > 0 && visibleBadges(row).length > 0;
   }
 
   function visibleRows() {
@@ -303,6 +329,37 @@
     return `<button type="button" class="hs-filter-btn" data-filter="${esc(kind)}" aria-label="筛选">▾</button><div class="hs-filter-menu" data-filter-menu="${esc(kind)}"${open}>${items}</div>`;
   }
 
+  const STATUS_HELP = [
+    '落地：查询时段内有实际到达（ATA）的机场；抓取其 ATA 前后各「已完成航班实况抓取范围」（可配置）小时的天气。',
+    '起飞：查询时段内有实际起飞（ATD）的机场；抓取其 ATD 前后各「已完成航班实况抓取范围」（可配置）小时的天气。',
+    '飞行中：查询截止时飞机已起飞、尚未落地的航班，抓取目的地机场过去「未落地/未起飞航班实况抓取范围」（可配置）小时至截止时间的天气。',
+    '即将起飞：查询截止时尚未起飞，且计划时刻在截止时刻后「未落地/未起飞航班实况抓取范围」（可配置）内，或计划时刻已过仍未起飞，起飞机场在该范围至截止时刻前「未落地/未起飞航班实况抓取范围」（可配置）小时后的天气。',
+    '停场：查询时段内该机场停场记录与实况重叠的天气；不按落地/起飞小时范围，由停场时段决定。只统计 O3 地面占用，天气要素以回顾设置中勾选的停场要素为准。',
+  ].join('\n');
+
+  function statusHelpHtml() {
+    return `<span class="hs-status-help-wrap"><button type="button" class="help-icon-btn hs-status-help" aria-label="航班或飞机状态说明">?</button><span class="hs-status-tip">${esc(STATUS_HELP)}</span></span>`;
+  }
+
+  function bindStatusHelp(wrap) {
+    const host = wrap.querySelector('.hs-status-help-wrap');
+    if (!host) return;
+    const tip = host.querySelector('.hs-status-tip');
+    const btn = host.querySelector('.hs-status-help');
+    if (!tip || !btn) return;
+    const place = () => {
+      const box = btn.getBoundingClientRect();
+      tip.style.left = `${Math.round(box.left + box.width / 2)}px`;
+      tip.style.top = `${Math.round(box.bottom + 6)}px`;
+    };
+    host.addEventListener('mouseenter', place);
+    host.addEventListener('mousemove', place);
+    btn.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+    });
+  }
+
   function badgeHtml(badge) {
     if (!badge || !badge.text) return '';
     const level = badge.level === 'R' || badge.level === 'Y' || badge.level === 'G' ? badge.level : 'N';
@@ -310,7 +367,7 @@
   }
 
   function popupBadgeHtml(row) {
-    const html = rowBadges(row).map(badgeHtml).join('');
+    const html = visibleBadges(row).map(badgeHtml).join('');
     if (!html) return '';
     return `<div class="popup-warning-badges"><div class="popup-warning-row">${html}</div></div>`;
   }
@@ -337,13 +394,14 @@
       return;
     }
     const rows = visibleRows();
-    const statusHead = `时段内的航班状态${filterMenu('status', STATUS_OPTIONS, statusSelected)}`;
+    const statusHead = `航班或飞机状态${filterMenu('status', STATUS_OPTIONS, statusSelected)}${statusHelpHtml()}`;
     const elementHead = `天气要素类型${filterMenu('element', elementOptions, elementSelected)}`;
     const periodHead = timeLevelHtml();
     const airportHead = airportHeadHtml();
     const pickHead = pickHeadHtml();
     if (!rows.length) {
       wrap.innerHTML = `<table class="hs-table"><thead><tr><th class="hs-th-airport">${airportHead}</th><th class="hs-th-time">${periodHead}</th><th class="hs-th-filter">${statusHead}</th><th class="hs-th-filter">${elementHead}</th><th>天气</th><th>原文</th><th class="hs-th-pick">${pickHead}</th><th>复制</th></tr></thead></table><div class="hs-empty">没有符合筛选条件的天气</div>`;
+      bindStatusHelp(wrap);
       return;
     }
     const groups = [];
@@ -364,9 +422,9 @@
           html += `<td class="hs-airport" rowspan="${group.rows.length}">${esc(airportLabel(row))}</td>`;
         }
         html += `<td class="hs-period">${timeHtml(row)}</td>`;
-        html += `<td class="hs-types">${(row.types || []).map(typeHtml).join('')}</td>`;
+        html += `<td class="hs-types">${visibleTypes(row).map(typeHtml).join('')}</td>`;
         html += `<td class="hs-badges">${popupBadgeHtml(row)}</td>`;
-        html += `<td class="hs-plain">${esc(row.plain || '')}</td>`;
+        html += `<td class="hs-plain">${esc(visiblePlain(row) || '')}</td>`;
         html += `<td class="hs-action"><button type="button" class="hs-text-btn" data-raw="${id}">查看原文</button></td>`;
         html += `<td class="hs-pick"><input type="checkbox" data-pick="${id}"${selected.has(id) ? ' checked' : ''}></td>`;
         if (index === 0) {
@@ -378,6 +436,7 @@
     });
     html += '</tbody></table>';
     wrap.innerHTML = html;
+    bindStatusHelp(wrap);
   }
 
   function rawReportsHtml(row) {
@@ -418,7 +477,7 @@
 
   function periodCopyText(row) {
     const span = formatRangeLabel(row.start_ms, row.end_ms, row.airport);
-    const weather = row.plain || '无满足告警条件的天气';
+    const weather = visiblePlain(row) || '无满足告警条件的天气';
     return `${span}，${weather}`;
   }
 

@@ -148,6 +148,36 @@
   padding: 8px 12px 16px;
 }
 
+.hs-parking-box {
+  margin-top: 10px;
+  padding: 8px 10px;
+  border: 1px solid #d5deea;
+  border-radius: 4px;
+  background: #f8fafc;
+}
+
+.hs-parking-title {
+  margin-bottom: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #1b2838;
+}
+
+.hs-parking-elements {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+}
+
+.hs-parking-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: #243140;
+  white-space: nowrap;
+}
+
 #settings-pane-history-stats .hs-group {
   display: flex;
   flex-wrap: nowrap;
@@ -358,6 +388,55 @@
 .hs-th-filter {
   position: relative;
   white-space: normal;
+}
+
+.hs-status-help-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+  margin-left: 4px;
+}
+
+.hs-table .help-icon-btn.hs-status-help {
+  margin-left: 0;
+  border-color: #1b2838;
+  color: #1b2838;
+  background: transparent;
+  cursor: default;
+}
+
+.hs-table .help-icon-btn.hs-status-help:hover {
+  border-color: #1b2838;
+  color: #fff;
+  background: #1b2838;
+}
+
+.hs-status-tip {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 40;
+  width: 22em;
+  padding: 8px 10px;
+  border: 1px solid #c5d2e0;
+  border-radius: 6px;
+  background: #1b2838;
+  color: #fff;
+  box-shadow: 0 6px 16px rgba(27, 40, 56, 0.25);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.55;
+  text-align: left;
+  white-space: pre-wrap;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.hs-status-help-wrap:hover .hs-status-tip,
+.hs-status-help-wrap:focus-within .hs-status-tip {
+  display: block;
 }
 
 .hs-filter-btn {

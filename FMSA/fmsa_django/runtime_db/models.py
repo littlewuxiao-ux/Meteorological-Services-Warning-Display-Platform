@@ -545,25 +545,39 @@ class UserAirportAlert(models.Model):
         return f'{self.user_code} {self.airport_4code} {self.kind}'
 
 
-class AircraftParkingInfo(models.Model):
-    """飞机停场信息表"""
+def _default_parking_flag():
+    return [False]
 
-    airport_4code = models.JSONField(verbose_name='停场机场列表', help_text='存储有飞机停场的机场代码列表')
-    parse_time = models.BigIntegerField(blank=True, null=True, verbose_name='解析时间戳')
+
+class AircraftParkingInfo(models.Model):
+    """一机场一行：当前停场机号列表 + 近 7 天停场时段。"""
+
+    airport_4code = models.CharField(max_length=4, unique=True, verbose_name='机场四字代码')
+    parking = models.JSONField(
+        default=_default_parking_flag,
+        verbose_name='当前停场',
+        help_text='[是否停场, ...飞机注册号]',
+    )
+    aircraft_parked_status_records = models.JSONField(
+        default=list,
+        blank=True,
+        verbose_name='飞机停场状态记录',
+        help_text='[[开始, 结束], ...]，进行中结束为 null',
+    )
+    fetched_at = models.BigIntegerField(blank=True, null=True, verbose_name='航班数据获取时间')
 
     class Meta:
         db_table = 'aircraft_parking_info'
         verbose_name = '飞机停场信息'
         verbose_name_plural = '飞机停场信息'
-        ordering = ['-parse_time']
+        ordering = ['-fetched_at']
         indexes = [
             models.Index(fields=['airport_4code']),
-            models.Index(fields=['parse_time']),
-            models.Index(fields=['airport_4code', 'parse_time']),
+            models.Index(fields=['fetched_at']),
         ]
 
     def __str__(self):
-        return f"{self.airport_4code} - {self.parse_time}"
+        return f"{self.airport_4code} - {self.fetched_at}"
 
 
 class WxmsgImportAlert(models.Model):

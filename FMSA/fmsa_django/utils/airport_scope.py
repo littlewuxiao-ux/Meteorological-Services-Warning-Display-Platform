@@ -83,21 +83,8 @@ def event_in_operation_window(events, now_ms: int, future_hours: int, carriers=N
 
 
 def get_parking_airport_codes() -> set:
-    from runtime_db.models import AircraftParkingInfo
-
-    latest = AircraftParkingInfo.objects.order_by('-parse_time').first()
-    if not latest or not latest.airport_4code:
-        return set()
-    parking_list = latest.airport_4code
-    if isinstance(parking_list, str):
-        try:
-            parking_list = json.loads(parking_list)
-        except (TypeError, json.JSONDecodeError):
-            logger.warning('停场名单 JSON 解析失败')
-            return set()
-    if not parking_list:
-        return set()
-    return {str(code).strip() for code in parking_list if str(code).strip()}
+    from utils.aircraft_parking import occupancy_airports
+    return occupancy_airports()
 
 
 def get_flight_airport_codes() -> set:

@@ -22,8 +22,9 @@ TYPE_DEP = '起飞'
 TYPE_ENR = '飞行中'
 TYPE_SOON = '即将起飞'
 TYPE_PARK = '停场'
-ELEMENT_FILTER_BASE = ('风速', '能见度', 'RVR', '云底高', '气温', '风切变')
+ELEMENT_FILTER_BASE = ('风速', '能见度', 'RVR', '云底高', '高温', '低温', '风切变')
 ELEMENT_FILTER_TREND = '趋势'
+PARKING_WX_CODES = ('S', 'F', 'I', 'G', 'H')
 TYPE_ORDER = (TYPE_LAND, TYPE_DEP, TYPE_ENR, TYPE_SOON, TYPE_PARK)
 AIRPORT_RE = re.compile(r'^[A-Z]{4}$')
 
@@ -37,10 +38,26 @@ def default_params() -> dict:
     }
 
 
+def default_parking_elements() -> list:
+    names = ['风速', '低温']
+    seen = set(names)
+    try:
+        mapping = _weather_type_cn_map()
+    except Exception:
+        mapping = {}
+    for code in PARKING_WX_CODES:
+        label = str((mapping or {}).get(code) or (mapping or {}).get(str(code).upper()) or '').strip() or str(code)
+        if label not in seen:
+            seen.add(label)
+            names.append(label)
+    return names
+
+
 def default_config() -> dict:
     return {
         'general': default_params(),
         'special': [],
+        'parking_elements': default_parking_elements(),
     }
 
 
@@ -126,8 +143,24 @@ def normalize_config(payload: dict) -> tuple[dict, list]:
         item['airports'] = codes
         item['airports_text'] = ','.join(codes)
         special.append(item)
-    config = {'general': general, 'special': special}
+    parking_elements = _parking_elements_from(src.get('parking_elements'))
+    config = {'general': general, 'special': special, 'parking_elements': parking_elements}
     return config, errors
+
+
+def _parking_elements_from(raw) -> list:
+    allowed = element_filter_options()
+    allow = set(allowed)
+    if raw is None:
+        wanted = set(default_parking_elements())
+    else:
+        wanted = set()
+        if isinstance(raw, list):
+            for name in raw:
+                text = str(name or '').strip()
+                if text in allow:
+                    wanted.add(text)
+    return [name for name in allowed if name in wanted]
 
 
 def read_config(user_code=None) -> dict:
@@ -562,6 +595,16 @@ def _weather_type_entries(metar, type_map=None) -> list:
     return entries
 
 
+def _temp_kind(metar) -> Optional[str]:
+    value = getattr(metar, 'metar_temp_val', None)
+    if value is None:
+        return None
+    try:
+        return '高温' if float(value) >= 0 else '低温'
+    except (TypeError, ValueError):
+        return None
+
+
 def popup_badges_for_metars(metars: list, threshold: str) -> dict:
     """实况弹窗同款徽章：要素中文名 + 天气类型中文名 + 趋势。实心色块为该段最高等级。"""
     element_specs = (
@@ -569,7 +612,6 @@ def popup_badges_for_metars(metars: list, threshold: str) -> dict:
         ('能见度', 'metar_visibility_warning', ('visibility',)),
         ('RVR', 'metar_rvr_warning', None),
         ('云底高', 'metar_cloud_warning', ('clouds',)),
-        ('气温', 'metar_temperature_warning', ('temperature',)),
         ('风切变', 'metar_ws_warning', None),
         ('趋势', 'metar_change_trend_warning', None),
     )
@@ -586,6 +628,27 @@ def popup_badges_for_metars(metars: list, threshold: str) -> dict:
             best = _better_level(best, level)
         if meets_level(best, threshold):
             elements.append({'text': label, 'level': best})
+    hot_best = None
+    cold_best = None
+    for metar in metars:
+        kind = _temp_kind(metar)
+        if not kind:
+            continue
+        level = _field_warning(metar, 'metar_temperature_warning', ('temperature',))
+        if kind == '高温':
+            hot_best = _better_level(hot_best, level)
+        else:
+            cold_best = _better_level(cold_best, level)
+    temp_badges = []
+    if meets_level(hot_best, threshold):
+        temp_badges.append({'text': '高温', 'level': hot_best})
+    if meets_level(cold_best, threshold):
+        temp_badges.append({'text': '低温', 'level': cold_best})
+    if temp_badges:
+        cloud_at = next((i for i, item in enumerate(elements) if item.get('text') == '云底高'), None)
+        insert_at = cloud_at + 1 if cloud_at is not None else max(0, len(elements) - 2)
+        for offset, badge in enumerate(temp_badges):
+            elements.insert(insert_at + offset, badge)
 
     weather = []
     best_wx = {}
@@ -661,17 +724,41 @@ def _phenomenon_plain_names(metars: list, threshold: str) -> list:
     return names
 
 
-def build_plain(metars: list, threshold: str, popup: dict = None) -> str:
+def _format_rvr_display(meters) -> str:
+    """Pxxxx 入库时写成 原值+30；展示还原为 Pxxxx，其余仍写米。"""
+    try:
+        number = int(round(float(meters)))
+    except (TypeError, ValueError):
+        return str(meters)
+    base = number - 30
+    if base > 0 and number % 100 == 30 and base % 50 == 0:
+        return f'P{base:04d}'
+    return f'{number} 米'
+
+
+def _format_rvr_from_metars(metars: list) -> Optional[str]:
+    chosen = None
+    for metar in metars:
+        value = metar.rvr_min_val
+        if value is None:
+            continue
+        if chosen is None or value < chosen.rvr_min_val:
+            chosen = metar
+    if chosen is None:
+        return None
+    stored = chosen.rvr_min_org if chosen.rvr_min_org is not None else chosen.rvr_min_val
+    return _format_rvr_display(stored)
+
+
+def build_plain_parts(metars: list, threshold: str, popup: dict = None) -> list:
     popup = popup or popup_badges_for_metars(metars, threshold)
     labels = {item.get('text') for item in (popup.get('elements') or [])}
 
     speeds = [m.metar_wind_speed_val for m in metars if m.metar_wind_speed_val is not None]
     gusts = [m.metar_gust_val for m in metars if m.metar_gust_val is not None]
     vis = [m.metar_visibility_val for m in metars if m.metar_visibility_val is not None]
-    rvr = [m.rvr_min_val for m in metars if m.rvr_min_val is not None]
     clouds = [m.metar_min_cloud_height for m in metars if m.metar_min_cloud_height is not None]
     temps = [m.metar_temp_val for m in metars if m.metar_temp_val is not None]
-
     parts = []
     if '风速' in labels:
         wind_bits = []
@@ -680,30 +767,31 @@ def build_plain(metars: list, threshold: str, popup: dict = None) -> str:
         if gusts:
             wind_bits.append(f'阵风最大 {int(round(max(gusts)))} 米/秒')
         if wind_bits:
-            parts.append('，'.join(wind_bits))
+            parts.append({'labels': ['风速'], 'text': '，'.join(wind_bits)})
     if '能见度' in labels and vis:
-        parts.append(f'能见度最低 {int(min(vis))} 米')
-    if 'RVR' in labels and rvr:
-        parts.append(f'RVR最低 {int(min(rvr))} 米')
-    wx_names = _phenomenon_plain_names(metars, threshold)
-    if wx_names:
-        parts.append('、'.join(wx_names))
+        parts.append({'labels': ['能见度'], 'text': f'能见度最低 {int(min(vis))} 米'})
+    if 'RVR' in labels:
+        rvr_text = _format_rvr_from_metars(metars)
+        if rvr_text:
+            parts.append({'labels': ['RVR'], 'text': 'RVR最低 ' + rvr_text})
+    for name in _phenomenon_plain_names(metars, threshold):
+        parts.append({'labels': [name], 'text': name})
     if '云底高' in labels and clouds:
         feet = int(min(clouds)) * 100
-        parts.append(f'云底高最低 {feet} 英尺')
-    if '气温' in labels:
-        hot = [t for t in temps if t >= 0]
-        cold = [t for t in temps if t < 0]
-        temp_bits = []
-        if hot:
-            temp_bits.append(f'最高温度 {int(round(max(hot)))}℃')
-        if cold:
-            temp_bits.append(f'最低温度 {int(round(min(cold)))}℃')
-        if temp_bits:
-            parts.append('，'.join(temp_bits))
+        parts.append({'labels': ['云底高'], 'text': f'云底高最低 {feet} 英尺'})
+    hot = [t for t in temps if t >= 0]
+    cold = [t for t in temps if t < 0]
+    if '高温' in labels and hot:
+        parts.append({'labels': ['高温'], 'text': f'最高温度 {int(round(max(hot)))}℃'})
+    if '低温' in labels and cold:
+        parts.append({'labels': ['低温'], 'text': f'最低温度 {int(round(min(cold)))}℃'})
     if '风切变' in labels:
-        parts.append('风切变')
-    return '；'.join(parts)
+        parts.append({'labels': ['风切变'], 'text': '风切变'})
+    return parts
+
+
+def build_plain(metars: list, threshold: str, popup: dict = None) -> str:
+    return '；'.join(item['text'] for item in build_plain_parts(metars, threshold, popup) if item.get('text'))
 
 
 def _load_metars(airports: list, start_ms: int, end_ms: int) -> dict:
@@ -841,8 +929,30 @@ def _metar_after(airport: str, last_obs: int, last_sqc: str, known: list):
     return None
 
 
+def _parking_interval_map() -> dict:
+    from runtime_db.models import AircraftParkingInfo
+    from utils.aircraft_parking import normalize_intervals
+
+    out = {}
+    for row in AircraftParkingInfo.objects.all().only('airport_4code', 'aircraft_parked_status_records'):
+        code = str(row.airport_4code or '').strip().upper()
+        if not code:
+            continue
+        out[code] = normalize_intervals(row.aircraft_parked_status_records)
+    return out
+
+
+def _obs_in_parking(intervals: list, obs_ms: int) -> bool:
+    from utils.aircraft_parking import interval_contains
+
+    for start, end in intervals or []:
+        if interval_contains(start, end, obs_ms):
+            return True
+    return False
+
+
 def query_history(preset: str, start_ms=None, end_ms=None, time_mode='current', token=None, user_code=None, config=None) -> dict:
-    from runtime_db.models import Metar
+    from utils.aircraft_parking import intervals_overlap_range
     from utils.flight_selection import selected_carrier_codes
 
     range_start, range_end, kind = resolve_range(preset, start_ms, end_ms, time_mode)
@@ -865,12 +975,14 @@ def query_history(preset: str, start_ms=None, end_ms=None, time_mode='current', 
     flights = load_flights(time_mode, token, range_start - pad, range_end + pad, carriers)
     hits = _collect_hits(flights, cfg, range_start, range_end)
 
-    parking_rows = list(Metar.objects.filter(
-        parking_popup__in=['Y', 'I'],
-        metar_observation_time__gte=range_start,
-        metar_observation_time__lte=range_end,
-    ))
-    airports = sorted(set(hits) | {row.airport_4code for row in parking_rows if row.airport_4code})
+    parking_map = _parking_interval_map()
+    parking_elements = set(cfg.get('parking_elements') or default_parking_elements())
+    now_ms = int(time.time() * 1000)
+    park_airports = {
+        code for code, items in parking_map.items()
+        if intervals_overlap_range(items, range_start, range_end, now_ms)
+    }
+    airports = sorted(set(hits) | park_airports)
     grouped = _load_metars(airports, range_start, range_end)
     missing = [code for code in airports if not grouped.get(code)]
     if missing:
@@ -878,9 +990,12 @@ def query_history(preset: str, start_ms=None, end_ms=None, time_mode='current', 
         grouped = _load_metars(airports, range_start, range_end)
 
     tagged = {}
-    for airport, windows in hits.items():
+    all_airports = sorted(set(hits) | park_airports)
+    for airport in all_airports:
         params = params_for(cfg, airport)
         level = params['alert_level']
+        windows = hits.get(airport) or []
+        park_ivs = parking_map.get(airport) or []
         for metar in grouped.get(airport) or []:
             obs = metar.metar_observation_time
             if obs is None:
@@ -889,10 +1004,18 @@ def query_history(preset: str, start_ms=None, end_ms=None, time_mode='current', 
             for window in windows:
                 if window['start'] <= obs <= window['end']:
                     types.append(window['type'])
-            if not types:
+            parked = _obs_in_parking(park_ivs, obs)
+            if not types and not parked:
                 continue
             badges = actual_badges(metar, level)
             if not badges:
+                continue
+            if parked:
+                popup_one = popup_badges_for_metars([metar], level)
+                labels = {item.get('text') for item in popup_one.get('all') or []}
+                if labels & parking_elements:
+                    types.append(TYPE_PARK)
+            if not types:
                 continue
             bucket = tagged.setdefault(airport, {})
             rec = bucket.get(metar.sqc)
@@ -900,26 +1023,6 @@ def query_history(preset: str, start_ms=None, end_ms=None, time_mode='current', 
                 rec = {'metar': metar, 'obs': obs, 'types': set(), 'badges': badges}
                 bucket[metar.sqc] = rec
             rec['types'].update(types)
-
-    for metar in parking_rows:
-        airport = metar.airport_4code
-        if not airport:
-            continue
-        params = params_for(cfg, airport)
-        badges = actual_badges(metar, params['alert_level'])
-        if not badges:
-            continue
-        bucket = tagged.setdefault(airport, {})
-        rec = bucket.get(metar.sqc)
-        if rec is None:
-            rec = {
-                'metar': metar,
-                'obs': metar.metar_observation_time or 0,
-                'types': set(),
-                'badges': badges,
-            }
-            bucket[metar.sqc] = rec
-        rec['types'].add(TYPE_PARK)
 
     rows = []
     names = _airport_names(sorted(tagged))
@@ -942,6 +1045,7 @@ def query_history(preset: str, start_ms=None, end_ms=None, time_mode='current', 
             if nxt and nxt.metar_observation_time:
                 end_ms = nxt.metar_observation_time
             popup = popup_badges_for_metars(metars, params['alert_level'])
+            plain_parts = build_plain_parts(metars, params['alert_level'], popup)
             reports = []
             seen = set()
             for metar in list(grouped.get(airport) or []) + ([nxt] if nxt else []):
@@ -966,7 +1070,8 @@ def query_history(preset: str, start_ms=None, end_ms=None, time_mode='current', 
                 'element_badges': popup['elements'],
                 'weather_badges': popup['weather'],
                 'types': types,
-                'plain': build_plain(metars, params['alert_level'], popup),
+                'plain': '；'.join(item['text'] for item in plain_parts if item.get('text')),
+                'plain_parts': plain_parts,
                 'reports': reports,
             })
 

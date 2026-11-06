@@ -37,6 +37,8 @@ class FlightParser:
         """
         self.time_mode = time_mode
         self.token = token
+        self.last_flight_df = None
+        self.last_fetched_at_ms = None
         
         # 设置当前时间
         self.current_time = TimeManager.get_current_time_local(time_mode)
@@ -66,6 +68,8 @@ class FlightParser:
             # 1. 获取数据适配器并读取数据
             adapter = AdapterFactory.create_adapter(time_mode=self.time_mode, token=self.token)
             df = adapter.get_flight_data()
+            self.last_fetched_at_ms = int(datetime.now().timestamp() * 1000)
+            self.last_flight_df = None
             
             if df.empty:
                 logger.warning("未获取到航班数据，保留原有数据")
@@ -73,6 +77,7 @@ class FlightParser:
                 self._update_flight_status(success=False)
                 return {'success': False, 'message': '未获取到航班数据', 'record_count': 0, 'data_preserved': True}
             
+            self.last_flight_df = df
             logger.info(f"获取到航班原始数据 {len(df)} 行，全量入库")
             selected = selected_carrier_codes()
             logger.info(f"已选承运人 {sorted(selected) or '无'}，派生字段只统计这些承运人")

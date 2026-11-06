@@ -5,6 +5,7 @@
   'use strict';
 
   let bound = false;
+  let elementOptions = ['风速', '能见度', 'RVR', '云底高', '高温', '低温', '风切变', '趋势'];
 
   function apiUrl(path) {
     const mode = (typeof currentTimeMode !== 'undefined' ? currentTimeMode : null) || window.currentTimeMode || 'current';
@@ -83,6 +84,17 @@
     </div>` + special.map((group, index) => specialGroupHtml(index, group)).join('');
     const addBtn = document.getElementById('history-add-group');
     if (addBtn) addBtn.disabled = special.length >= 3;
+    renderParkingElements((config && config.parking_elements) || []);
+  }
+
+  function renderParkingElements(selected) {
+    const wrap = document.getElementById('history-parking-elements');
+    if (!wrap) return;
+    const chosen = new Set((selected || []).map((name) => String(name || '').trim()).filter(Boolean));
+    wrap.innerHTML = elementOptions.map((name) => {
+      const checked = chosen.has(name) ? ' checked' : '';
+      return `<label class="hs-parking-item"><input type="checkbox" data-parking-el value="${esc(name)}"${checked}><span>${esc(name)}</span></label>`;
+    }).join('');
   }
 
   function readField(box, field, fallback) {
@@ -114,9 +126,14 @@
         airports_text: readField(box, 'airports_text', ''),
       });
     });
+    const parking = [];
+    document.querySelectorAll('#history-parking-elements [data-parking-el]').forEach((box) => {
+      if (box.checked) parking.push(box.value);
+    });
     return {
       general: collectParams(generalBox),
       special,
+      parking_elements: parking,
     };
   }
 
@@ -130,6 +147,9 @@
       if (!data.success) {
         msg(data.error || '读取规则失败', false);
         return;
+      }
+      if (Array.isArray(data.element_options) && data.element_options.length) {
+        elementOptions = data.element_options.map((name) => String(name || '').trim()).filter(Boolean);
       }
       renderGroups(data.config || {});
     } catch (err) {

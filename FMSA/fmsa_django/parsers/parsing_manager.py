@@ -117,22 +117,7 @@ class ParsingManager:
             'parsers': {}
         }
         
-        # 1. 运行停场解析器（最先执行，为其他解析器提供基础数据）
-        try:
-            logger.info("开始停场解析")
-            parking_result = self.aircraft_parking_parser.parse_aircraft_parking_data()
-            results['parsers']['aircraft_parking'] = parking_result
-            self._log_parse_result('aircraft_parking', parking_result)
-        except Exception as e:
-            logger.error(f"停场解析失败: {str(e)}")
-            results['parsers']['aircraft_parking'] = {
-                'success': False,
-                'message': f'停场解析失败: {str(e)}',
-                'airport_count': 0
-            }
-            # 停场解析失败不影响整体结果
-        
-        # 2. 运行航班解析器
+        # 1. 运行航班解析器
         try:
             logger.info("开始航班解析")
             flight_result = self.flight_parser.parse_flight_data()
@@ -146,6 +131,9 @@ class ParsingManager:
                 'record_count': 0
             }
             results['success'] = False
+
+        # 2. 用同一批航班数据更新停场
+        results = self._execute_aircraft_parking_parser(results)
         
         # 3. 运行METAR解析器（实况）
         try:
@@ -210,7 +198,7 @@ class ParsingManager:
         # 输出更新开始日志
         logger.info("")  # 增加空白行
         current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        logger.info(f"{'='*20} 更新时间：{current_time} 更新内容：【停场解析】【航班】【实况】【预报】 {'='*20}")
+        logger.info(f"{'='*20} 更新时间：{current_time} 更新内容：【航班】【停场解析】【实况】【预报】 {'='*20}")
         
         start_time = datetime.now()
         if self._local_db_only():
@@ -231,33 +219,7 @@ class ParsingManager:
         except Exception:
             pass
 
-        # 第一步：运行停场解析器（最先执行）
-        try:
-            from parsers.scheduler import set_parser_exec_status as _s
-            _s('aircraft_parking', 'running')
-        except Exception:
-            pass
-        try:
-            logger.info("【停场解析】")
-            parking_result = self.aircraft_parking_parser.parse_aircraft_parking_data()
-            results['parsers']['aircraft_parking'] = parking_result
-            self._log_parse_result('aircraft_parking', parking_result)
-        except Exception as e:
-            logger.error(f"停场解析失败: {str(e)}")
-            results['parsers']['aircraft_parking'] = {
-                'success': False,
-                'message': f'停场解析失败: {str(e)}',
-                'airport_count': 0
-            }
-            # 停场解析失败不影响整体结果
-        finally:
-            try:
-                from parsers.scheduler import set_parser_exec_status as _s
-                _s('aircraft_parking', 'done')
-            except Exception:
-                pass
-        
-        # 第二步：运行航班解析器
+        # 第一步：运行航班解析器
         try:
             from parsers.scheduler import set_parser_exec_status as _s
             _s('flight', 'running')
@@ -306,6 +268,8 @@ class ParsingManager:
                     _s('flight', 'done')
                 except Exception:
                     pass
+
+        results = self._execute_aircraft_parking_parser(results)
         
         # 第三步：获取有航班或停场的机场代码（首页仍只展示有航班机场）
         try:
@@ -550,6 +514,7 @@ class ParsingManager:
         # 按优先级执行解析器：航班 > 实况 = 预报
         if 'flight' in update_types:
             results = self._execute_flight_parser(results)
+            results = self._execute_aircraft_parking_parser(results)
             if not results['success']:
                 return self._finalize_results(results, start_time)
         
@@ -574,8 +539,7 @@ class ParsingManager:
         if 'taf' in update_types:
             results = self._execute_taf_parser(results, active_airport_codes)
         
-        # 执行停场解析（独立于其他解析器）
-        if 'aircraft_parking' in update_types:
+        if 'aircraft_parking' in update_types and 'flight' not in update_types:
             results = self._execute_aircraft_parking_parser(results)
 
         # 执行 NWP 解析（独立于其他解析器）
@@ -723,7 +687,10 @@ class ParsingManager:
             pass
         try:
             logger.info("【停场解析】")
-            parking_result = self.aircraft_parking_parser.parse_aircraft_parking_data()
+            parking_result = self.aircraft_parking_parser.parse_aircraft_parking_data(
+                flight_df=getattr(self.flight_parser, 'last_flight_df', None),
+                fetched_at=getattr(self.flight_parser, 'last_fetched_at_ms', None),
+            )
             results['parsers']['aircraft_parking'] = parking_result
             self._log_parse_result('aircraft_parking', parking_result)
         except Exception as e:
