@@ -345,7 +345,7 @@
   }
 
   function filterHeadHtml(title, kind, options, selected, extra) {
-    return `<div class="hs-th-stack"><div class="hs-th-title">${esc(title)}</div><div class="hs-th-tools">${filterMenu(kind, options, selected)}${extra || ''}</div></div>`;
+    return `<div class="hs-th-stack"><div class="hs-th-title">${esc(title)}${extra || ''}</div><div class="hs-th-tools">${filterMenu(kind, options, selected)}</div></div>`;
   }
 
   function bindStatusHelp(wrap) {

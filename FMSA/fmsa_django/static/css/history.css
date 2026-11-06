@@ -391,6 +391,10 @@
 }
 
 .hs-th-title {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
   font-weight: 700;
 }
 
@@ -410,10 +414,14 @@
 }
 
 .hs-table .help-icon-btn.hs-status-help {
+  width: 13px;
+  height: 13px;
   margin-left: 0;
+  border-width: 1px;
   border-color: #1b2838;
   color: #1b2838;
   background: transparent;
+  font-size: 9px;
   cursor: default;
 }
 

@@ -1252,11 +1252,14 @@ def _avwx_clouds(clouds, holder, thresholds, parser) -> dict:
         )
         layers.append({'cover': 'VV', 'height': vv_value, 'type': None, 'alert': level})
         warning = _max_alert(warning, level)
+    from parsers.cloud_amount import cloud_amount_qualifies
+
+    min_amt = thresholds.get('min_cloud_amt')
     for cloud in clouds or []:
         cover = str(getattr(cloud, 'type', '') or '').strip().upper()
         base = getattr(cloud, 'base', None)
         level = None
-        if base is not None:
+        if base is not None and cloud_amount_qualifies(cover, min_amt):
             level = parser._get_alert_level(
                 base, thresholds.get('cloud_red'), thresholds.get('cloud_yellow'),
                 thresholds.get('cloud_green'), reverse=True,

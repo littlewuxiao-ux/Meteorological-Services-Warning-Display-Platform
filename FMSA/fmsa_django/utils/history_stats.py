@@ -454,7 +454,11 @@ def actual_badges(metar, threshold: str) -> list:
     out.extend(vis)
     out.extend(take(badges.get('rvr')))
     out.extend(take(badges.get('ww')))
-    out.extend(take(badges.get('cld')))
+    if metar.metar_min_cloud_height is not None:
+        cloud = take([_alert_badge(metar.metar_cloud_warning, '云底高')] if metar.metar_cloud_warning else [])
+    else:
+        cloud = []
+    out.extend(cloud)
 
     temp = take(badges.get('t'))
     if not temp:
@@ -595,6 +599,16 @@ def _weather_type_entries(metar, type_map=None) -> list:
     return entries
 
 
+def _cloud_warning_from_table(metars: list) -> Optional[str]:
+    """云底高徽章只用宽表：有过滤后高度的报，取其 metar_cloud_warning。"""
+    best = None
+    for row in metars:
+        if row.metar_min_cloud_height is None:
+            continue
+        best = _better_level(best, row.metar_cloud_warning)
+    return best
+
+
 def _temp_kind(metar) -> Optional[str]:
     value = getattr(metar, 'metar_temp_val', None)
     if value is None:
@@ -611,7 +625,6 @@ def popup_badges_for_metars(metars: list, threshold: str) -> dict:
         ('风速', 'metar_wind_warning', ('wind',)),
         ('能见度', 'metar_visibility_warning', ('visibility',)),
         ('RVR', 'metar_rvr_warning', None),
-        ('云底高', 'metar_cloud_warning', ('clouds',)),
         ('风切变', 'metar_ws_warning', None),
         ('趋势', 'metar_change_trend_warning', None),
     )
@@ -628,6 +641,11 @@ def popup_badges_for_metars(metars: list, threshold: str) -> dict:
             best = _better_level(best, level)
         if meets_level(best, threshold):
             elements.append({'text': label, 'level': best})
+    cloud_level = _cloud_warning_from_table(metars)
+    if meets_level(cloud_level, threshold):
+        vis_at = next((i for i, item in enumerate(elements) if item.get('text') == 'RVR'), None)
+        insert_at = vis_at + 1 if vis_at is not None else len([x for x in elements if x.get('text') in ('风速', '能见度', 'RVR')])
+        elements.insert(insert_at, {'text': '云底高', 'level': cloud_level})
     hot_best = None
     cold_best = None
     for metar in metars:
@@ -675,33 +693,59 @@ def _wx_tokens(metar) -> list:
     return [part.strip() for part in re.split(r'[\s,]+', text) if part.strip()]
 
 
+def _weather_alert_row(user, token):
+    from utils.user_settings import weather_row
+
+    row = weather_row(user, token)
+    if row is not None:
+        return row
+    body = str(token or '').strip().upper().lstrip('+-')
+    if body.startswith('VC'):
+        body = body[2:]
+    if body and body != str(token or '').strip().upper():
+        return weather_row(user, body)
+    return None
+
+
+def _phenomenon_type_labels(row, type_map) -> list:
+    labels = []
+    seen = set()
+    if row is None:
+        return labels
+    for attr in ('type1', 'type2', 'type3'):
+        code = str(getattr(row, attr, None) or '').strip()
+        name = (type_map or {}).get(code) or (type_map or {}).get(code.upper())
+        if name and name not in seen:
+            seen.add(name)
+            labels.append(name)
+    return labels
+
+
 def _phenomenon_plain_names(metars: list, threshold: str) -> list:
+    return [item['text'] for item in _phenomenon_plain_parts(metars, threshold)]
+
+
+def _phenomenon_plain_parts(metars: list, threshold: str) -> list:
     from parsers.plain_language import weather_zh
     from utils.popup_utils import _as_dict, _clean_text
-    from utils.user_settings import current_settings_user, weather_row
+    from utils.user_settings import current_settings_user
 
-    names = []
+    parts = []
     seen = set()
     user = current_settings_user()
+    type_map = _weather_type_cn_map()
 
     def add(code):
         token = str(code or '').strip()
         if not token or token.lower() == 'none':
             return
         name = weather_zh(token) or token
-        if name and name not in seen:
-            seen.add(name)
-            names.append(name)
-
-    def token_level(token):
-        row = weather_row(user, token)
-        if row is None:
-            body = token.lstrip('+-')
-            if body.startswith('VC'):
-                body = body[2:]
-            if body != token:
-                row = weather_row(user, body)
-        return getattr(row, 'alert_level', None) if row else None
+        if not name or name in seen:
+            return
+        seen.add(name)
+        row = _weather_alert_row(user, token)
+        labels = _phenomenon_type_labels(row, type_map)
+        parts.append({'labels': labels or [name], 'text': name})
 
     for metar in metars:
         weather = _as_dict(_as_dict(metar.metar_elements).get('weather'))
@@ -715,25 +759,26 @@ def _phenomenon_plain_names(metars: list, threshold: str) -> list:
                     add(token)
             continue
         for token in _wx_tokens(metar):
-            level = token_level(token)
+            row = _weather_alert_row(user, token)
+            level = getattr(row, 'alert_level', None) if row else None
             if level:
                 if meets_level(level, threshold):
                     add(token)
             elif meets_level(metar.metar_weather_warning, threshold):
                 add(token)
-    return names
+    return parts
 
 
 def _format_rvr_display(meters) -> str:
-    """Pxxxx 入库时写成 原值+30；展示还原为 Pxxxx，其余仍写米。"""
+    """Pxxxx 入库为原值+30。P2000（2030）写成 RVR2000米以上，其余写 RVR最低N米。"""
     try:
         number = int(round(float(meters)))
     except (TypeError, ValueError):
         return str(meters)
     base = number - 30
     if base > 0 and number % 100 == 30 and base % 50 == 0:
-        return f'P{base:04d}'
-    return f'{number} 米'
+        return f'RVR{base}米以上'
+    return f'RVR最低{number}米'
 
 
 def _format_rvr_from_metars(metars: list) -> Optional[str]:
@@ -770,37 +815,32 @@ def build_plain_parts(metars: list, threshold: str, popup: dict = None) -> list:
     if '风速' in labels:
         wind_bits = []
         if speeds:
-            wind_bits.append(f'平均风速最大 {int(round(max(speeds)))} 米/秒')
+            wind_bits.append(f'平均风速最大{int(round(max(speeds)))}米/秒')
         if gusts:
-            wind_bits.append(f'阵风最大 {int(round(max(gusts)))} 米/秒')
+            wind_bits.append(f'阵风最大{int(round(max(gusts)))}米/秒')
         add('风速', '，'.join(wind_bits) if wind_bits else '风速')
     if '能见度' in labels:
-        add('能见度', f'能见度最低 {int(min(vis))} 米' if vis else '能见度')
+        add('能见度', f'能见度最低{int(min(vis))}米' if vis else '能见度')
     if 'RVR' in labels:
-        rvr_text = _format_rvr_from_metars(metars)
-        add('RVR', f'RVR最低 {rvr_text}' if rvr_text else 'RVR')
-    wx_seen = set()
-    for item in popup.get('weather') or []:
-        name = str(item.get('text') or '').strip()
-        if name and name not in wx_seen:
-            wx_seen.add(name)
-            add(name, name)
-    for name in _phenomenon_plain_names(metars, threshold):
-        if name not in wx_seen:
-            wx_seen.add(name)
-            add(name, name)
+        add('RVR', _format_rvr_from_metars(metars) or 'RVR')
+    for item in _phenomenon_plain_parts(metars, threshold):
+        text = str(item.get('text') or '').strip()
+        if not text:
+            continue
+        parts.append({
+            'labels': item.get('labels') or [text],
+            'text': text,
+        })
     if '云底高' in labels:
-        add('云底高', f'云底高最低 {int(min(clouds)) * 100} 英尺' if clouds else '云底高')
+        add('云底高', f'云底高最低{int(min(clouds)) * 100}英尺' if clouds else '云底高')
     hot = [t for t in temps if t >= 0]
     cold = [t for t in temps if t < 0]
     if '高温' in labels:
-        add('高温', f'最高温度 {int(round(max(hot)))}℃' if hot else '高温')
+        add('高温', f'最高温度{int(round(max(hot)))}℃' if hot else '高温')
     if '低温' in labels:
-        add('低温', f'最低温度 {int(round(min(cold)))}℃' if cold else '低温')
+        add('低温', f'最低温度{int(round(min(cold)))}℃' if cold else '低温')
     if '风切变' in labels:
         add('风切变', '风切变')
-    if '趋势' in labels:
-        add('趋势', '趋势')
     return parts
 
 
