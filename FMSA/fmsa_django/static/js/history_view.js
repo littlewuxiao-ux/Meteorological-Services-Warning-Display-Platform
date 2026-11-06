@@ -35,6 +35,7 @@
   let clockMode = 'zone';
   let nameMode = 'icao';
   let timeLevel = { year: false, month: false, day: true, hour: true, minute: true };
+  let selected = new Set();
 
   function apiUrl(path) {
     const mode = (typeof currentTimeMode !== 'undefined' ? currentTimeMode : null) || window.currentTimeMode || 'current';
@@ -185,7 +186,7 @@
     const left = formatTimeParts(start, utc, false);
     const right = formatTimeParts(end, utc, sameDate(start, end));
     if (!right || left === right) return left;
-    return `${left} → ${right}`;
+    return `${left}-${right}`;
   }
 
   function airportLabel(row) {
@@ -213,17 +214,32 @@
   }
 
   function timeLevelHtml() {
-    return `<span class="hs-level-group">${TIME_LEVELS.map((item) => {
+    const group = `<span class="hs-level-group">${TIME_LEVELS.map((item) => {
       const on = timeLevel[item.key] ? ' is-on' : '';
       const locked = item.key === 'day' || item.key === 'hour' ? ' data-locked="1"' : '';
       return `<button type="button" class="hs-level${on}" data-time-level="${item.key}"${locked}>${item.label}</button>`;
     }).join('')}</span>`;
+    return `<div class="hs-th-stack"><div>时段</div>${group}</div>`;
   }
 
   function airportHeadHtml() {
     const icaoOn = nameMode === 'icao' ? ' is-on' : '';
     const nameOn = nameMode === 'name' ? ' is-on' : '';
-    return `<span class="hs-name-switch"><button type="button" class="hs-name-btn${icaoOn}" data-name-mode="icao">ICAO</button><button type="button" class="hs-name-btn${nameOn}" data-name-mode="name">机场</button></span>`;
+    return `<div class="hs-th-stack"><div>机场</div><span class="hs-name-switch"><button type="button" class="hs-name-btn${icaoOn}" data-name-mode="icao">ICAO</button><button type="button" class="hs-name-btn${nameOn}" data-name-mode="name">名称</button></span></div>`;
+  }
+
+  function visibleIds() {
+    return visibleRows().map((row) => lastRows.indexOf(row)).filter((id) => id >= 0);
+  }
+
+  function allVisiblePicked() {
+    const ids = visibleIds();
+    return ids.length > 0 && ids.every((id) => selected.has(id));
+  }
+
+  function pickHeadHtml() {
+    const label = allVisiblePicked() ? '取消全选' : '全选';
+    return `<button type="button" class="hs-pick-all" data-pick-all>${label}</button>`;
   }
 
   function syncCustomVisible() {
@@ -321,12 +337,13 @@
       return;
     }
     const rows = visibleRows();
-    const statusHead = `天气过程发生时的航班状态${filterMenu('status', STATUS_OPTIONS, statusSelected)}`;
+    const statusHead = `时段内的航班状态${filterMenu('status', STATUS_OPTIONS, statusSelected)}`;
     const elementHead = `天气要素类型${filterMenu('element', elementOptions, elementSelected)}`;
-    const periodHead = `时段${timeLevelHtml()}`;
+    const periodHead = timeLevelHtml();
     const airportHead = airportHeadHtml();
+    const pickHead = pickHeadHtml();
     if (!rows.length) {
-      wrap.innerHTML = `<table class="hs-table"><thead><tr><th class="hs-th-airport">${airportHead}</th><th class="hs-th-time">${periodHead}</th><th class="hs-th-filter">${statusHead}</th><th class="hs-th-filter">${elementHead}</th><th>天气</th><th>原文</th><th>复制</th></tr></thead></table><div class="hs-empty">没有符合筛选条件的天气</div>`;
+      wrap.innerHTML = `<table class="hs-table"><thead><tr><th class="hs-th-airport">${airportHead}</th><th class="hs-th-time">${periodHead}</th><th class="hs-th-filter">${statusHead}</th><th class="hs-th-filter">${elementHead}</th><th>天气</th><th>原文</th><th class="hs-th-pick">${pickHead}</th><th>复制</th></tr></thead></table><div class="hs-empty">没有符合筛选条件的天气</div>`;
       return;
     }
     const groups = [];
@@ -335,8 +352,8 @@
       if (last && last.airport === row.airport) last.rows.push(row);
       else groups.push({ airport: row.airport, rows: [row] });
     });
-    const COLS = 5;
-    let html = `<table class="hs-table"><thead><tr><th class="hs-th-airport">${airportHead}</th><th class="hs-th-time">${periodHead}</th><th class="hs-th-filter">${statusHead}</th><th class="hs-th-filter">${elementHead}</th><th>天气</th><th>原文</th><th>复制</th></tr></thead><tbody>`;
+    const COLS = 6;
+    let html = `<table class="hs-table"><thead><tr><th class="hs-th-airport">${airportHead}</th><th class="hs-th-time">${periodHead}</th><th class="hs-th-filter">${statusHead}</th><th class="hs-th-filter">${elementHead}</th><th>天气</th><th>原文</th><th class="hs-th-pick">${pickHead}</th><th>复制</th></tr></thead><tbody>`;
     let rowIndex = 0;
     groups.forEach((group) => {
       group.rows.forEach((row, index) => {
@@ -350,7 +367,8 @@
         html += `<td class="hs-types">${(row.types || []).map(typeHtml).join('')}</td>`;
         html += `<td class="hs-badges">${popupBadgeHtml(row)}</td>`;
         html += `<td class="hs-plain">${esc(row.plain || '')}</td>`;
-        html += `<td class="hs-action"><button type="button" class="hs-text-btn" data-raw="${id}">显示原文</button></td>`;
+        html += `<td class="hs-action"><button type="button" class="hs-text-btn" data-raw="${id}">查看原文</button></td>`;
+        html += `<td class="hs-pick"><input type="checkbox" data-pick="${id}"${selected.has(id) ? ' checked' : ''}></td>`;
         if (index === 0) {
           html += `<td class="hs-action hs-copy" rowspan="${group.rows.length}"><button type="button" class="hs-text-btn" data-copy="${esc(group.airport)}">复制</button></td>`;
         }
@@ -366,7 +384,7 @@
     const reports = row.reports || [];
     if (!reports.length) return '<div class="hs-raw-empty">该时段没有报文</div>';
     return reports.map((item) => {
-      const when = formatRangeLabel(item.obs_ms, item.obs_ms, row.airport, { noBump: true }).split(' → ')[0] || '';
+      const when = formatRangeLabel(item.obs_ms, item.obs_ms, row.airport, { noBump: true });
       return `<div class="hs-raw-item"><div class="hs-raw-time">${esc(when)}</div><pre class="hs-raw-text">${esc(item.content || '')}</pre></div>`;
     }).join('');
   }
@@ -394,14 +412,26 @@
     const btn = data ? data.querySelector('[data-raw]') : null;
     if (!raw || !data) return;
     raw.hidden = !raw.hidden;
-    if (btn) btn.textContent = raw.hidden ? '显示原文' : '收起原文';
+    if (btn) btn.textContent = raw.hidden ? '查看原文' : '收起原文';
     syncAirportRowspan(data.getAttribute('data-airport'));
   }
 
-  function rowCopyText(row) {
-    const span = formatRangeLabel(row.start_ms, row.end_ms, row.airport).replace(' → ', '至');
+  function periodCopyText(row) {
+    const span = formatRangeLabel(row.start_ms, row.end_ms, row.airport);
     const weather = row.plain || '无满足告警条件的天气';
-    return `${airportLabel(row)} ${span}，${weather}`;
+    return `${span}，${weather}`;
+  }
+
+  function airportCopyText(rows) {
+    if (!rows.length) return '';
+    return `${airportLabel(rows[0])}：${rows.map(periodCopyText).join('；')}。`;
+  }
+
+  function pickedRows(airport) {
+    return visibleRows().filter((row) => {
+      if (airport && row.airport !== airport) return false;
+      return selected.has(lastRows.indexOf(row));
+    });
   }
 
   function copyText(text, okMsg) {
@@ -414,26 +444,45 @@
   }
 
   function copyAirport(airport) {
-    const rows = visibleRows().filter((row) => row.airport === airport);
-    if (!rows.length) return;
-    const label = rows[0] ? airportLabel(rows[0]) : airport;
-    copyText(rows.map(rowCopyText).join('\n'), `已复制${label}天气`);
-  }
-
-  function copyAll() {
-    const rows = visibleRows();
+    const rows = pickedRows(airport);
     if (!rows.length) {
       setStatus('没有可复制的内容', true);
       return;
     }
-    const lines = [];
-    let prev = null;
+    copyText(airportCopyText(rows), `已复制${airportLabel(rows[0])}天气`);
+  }
+
+  function copyAll() {
+    const rows = pickedRows();
+    if (!rows.length) {
+      setStatus('没有可复制的内容', true);
+      return;
+    }
+    const groups = [];
     rows.forEach((row) => {
-      if (prev && prev !== row.airport) lines.push('');
-      prev = row.airport;
-      lines.push(rowCopyText(row));
+      const last = groups[groups.length - 1];
+      if (last && last[0].airport === row.airport) last.push(row);
+      else groups.push([row]);
     });
-    copyText(lines.join('\n'), '已复制全部机场天气');
+    copyText(groups.map(airportCopyText).join('\n'), '已复制全部机场天气');
+  }
+
+  function refreshPickHeader() {
+    const btn = document.querySelector('[data-pick-all]');
+    if (btn) btn.textContent = allVisiblePicked() ? '取消全选' : '全选';
+  }
+
+  function onPickAll() {
+    const ids = visibleIds();
+    const all = allVisiblePicked();
+    ids.forEach((id) => {
+      if (all) selected.delete(id);
+      else selected.add(id);
+    });
+    document.querySelectorAll('[data-pick]').forEach((el) => {
+      el.checked = selected.has(Number(el.getAttribute('data-pick')));
+    });
+    refreshPickHeader();
   }
 
   function fallbackCopy(text, done) {
@@ -484,6 +533,7 @@
       lastRange = data;
       applyElementOptions(data.element_options);
       lastRows = data.rows || [];
+      selected = new Set(lastRows.map((_, index) => index));
       openFilter = '';
       paintTable();
       armExpire();
@@ -565,6 +615,12 @@
           return;
         }
         if (event.target.closest('[data-filter-menu]')) return;
+        const pickAll = event.target.closest('[data-pick-all]');
+        if (pickAll) {
+          event.stopPropagation();
+          onPickAll();
+          return;
+        }
         const rawBtn = event.target.closest('[data-raw]');
         if (rawBtn) {
           toggleRaw(rawBtn.getAttribute('data-raw'));
@@ -574,6 +630,14 @@
         if (copyBtn) copyAirport(copyBtn.getAttribute('data-copy'));
       });
       tableWrap.addEventListener('change', (event) => {
+        const pick = event.target.closest('[data-pick]');
+        if (pick) {
+          const id = Number(pick.getAttribute('data-pick'));
+          if (pick.checked) selected.add(id);
+          else selected.delete(id);
+          refreshPickHeader();
+          return;
+        }
         const box = event.target.closest('[data-filter-item]');
         if (!box) return;
         onFilterCheck(box.getAttribute('data-filter-item'), box.value, box.checked);
@@ -589,6 +653,15 @@
     if (tz) tz.addEventListener('change', () => {
       if (clockMode === 'unified' && panel.style.display !== 'none' && lastRows.length) paintTable();
     });
+    window.addEventListener('resize', syncPanelHeight);
+  }
+
+  function syncPanelHeight() {
+    const panel = document.getElementById('history-panel');
+    const chrome = document.querySelector('.page-chrome');
+    if (!panel) return;
+    const offset = chrome ? Math.max(0, Math.round(chrome.getBoundingClientRect().bottom)) : 120;
+    panel.style.setProperty('--hs-offset', `${offset}px`);
   }
 
   async function loadElementOptions() {
@@ -603,6 +676,7 @@
     bindOnce();
     syncClockSwitch();
     syncCustomVisible();
+    syncPanelHeight();
     await loadElementOptions();
     if (lastRows.length) paintTable();
     else showIdle();

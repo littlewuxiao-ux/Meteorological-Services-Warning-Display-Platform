@@ -1,15 +1,20 @@
 #history-panel {
   display: none;
   flex-direction: column;
-  min-height: calc(100vh - 180px);
+  height: calc(100dvh - var(--hs-offset, 120px));
+  max-height: calc(100dvh - var(--hs-offset, 120px));
+  min-height: 0;
+  overflow: hidden;
   background: #ecf0f1;
 }
 
 .hs-toolbar {
   display: flex;
+  flex-shrink: 0;
   align-items: stretch;
   background: #f4f7fb;
   border-bottom: 1px solid #d5deea;
+  z-index: 6;
 }
 
 .hs-title {
@@ -17,8 +22,8 @@
   align-items: center;
   justify-content: center;
   box-sizing: border-box;
-  flex: 0 0 88px;
-  width: 88px;
+  flex: 0 0 128px;
+  width: 128px;
   padding: 0;
   font-size: 15px;
   font-weight: 700;
@@ -107,6 +112,15 @@
   color: #fff;
   font-size: 13px;
   cursor: pointer;
+}
+
+.hs-query {
+  background: #1f8a4c;
+  border-color: #187a42;
+}
+
+.hs-query:hover {
+  background: #187a42;
 }
 
 .hs-copy-all,
@@ -201,6 +215,7 @@
 
 .hs-table-wrap {
   flex: 1;
+  min-height: 0;
   overflow: auto;
   padding: 0 0 24px;
 }
@@ -214,19 +229,33 @@
 
 .hs-table {
   width: 100%;
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
   background: #fff;
   font-size: 13px;
 }
 
 .hs-table th,
 .hs-table td {
-  border: 1px solid #d5deea;
+  border-right: 1px solid #d5deea;
+  border-bottom: 1px solid #d5deea;
   padding: 8px 10px;
   vertical-align: top;
 }
 
+.hs-table th:first-child,
+.hs-table td:first-child {
+  border-left: 1px solid #d5deea;
+}
+
+.hs-table thead th {
+  border-top: 1px solid #d5deea;
+}
+
 .hs-table th {
+  position: sticky;
+  top: 0;
+  z-index: 5;
   background: #eef2f6;
   text-align: center;
   vertical-align: middle;
@@ -236,8 +265,8 @@
 .hs-th-airport,
 .hs-airport {
   box-sizing: border-box;
-  min-width: 88px;
-  width: 88px;
+  min-width: 128px;
+  width: 128px;
   text-align: center;
 }
 
@@ -248,12 +277,19 @@
   word-break: break-word;
 }
 
+.hs-th-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+
 .hs-name-switch,
 .hs-level-group {
   display: inline-flex;
   align-items: center;
-  vertical-align: middle;
-  margin-left: 4px;
+  margin-left: 0;
 }
 
 .hs-name-btn,
@@ -295,6 +331,30 @@
   white-space: nowrap;
 }
 
+.hs-th-pick {
+  width: 88px;
+  white-space: nowrap;
+}
+
+.hs-pick {
+  text-align: center;
+  vertical-align: middle;
+}
+
+.hs-pick-all {
+  border: none;
+  background: transparent;
+  color: #1b2838;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0;
+}
+
+.hs-pick-all:hover {
+  color: #187a42;
+}
+
 .hs-th-filter {
   position: relative;
   white-space: normal;
@@ -322,7 +382,7 @@
   position: absolute;
   top: calc(100% - 1px);
   left: 50%;
-  z-index: 30;
+  z-index: 40;
   min-width: 132px;
   padding: 6px 0;
   border: 1px solid #c5d2e0;
@@ -360,6 +420,8 @@
 .hs-types {
   width: 1%;
   white-space: nowrap;
+  text-align: center;
+  vertical-align: middle;
 }
 
 .hs-badges {
