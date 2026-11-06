@@ -390,12 +390,23 @@
   white-space: normal;
 }
 
+.hs-th-title {
+  font-weight: 700;
+}
+
+.hs-th-tools {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
 .hs-status-help-wrap {
   position: relative;
   display: inline-flex;
   align-items: center;
   vertical-align: middle;
-  margin-left: 4px;
 }
 
 .hs-table .help-icon-btn.hs-status-help {
@@ -418,20 +429,42 @@
   top: 0;
   left: 0;
   z-index: 40;
-  width: 22em;
-  padding: 8px 10px;
+  width: 26em;
+  padding: 10px 12px;
   border: 1px solid #c5d2e0;
-  border-radius: 6px;
+  border-radius: 8px;
   background: #1b2838;
   color: #fff;
-  box-shadow: 0 6px 16px rgba(27, 40, 56, 0.25);
+  box-shadow: 0 8px 20px rgba(27, 40, 56, 0.28);
   font-size: 12px;
   font-weight: 400;
   line-height: 1.55;
   text-align: left;
-  white-space: pre-wrap;
+  white-space: normal;
   transform: translateX(-50%);
   pointer-events: none;
+}
+
+.hs-status-tip-item + .hs-status-tip-item {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+.hs-status-tip-name {
+  display: inline-block;
+  margin-bottom: 4px;
+  padding: 1px 7px;
+  border-radius: 3px;
+  background: #3d7ea6;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.5;
+}
+
+.hs-status-tip-body {
+  color: #e8eef4;
 }
 
 .hs-status-help-wrap:hover .hs-status-tip,
@@ -445,7 +478,7 @@
   justify-content: center;
   width: 18px;
   height: 18px;
-  margin-left: 4px;
+  margin-left: 0;
   padding: 0;
   border: 1px solid #9aafc4;
   border-radius: 3px;

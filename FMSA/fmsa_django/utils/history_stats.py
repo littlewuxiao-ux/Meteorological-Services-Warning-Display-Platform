@@ -760,33 +760,47 @@ def build_plain_parts(metars: list, threshold: str, popup: dict = None) -> list:
     clouds = [m.metar_min_cloud_height for m in metars if m.metar_min_cloud_height is not None]
     temps = [m.metar_temp_val for m in metars if m.metar_temp_val is not None]
     parts = []
+
+    def add(label, text):
+        text = str(text or '').strip()
+        if not label or not text:
+            return
+        parts.append({'labels': [label], 'text': text})
+
     if '风速' in labels:
         wind_bits = []
         if speeds:
             wind_bits.append(f'平均风速最大 {int(round(max(speeds)))} 米/秒')
         if gusts:
             wind_bits.append(f'阵风最大 {int(round(max(gusts)))} 米/秒')
-        if wind_bits:
-            parts.append({'labels': ['风速'], 'text': '，'.join(wind_bits)})
-    if '能见度' in labels and vis:
-        parts.append({'labels': ['能见度'], 'text': f'能见度最低 {int(min(vis))} 米'})
+        add('风速', '，'.join(wind_bits) if wind_bits else '风速')
+    if '能见度' in labels:
+        add('能见度', f'能见度最低 {int(min(vis))} 米' if vis else '能见度')
     if 'RVR' in labels:
         rvr_text = _format_rvr_from_metars(metars)
-        if rvr_text:
-            parts.append({'labels': ['RVR'], 'text': 'RVR最低 ' + rvr_text})
+        add('RVR', f'RVR最低 {rvr_text}' if rvr_text else 'RVR')
+    wx_seen = set()
+    for item in popup.get('weather') or []:
+        name = str(item.get('text') or '').strip()
+        if name and name not in wx_seen:
+            wx_seen.add(name)
+            add(name, name)
     for name in _phenomenon_plain_names(metars, threshold):
-        parts.append({'labels': [name], 'text': name})
-    if '云底高' in labels and clouds:
-        feet = int(min(clouds)) * 100
-        parts.append({'labels': ['云底高'], 'text': f'云底高最低 {feet} 英尺'})
+        if name not in wx_seen:
+            wx_seen.add(name)
+            add(name, name)
+    if '云底高' in labels:
+        add('云底高', f'云底高最低 {int(min(clouds)) * 100} 英尺' if clouds else '云底高')
     hot = [t for t in temps if t >= 0]
     cold = [t for t in temps if t < 0]
-    if '高温' in labels and hot:
-        parts.append({'labels': ['高温'], 'text': f'最高温度 {int(round(max(hot)))}℃'})
-    if '低温' in labels and cold:
-        parts.append({'labels': ['低温'], 'text': f'最低温度 {int(round(min(cold)))}℃'})
+    if '高温' in labels:
+        add('高温', f'最高温度 {int(round(max(hot)))}℃' if hot else '高温')
+    if '低温' in labels:
+        add('低温', f'最低温度 {int(round(min(cold)))}℃' if cold else '低温')
     if '风切变' in labels:
-        parts.append({'labels': ['风切变'], 'text': '风切变'})
+        add('风切变', '风切变')
+    if '趋势' in labels:
+        add('趋势', '趋势')
     return parts
 
 

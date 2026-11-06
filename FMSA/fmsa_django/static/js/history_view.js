@@ -330,15 +330,22 @@
   }
 
   const STATUS_HELP = [
-    '落地：查询时段内有实际到达（ATA）的机场；抓取其 ATA 前后各「已完成航班实况抓取范围」（可配置）小时的天气。',
-    '起飞：查询时段内有实际起飞（ATD）的机场；抓取其 ATD 前后各「已完成航班实况抓取范围」（可配置）小时的天气。',
-    '飞行中：查询截止时飞机已起飞、尚未落地的航班，抓取目的地机场过去「未落地/未起飞航班实况抓取范围」（可配置）小时至截止时间的天气。',
-    '即将起飞：查询截止时尚未起飞，且计划时刻在截止时刻后「未落地/未起飞航班实况抓取范围」（可配置）内，或计划时刻已过仍未起飞，起飞机场在该范围至截止时刻前「未落地/未起飞航班实况抓取范围」（可配置）小时后的天气。',
-    '停场：查询时段内该机场停场记录与实况重叠的天气；不按落地/起飞小时范围，由停场时段决定。只统计 O3 地面占用，天气要素以回顾设置中勾选的停场要素为准。',
-  ].join('\n');
+    { name: '落地', text: '查询时段内有实际到达（ATA）的机场；抓取其 ATA 前后各「已完成航班实况抓取范围」（可配置）小时的天气。' },
+    { name: '起飞', text: '查询时段内有实际起飞（ATD）的机场；抓取其 ATD 前后各「已完成航班实况抓取范围」（可配置）小时的天气。' },
+    { name: '飞行中', text: '查询截止时飞机已起飞、尚未落地的航班，抓取目的地机场过去「未落地/未起飞航班实况抓取范围」（可配置）小时至截止时间的天气。' },
+    { name: '即将起飞', text: '查询截止时尚未起飞，且计划时刻在截止时刻后「未落地/未起飞航班实况抓取范围」（可配置）内，或计划时刻已过仍未起飞，起飞机场在该范围至截止时刻前「未落地/未起飞航班实况抓取范围」（可配置）小时后的天气。' },
+    { name: '停场', text: '查询时段内该机场停场记录与实况重叠的天气；不按落地/起飞小时范围，由停场时段决定。只统计 O3 地面占用，天气要素以回顾设置中勾选的停场要素为准。' },
+  ];
 
   function statusHelpHtml() {
-    return `<span class="hs-status-help-wrap"><button type="button" class="help-icon-btn hs-status-help" aria-label="航班或飞机状态说明">?</button><span class="hs-status-tip">${esc(STATUS_HELP)}</span></span>`;
+    const items = STATUS_HELP.map((item) => (
+      `<div class="hs-status-tip-item"><div class="hs-status-tip-name">${esc(item.name)}</div><div class="hs-status-tip-body">${esc(item.text)}</div></div>`
+    )).join('');
+    return `<span class="hs-status-help-wrap"><button type="button" class="help-icon-btn hs-status-help" aria-label="航班或飞机状态说明">?</button><div class="hs-status-tip">${items}</div></span>`;
+  }
+
+  function filterHeadHtml(title, kind, options, selected, extra) {
+    return `<div class="hs-th-stack"><div class="hs-th-title">${esc(title)}</div><div class="hs-th-tools">${filterMenu(kind, options, selected)}${extra || ''}</div></div>`;
   }
 
   function bindStatusHelp(wrap) {
@@ -394,8 +401,8 @@
       return;
     }
     const rows = visibleRows();
-    const statusHead = `航班或飞机状态${filterMenu('status', STATUS_OPTIONS, statusSelected)}${statusHelpHtml()}`;
-    const elementHead = `天气要素类型${filterMenu('element', elementOptions, elementSelected)}`;
+    const statusHead = filterHeadHtml('航班或飞机状态', 'status', STATUS_OPTIONS, statusSelected, statusHelpHtml());
+    const elementHead = filterHeadHtml('天气要素类型', 'element', elementOptions, elementSelected);
     const periodHead = timeLevelHtml();
     const airportHead = airportHeadHtml();
     const pickHead = pickHeadHtml();
