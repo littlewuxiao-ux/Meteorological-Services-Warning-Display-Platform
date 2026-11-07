@@ -297,19 +297,16 @@
     <div class="hs-title">回顾</div>
     <div class="hs-main">
       <div class="hs-presets">
-        <label><input type="radio" name="history-preset" value="day" checked>白班 08:30–17:30</label>
-        <label><input type="radio" name="history-preset" value="night">夜班 17:30–次日08:30</label>
-        <label><input type="radio" name="history-preset" value="daynight">白夜 08:30–次日08:30</label>
+        <label><input type="radio" name="history-preset" value="day" checked>白班 <span data-hs-range="day">08:30–17:30</span></label>
+        <label><input type="radio" name="history-preset" value="night">夜班 <span data-hs-range="night">17:30–次日08:30</span></label>
+        <label><input type="radio" name="history-preset" value="daynight">白夜 <span data-hs-range="daynight">08:30–次日08:30</span></label>
         <label><input type="radio" name="history-preset" value="custom">自定义</label>
       </div>
-      <div class="hs-custom" id="history-custom-range" hidden>
-        <input type="datetime-local" id="history-start">
+      <div class="hs-custom is-disabled" id="history-custom-range">
+        <input type="datetime-local" id="history-start" disabled>
         <span>至</span>
-        <input type="datetime-local" id="history-end">
-      </div>
-      <div class="hs-clock-switch" id="history-clock-switch">
-        <button type="button" class="is-on" data-clock="zone">分区时间</button>
-        <button type="button" data-clock="unified">统一时间</button>
+        <input type="datetime-local" id="history-end" disabled>
+        <button type="button" class="hs-custom-ok" id="history-custom-ok" disabled>确认</button>
       </div>
       <button type="button" class="hs-query" id="history-query">查询</button>
       <button type="button" class="hs-copy-all" id="history-copy-all">全部复制</button>
@@ -738,14 +735,10 @@
           <button type="button" class="settings-btn-cancel" id="history-add-group">新增特殊组</button>
           <button type="button" class="settings-btn-save" id="history-save">保存规则</button>
           <button type="button" class="settings-btn-cancel settings-restore-btn" data-group="history_stats_config" data-msg="history-stats-msg">恢复默认</button>
-          <span class="settings-hint">通用组适用于全部机场；特殊组按四字代码覆盖通用组，最多 3 个。</span>
+          <span class="settings-hint">通用组适用于全部机场；特殊组按四字代码覆盖通用组（含停场要素），最多 3 个。未改过的用户读取 default 模板，超级用户可改该模板。</span>
         </div>
         <div class="settings-msg" id="history-stats-msg"></div>
         <div id="history-groups"></div>
-        <div class="hs-parking-box">
-          <div class="hs-parking-title">影响停场的天气要素（全页一套，默认风速、低温及现网停场天气类型）</div>
-          <div id="history-parking-elements" class="hs-parking-elements"></div>
-        </div>
       </div>
 
       <!-- Tab11: 外观样式（地图样式 + 机场详细信息设置） -->

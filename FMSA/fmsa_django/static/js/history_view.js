@@ -32,10 +32,11 @@
   let elementOptions = ELEMENT_FALLBACK.slice();
   let statusSelected = new Set(STATUS_OPTIONS);
   let elementSelected = new Set(ELEMENT_FALLBACK.filter((name) => name !== '趋势'));
-  let clockMode = 'zone';
   let nameMode = 'icao';
   let timeLevel = { year: false, month: false, day: true, hour: true, minute: true };
   let selected = new Set();
+  let customStartMs = null;
+  let customEndMs = null;
 
   function apiUrl(path) {
     const mode = (typeof currentTimeMode !== 'undefined' ? currentTimeMode : null) || window.currentTimeMode || 'current';
@@ -72,21 +73,29 @@
     return String(n).padStart(2, '0');
   }
 
-  function msToLocalInput(ms) {
-    const date = new Date(Number(ms));
-    if (!Number.isFinite(date.getTime())) return '';
-    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  function displayUtc() {
+    return window.displayTimezone === 'UTC';
+  }
+
+  function msToInput(ms) {
+    const parts = timestampParts(ms, displayUtc());
+    if (!parts.year) return '';
+    return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`;
   }
 
   function inputToMs(value) {
-    if (!value) return null;
-    const date = new Date(value);
-    const ms = date.getTime();
-    return Number.isFinite(ms) ? ms : null;
+    const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(String(value || ''));
+    if (!match) return null;
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    const day = Number(match[3]);
+    const hour = Number(match[4]);
+    const minute = Number(match[5]);
+    if (displayUtc()) return Date.UTC(year, month - 1, day, hour, minute);
+    return Date.UTC(year, month - 1, day, hour, minute) - 8 * 3600000;
   }
 
   function usesUtc(airport) {
-    if (clockMode === 'unified') return window.displayTimezone === 'UTC';
     return !String(airport || '').toUpperCase().startsWith('Z');
   }
 
@@ -207,10 +216,42 @@
     }
   }
 
-  function syncClockSwitch() {
-    document.querySelectorAll('#history-clock-switch [data-clock]').forEach((btn) => {
-      btn.classList.toggle('is-on', btn.getAttribute('data-clock') === clockMode);
+  const PRESET_RANGE_CST = {
+    day: '08:30–17:30',
+    night: '17:30–次日08:30',
+    daynight: '08:30–次日08:30',
+  };
+  const PRESET_RANGE_UTC = {
+    day: '00:30–09:30',
+    night: '09:30–次日00:30',
+    daynight: '00:30–次日00:30',
+  };
+
+  function syncPresetLabels() {
+    const map = displayUtc() ? PRESET_RANGE_UTC : PRESET_RANGE_CST;
+    document.querySelectorAll('[data-hs-range]').forEach((el) => {
+      const key = el.getAttribute('data-hs-range');
+      if (map[key]) el.textContent = map[key];
     });
+  }
+
+  function writeCustomInputs() {
+    const start = document.getElementById('history-start');
+    const end = document.getElementById('history-end');
+    if (start) start.value = customStartMs != null ? msToInput(customStartMs) : '';
+    if (end) end.value = customEndMs != null ? msToInput(customEndMs) : '';
+  }
+
+  function commitCustomRange() {
+    const startMs = inputToMs((document.getElementById('history-start') || {}).value);
+    const endMs = inputToMs((document.getElementById('history-end') || {}).value);
+    if (startMs != null) customStartMs = startMs;
+    if (endMs != null) customEndMs = endMs;
+    writeCustomInputs();
+    const start = document.getElementById('history-start');
+    const end = document.getElementById('history-end');
+    if (start) start.blur();
+    if (end) end.blur();
   }
 
   function timeLevelHtml() {
@@ -242,21 +283,30 @@
     return `<button type="button" class="hs-pick-all" data-pick-all>${label}</button>`;
   }
 
-  function syncCustomVisible() {
+  function syncCustomEnabled() {
+    const on = preset() === 'custom';
     const box = document.getElementById('history-custom-range');
-    if (box) box.hidden = preset() !== 'custom';
+    const start = document.getElementById('history-start');
+    const end = document.getElementById('history-end');
+    const ok = document.getElementById('history-custom-ok');
+    if (box) box.classList.toggle('is-disabled', !on);
+    if (start) start.disabled = !on;
+    if (end) end.disabled = !on;
+    if (ok) ok.disabled = !on;
   }
 
   async function fillCustomDefaults() {
-    const start = document.getElementById('history-start');
-    const end = document.getElementById('history-end');
-    if (!start || !end || (start.value && end.value)) return;
+    if (customStartMs != null && customEndMs != null) {
+      writeCustomInputs();
+      return;
+    }
     try {
       const res = await fetch(apiUrl('history-stats/range/?preset=day'), { headers: headers() });
       const data = await res.json();
       if (!data.success) return;
-      if (!start.value) start.value = msToLocalInput(data.start_ms);
-      if (!end.value) end.value = msToLocalInput(data.end_ms);
+      if (customStartMs == null) customStartMs = data.start_ms;
+      if (customEndMs == null) customEndMs = data.end_ms;
+      writeCustomInputs();
     } catch (err) { /* 用户稍后手填 */ }
   }
 
@@ -407,7 +457,7 @@
     const airportHead = airportHeadHtml();
     const pickHead = pickHeadHtml();
     if (!rows.length) {
-      wrap.innerHTML = `<table class="hs-table"><thead><tr><th class="hs-th-airport">${airportHead}</th><th class="hs-th-time">${periodHead}</th><th class="hs-th-filter">${statusHead}</th><th class="hs-th-filter">${elementHead}</th><th>天气</th><th>原文</th><th class="hs-th-pick">${pickHead}</th><th>复制</th></tr></thead></table><div class="hs-empty">没有符合筛选条件的天气</div>`;
+      wrap.innerHTML = `<table class="hs-table"><thead><tr><th class="hs-th-airport">${airportHead}</th><th class="hs-th-time">${periodHead}</th><th class="hs-th-filter hs-th-status">${statusHead}</th><th class="hs-th-filter">${elementHead}</th><th>天气</th><th>原文</th><th class="hs-th-pick">${pickHead}</th><th>复制</th></tr></thead></table><div class="hs-empty">没有符合筛选条件的天气</div>`;
       bindStatusHelp(wrap);
       return;
     }
@@ -418,7 +468,7 @@
       else groups.push({ airport: row.airport, rows: [row] });
     });
     const COLS = 6;
-    let html = `<table class="hs-table"><thead><tr><th class="hs-th-airport">${airportHead}</th><th class="hs-th-time">${periodHead}</th><th class="hs-th-filter">${statusHead}</th><th class="hs-th-filter">${elementHead}</th><th>天气</th><th>原文</th><th class="hs-th-pick">${pickHead}</th><th>复制</th></tr></thead><tbody>`;
+    let html = `<table class="hs-table"><thead><tr><th class="hs-th-airport">${airportHead}</th><th class="hs-th-time">${periodHead}</th><th class="hs-th-filter hs-th-status">${statusHead}</th><th class="hs-th-filter">${elementHead}</th><th>天气</th><th>原文</th><th class="hs-th-pick">${pickHead}</th><th>复制</th></tr></thead><tbody>`;
     let rowIndex = 0;
     groups.forEach((group) => {
       group.rows.forEach((row, index) => {
@@ -429,7 +479,7 @@
           html += `<td class="hs-airport" rowspan="${group.rows.length}">${esc(airportLabel(row))}</td>`;
         }
         html += `<td class="hs-period">${timeHtml(row)}</td>`;
-        html += `<td class="hs-types">${visibleTypes(row).map(typeHtml).join('')}</td>`;
+        html += `<td class="hs-types hs-status-cell">${visibleTypes(row).map(typeHtml).join('')}</td>`;
         html += `<td class="hs-badges">${popupBadgeHtml(row)}</td>`;
         html += `<td class="hs-plain">${esc(visiblePlain(row) || '')}</td>`;
         html += `<td class="hs-action"><button type="button" class="hs-text-btn" data-raw="${id}">查看原文</button></td>`;
@@ -574,16 +624,20 @@
   }
 
   async function runQuery() {
+    const kind = preset();
+    if (kind === 'custom' && (customStartMs == null || customEndMs == null)) {
+      setStatus('请先确认自定义时间', true);
+      return;
+    }
     const seq = ++querySeq;
     const btn = document.getElementById('history-query');
     if (btn) btn.disabled = true;
     setStatus('正在查询…');
     try {
-      const kind = preset();
       const body = { preset: kind };
       if (kind === 'custom') {
-        body.start_ms = inputToMs(document.getElementById('history-start').value);
-        body.end_ms = inputToMs(document.getElementById('history-end').value);
+        body.start_ms = customStartMs;
+        body.end_ms = customEndMs;
       }
       const res = await fetch(apiUrl('history-stats/query/'), {
         method: 'POST',
@@ -638,20 +692,12 @@
     bound = true;
     panel.querySelectorAll('input[name="history-preset"]').forEach((el) => {
       el.addEventListener('change', async () => {
-        syncCustomVisible();
+        syncCustomEnabled();
         if (preset() === 'custom') await fillCustomDefaults();
       });
     });
-    const clockSwitch = document.getElementById('history-clock-switch');
-    if (clockSwitch) {
-      clockSwitch.addEventListener('click', (event) => {
-        const btn = event.target.closest('[data-clock]');
-        if (!btn) return;
-        clockMode = btn.getAttribute('data-clock') === 'unified' ? 'unified' : 'zone';
-        syncClockSwitch();
-        if (lastRows.length) paintTable();
-      });
-    }
+    const customOk = document.getElementById('history-custom-ok');
+    if (customOk) customOk.addEventListener('click', commitCustomRange);
     const queryBtn = document.getElementById('history-query');
     if (queryBtn) queryBtn.addEventListener('click', runQuery);
     const copyAllBtn = document.getElementById('history-copy-all');
@@ -717,7 +763,8 @@
     });
     const tz = document.getElementById('timezone-toggle-input');
     if (tz) tz.addEventListener('change', () => {
-      if (clockMode === 'unified' && panel.style.display !== 'none' && lastRows.length) paintTable();
+      syncPresetLabels();
+      writeCustomInputs();
     });
     window.addEventListener('resize', syncPanelHeight);
   }
@@ -740,13 +787,14 @@
 
   async function startHistoryView() {
     bindOnce();
-    syncClockSwitch();
-    syncCustomVisible();
+    syncPresetLabels();
+    syncCustomEnabled();
+    writeCustomInputs();
     syncPanelHeight();
     await loadElementOptions();
     if (lastRows.length) paintTable();
     else showIdle();
-    if (preset() === 'custom') fillCustomDefaults();
+    await fillCustomDefaults();
   }
 
   function stopHistoryView() {
@@ -756,6 +804,7 @@
   window.startHistoryView = startHistoryView;
   window.stopHistoryView = stopHistoryView;
   window.refreshHistoryTimezone = function () {
-    if (lastRows.length) paintTable();
+    syncPresetLabels();
+    writeCustomInputs();
   };
 })();

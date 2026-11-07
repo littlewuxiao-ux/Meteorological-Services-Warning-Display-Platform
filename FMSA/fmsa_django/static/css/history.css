@@ -41,33 +41,6 @@
   min-width: 0;
 }
 
-.hs-clock-switch {
-  display: inline-flex;
-  align-items: stretch;
-  border: 1px solid #1b2838;
-  border-radius: 4px;
-  overflow: hidden;
-}
-
-.hs-clock-switch button {
-  height: 28px;
-  padding: 0 10px;
-  border: none;
-  background: #fff;
-  color: #1b2838;
-  font-size: 13px;
-  cursor: pointer;
-}
-
-.hs-clock-switch button + button {
-  border-left: 1px solid #1b2838;
-}
-
-.hs-clock-switch button.is-on {
-  background: #1b2838;
-  color: #fff;
-}
-
 .hs-presets {
   display: inline-flex;
   flex-wrap: wrap;
@@ -98,6 +71,33 @@
   border: 1px solid #9aafc4;
   border-radius: 4px;
   padding: 0 6px;
+}
+
+.hs-custom.is-disabled {
+  opacity: 0.42;
+  filter: grayscale(0.35);
+}
+
+.hs-custom.is-disabled input,
+.hs-custom.is-disabled .hs-custom-ok {
+  cursor: not-allowed;
+  background: #eef1f4;
+  color: #8a97a6;
+}
+
+.hs-custom-ok {
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid #1b2838;
+  border-radius: 4px;
+  background: #fff;
+  color: #1b2838;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.hs-custom-ok:disabled {
+  cursor: not-allowed;
 }
 
 .hs-query,
@@ -148,19 +148,12 @@
   padding: 8px 12px 16px;
 }
 
-.hs-parking-box {
-  margin-top: 10px;
-  padding: 8px 10px;
-  border: 1px solid #d5deea;
-  border-radius: 4px;
-  background: #f8fafc;
-}
-
 .hs-parking-title {
-  margin-bottom: 8px;
-  font-size: 13px;
+  margin: 0;
+  font-size: 12px;
   font-weight: 700;
   color: #1b2838;
+  white-space: nowrap;
 }
 
 .hs-parking-elements {
@@ -180,15 +173,35 @@
 
 #settings-pane-history-stats .hs-group {
   display: flex;
-  flex-wrap: nowrap;
-  align-items: center;
-  gap: 10px 12px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
   border: 1px solid #d5deea;
   border-radius: 4px;
   padding: 6px 10px;
   margin-bottom: 6px;
   background: #f8fafc;
+}
+
+.hs-group-head {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 10px 12px;
   overflow-x: auto;
+}
+
+.hs-parking-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding-top: 6px;
+  border-top: 1px dashed #d5deea;
+}
+
+.hs-unit {
+  color: #66788a;
 }
 
 .hs-group-title {
@@ -390,6 +403,18 @@
   white-space: normal;
 }
 
+.hs-th-status,
+.hs-status-cell,
+.hs-types {
+  box-sizing: border-box;
+  min-width: 168px;
+  width: 168px;
+}
+
+.hs-th-status .hs-th-title {
+  white-space: nowrap;
+}
+
 .hs-th-title {
   display: inline-flex;
   align-items: center;
@@ -538,7 +563,6 @@
 }
 
 .hs-types {
-  width: 1%;
   white-space: nowrap;
   text-align: center;
   vertical-align: middle;

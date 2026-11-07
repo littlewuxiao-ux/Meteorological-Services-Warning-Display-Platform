@@ -37,14 +37,28 @@
     el.className = 'settings-msg ' + (text ? (ok ? 'success' : 'error') : '');
   }
 
+  function parkingHtml(selected) {
+    const chosen = new Set((selected || []).map((name) => String(name || '').trim()).filter(Boolean));
+    const items = elementOptions.map((name) => {
+      const checked = chosen.has(name) ? ' checked' : '';
+      return `<label class="hs-parking-item"><input type="checkbox" data-parking-el value="${esc(name)}"${checked}><span>${esc(name)}</span></label>`;
+    }).join('');
+    return `<div class="hs-parking-row">
+      <div class="hs-parking-title">影响停场的天气要素</div>
+      <div class="hs-parking-elements">${items}</div>
+    </div>`;
+  }
+
   function paramFields(values, extra) {
     const v = values || {};
     return `
       <label class="hs-field" title="ATA/ATD 前后各看多少小时实况">已完成航班实况抓取范围
         <input type="number" min="0" max="24" step="1" data-field="done_hours" value="${esc(v.done_hours ?? 2)}">
+        <span class="hs-unit">小时</span>
       </label>
       <label class="hs-field" title="飞行中、即将起飞看过去多少小时到查询截止">未落地/未起飞航班实况抓取范围
         <input type="number" min="0" max="24" step="1" data-field="open_hours" value="${esc(v.open_hours ?? 4)}">
+        <span class="hs-unit">小时</span>
       </label>
       <label class="hs-field">实况告警等级抓取范围
         <select data-field="alert_level">
@@ -55,6 +69,7 @@
       </label>
       <label class="hs-field" title="两份命中报观测时间差达到该小时数则拆成两段">气象要素分段间隔
         <input type="number" min="0" max="24" step="1" data-field="gap_hours" value="${esc(v.gap_hours ?? 2)}">
+        <span class="hs-unit">小时</span>
       </label>
       ${extra || ''}
     `;
@@ -63,13 +78,16 @@
   function specialGroupHtml(index, group) {
     const g = group || {};
     return `<div class="hs-group" data-kind="special" data-index="${index}">
-      <div class="hs-group-title">
-        <span>特殊组 ${index + 1}</span>
-        <button type="button" class="hs-remove" data-remove="${index}">删除</button>
+      <div class="hs-group-head">
+        <div class="hs-group-title">
+          <span>特殊组 ${index + 1}</span>
+          <button type="button" class="hs-remove" data-remove="${index}">删除</button>
+        </div>
+        <div class="hs-group-fields">
+          ${paramFields(g, `<label class="hs-field hs-airports">适用机场四字代码<input type="text" data-field="airports_text" value="${esc(g.airports_text || (g.airports || []).join(','))}" placeholder="ZBAA,ZSPD">（逗号分隔）</label>`)}
+        </div>
       </div>
-      <div class="hs-group-fields">
-        ${paramFields(g, `<label class="hs-field hs-airports">适用机场四字代码<input type="text" data-field="airports_text" value="${esc(g.airports_text || (g.airports || []).join(','))}" placeholder="ZBAA,ZSPD">（逗号分隔）</label>`)}
-      </div>
+      ${parkingHtml(g.parking_elements)}
     </div>`;
   }
 
@@ -79,22 +97,14 @@
     const general = (config && config.general) || {};
     const special = (config && config.special) || [];
     wrap.innerHTML = `<div class="hs-group" data-kind="general">
-      <div class="hs-group-title">通用组</div>
-      <div class="hs-group-fields">${paramFields(general)}</div>
+      <div class="hs-group-head">
+        <div class="hs-group-title">通用组</div>
+        <div class="hs-group-fields">${paramFields(general)}</div>
+      </div>
+      ${parkingHtml(general.parking_elements)}
     </div>` + special.map((group, index) => specialGroupHtml(index, group)).join('');
     const addBtn = document.getElementById('history-add-group');
     if (addBtn) addBtn.disabled = special.length >= 3;
-    renderParkingElements((config && config.parking_elements) || []);
-  }
-
-  function renderParkingElements(selected) {
-    const wrap = document.getElementById('history-parking-elements');
-    if (!wrap) return;
-    const chosen = new Set((selected || []).map((name) => String(name || '').trim()).filter(Boolean));
-    wrap.innerHTML = elementOptions.map((name) => {
-      const checked = chosen.has(name) ? ' checked' : '';
-      return `<label class="hs-parking-item"><input type="checkbox" data-parking-el value="${esc(name)}"${checked}><span>${esc(name)}</span></label>`;
-    }).join('');
   }
 
   function readField(box, field, fallback) {
@@ -116,6 +126,15 @@
     };
   }
 
+  function collectParking(box) {
+    const parking = [];
+    if (!box) return parking;
+    box.querySelectorAll('[data-parking-el]').forEach((el) => {
+      if (el.checked) parking.push(el.value);
+    });
+    return parking;
+  }
+
   function collectConfig() {
     const generalBox = document.querySelector('#history-groups .hs-group[data-kind="general"]');
     const special = [];
@@ -124,16 +143,15 @@
         name: `特殊组${index + 1}`,
         ...collectParams(box),
         airports_text: readField(box, 'airports_text', ''),
+        parking_elements: collectParking(box),
       });
     });
-    const parking = [];
-    document.querySelectorAll('#history-parking-elements [data-parking-el]').forEach((box) => {
-      if (box.checked) parking.push(box.value);
-    });
     return {
-      general: collectParams(generalBox),
+      general: {
+        ...collectParams(generalBox),
+        parking_elements: collectParking(generalBox),
+      },
       special,
-      parking_elements: parking,
     };
   }
 
@@ -187,8 +205,14 @@
         const wrap = document.getElementById('history-groups');
         const count = wrap ? wrap.querySelectorAll('.hs-group[data-kind="special"]').length : 0;
         if (count >= 3) return;
-        wrap.insertAdjacentHTML('beforeend', specialGroupHtml(count, {}));
-        addBtn.disabled = count + 1 >= 3;
+        const cfg = collectConfig();
+        const general = cfg.general || {};
+        cfg.special.push({
+          ...general,
+          airports_text: '',
+          parking_elements: (general.parking_elements || []).slice(),
+        });
+        renderGroups(cfg);
       });
     }
     const groups = document.getElementById('history-groups');

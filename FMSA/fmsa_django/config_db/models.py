@@ -334,7 +334,7 @@ class TrendAlertConfig(models.Model):
 
 
 class HistoryStatsConfig(models.Model):
-    """历史天气统计规则。每个用户一行 JSON，没改过则读 default。"""
+    """历史天气统计规则。每个用户一行 JSON；模板写在 user_code=default，没改过则读该行。"""
 
     user_code = models.CharField(max_length=12, unique=True, verbose_name='用户代码')
     config = models.JSONField(default=dict, verbose_name='配置JSON')

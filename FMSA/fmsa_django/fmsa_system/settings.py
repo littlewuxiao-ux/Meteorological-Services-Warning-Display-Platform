@@ -332,7 +332,6 @@ FMSA_CONFIG = {
     # 飞机停场解析器配置
     'AIRCRAFT_PARKING_CONFIG': {
         'PAST_HOURS': 72,               # 过去小时数
-        'CURRENT_TIME_OFFSET': 0,       # 当前时间偏移（小时）
         'CARRIER_CODE': 'O3',           # 承运人代码
         'MAX_RECORDS': 500              # 最大保留机场行数
     },

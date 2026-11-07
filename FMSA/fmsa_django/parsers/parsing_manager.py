@@ -538,9 +538,6 @@ class ParsingManager:
         # 执行预报解析
         if 'taf' in update_types:
             results = self._execute_taf_parser(results, active_airport_codes)
-        
-        if 'aircraft_parking' in update_types and 'flight' not in update_types:
-            results = self._execute_aircraft_parking_parser(results)
 
         # 执行 NWP 解析（独立于其他解析器）
         if 'nwp' in update_types:

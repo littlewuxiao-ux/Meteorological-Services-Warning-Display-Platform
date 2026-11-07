@@ -54,10 +54,11 @@ def default_parking_elements() -> list:
 
 
 def default_config() -> dict:
+    general = default_params()
+    general['parking_elements'] = default_parking_elements()
     return {
-        'general': default_params(),
+        'general': general,
         'special': [],
-        'parking_elements': default_parking_elements(),
     }
 
 
@@ -97,21 +98,41 @@ def parse_airports(text) -> list:
     return codes
 
 
-def _params_from(raw: dict) -> dict:
-    base = default_params()
+def _params_from(raw: dict, base: Optional[dict] = None) -> dict:
+    seed = default_params()
+    fallback = base if isinstance(base, dict) else seed
     src = raw if isinstance(raw, dict) else {}
     return {
-        'done_hours': _num(src.get('done_hours'), base['done_hours'], 0, 24),
-        'open_hours': _num(src.get('open_hours'), base['open_hours'], 0, 24),
-        'alert_level': _level(src.get('alert_level'), base['alert_level']),
-        'gap_hours': _num(src.get('gap_hours'), base['gap_hours'], 0, 24),
+        'done_hours': _num(src.get('done_hours'), fallback.get('done_hours', seed['done_hours']), 0, 24),
+        'open_hours': _num(src.get('open_hours'), fallback.get('open_hours', seed['open_hours']), 0, 24),
+        'alert_level': _level(src.get('alert_level'), fallback.get('alert_level', seed['alert_level'])),
+        'gap_hours': _num(src.get('gap_hours'), fallback.get('gap_hours', seed['gap_hours']), 0, 24),
     }
 
 
-def normalize_config(payload: dict) -> tuple[dict, list]:
+def _group_parking_raw(group, legacy=None):
+    if isinstance(group, dict) and 'parking_elements' in group:
+        return group.get('parking_elements')
+    return legacy
+
+
+def normalize_config(payload: dict, base: Optional[dict] = None) -> tuple[dict, list]:
     errors = []
     src = payload if isinstance(payload, dict) else {}
-    general = _params_from(src.get('general') if isinstance(src.get('general'), dict) else src)
+    seed = base if isinstance(base, dict) else default_config()
+    seed_general = seed.get('general') if isinstance(seed.get('general'), dict) else seed
+    param_base = _params_from(seed_general)
+    parking_base = _parking_elements_from(
+        _group_parking_raw(seed_general, seed.get('parking_elements')),
+        fallback=default_parking_elements(),
+    )
+    general_src = src.get('general') if isinstance(src.get('general'), dict) else src
+    legacy_parking = src.get('parking_elements')
+    general = _params_from(general_src, param_base)
+    general['parking_elements'] = _parking_elements_from(
+        _group_parking_raw(general_src, legacy_parking),
+        fallback=parking_base,
+    )
     special = []
     used = {}
     rows = src.get('special') if isinstance(src.get('special'), list) else []
@@ -138,21 +159,23 @@ def normalize_config(payload: dict) -> tuple[dict, list]:
             continue
         for code in codes:
             used[code] = index
-        item = _params_from(row)
+        item = _params_from(row, param_base)
         item['name'] = str(row.get('name') or f'特殊组{index}').strip() or f'特殊组{index}'
         item['airports'] = codes
         item['airports_text'] = ','.join(codes)
+        item['parking_elements'] = _parking_elements_from(
+            _group_parking_raw(row, legacy_parking),
+            fallback=parking_base,
+        )
         special.append(item)
-    parking_elements = _parking_elements_from(src.get('parking_elements'))
-    config = {'general': general, 'special': special, 'parking_elements': parking_elements}
-    return config, errors
+    return {'general': general, 'special': special}, errors
 
 
-def _parking_elements_from(raw) -> list:
+def _parking_elements_from(raw, fallback=None) -> list:
     allowed = element_filter_options()
     allow = set(allowed)
     if raw is None:
-        wanted = set(default_parking_elements())
+        wanted = set(fallback if fallback is not None else default_parking_elements())
     else:
         wanted = set()
         if isinstance(raw, list):
@@ -163,12 +186,33 @@ def _parking_elements_from(raw) -> list:
     return [name for name in allowed if name in wanted]
 
 
+def ensure_template_config() -> dict:
+    from config_db.models import HistoryStatsConfig
+    from utils.user_settings import TEMPLATE
+
+    row = HistoryStatsConfig.objects.filter(user_code=TEMPLATE).first()
+    if row and isinstance(row.config, dict) and row.config:
+        config, _errors = normalize_config(row.config, default_config())
+        general = row.config.get('general') if isinstance(row.config.get('general'), dict) else {}
+        if 'parking_elements' in row.config and 'parking_elements' not in general:
+            save_json_config(HistoryStatsConfig, TEMPLATE, config)
+        return config
+    config, _errors = normalize_config(default_config(), default_config())
+    save_json_config(HistoryStatsConfig, TEMPLATE, config)
+    return config
+
+
 def read_config(user_code=None) -> dict:
     from config_db.models import HistoryStatsConfig
+    from utils.user_settings import TEMPLATE
 
+    template = ensure_template_config()
     row = json_config_row(HistoryStatsConfig, user_code)
-    payload = row.config if row and isinstance(row.config, dict) else default_config()
-    config, _errors = normalize_config(payload)
+    if not row or not isinstance(row.config, dict):
+        return template
+    if getattr(row, 'user_code', None) == TEMPLATE:
+        return template
+    config, _errors = normalize_config(row.config, template)
     return config
 
 
@@ -177,7 +221,8 @@ def save_config(payload: dict, user_code=None) -> tuple[dict, list]:
     from utils.user_settings import current_settings_user
 
     user = user_code or current_settings_user()
-    config, errors = normalize_config(payload)
+    template = ensure_template_config()
+    config, errors = normalize_config(payload, template)
     if errors:
         return config, errors
     save_json_config(HistoryStatsConfig, user, config)
@@ -188,8 +233,8 @@ def params_for(config: dict, airport: str) -> dict:
     code = str(airport or '').upper()
     for group in config.get('special') or []:
         if code in set(group.get('airports') or []):
-            return _params_from(group)
-    return _params_from((config or {}).get('general') or {})
+            return group
+    return (config or {}).get('general') or default_params()
 
 
 def meets_level(actual, threshold) -> bool:
@@ -1013,7 +1058,7 @@ def query_history(preset: str, start_ms=None, end_ms=None, time_mode='current', 
     if config is None:
         cfg = read_config(user_code)
     else:
-        cfg, errors = normalize_config(config)
+        cfg, errors = normalize_config(config, ensure_template_config())
         if errors:
             raise ValueError('；'.join(errors))
     carriers = selected_carrier_codes(user_code)
@@ -1030,7 +1075,6 @@ def query_history(preset: str, start_ms=None, end_ms=None, time_mode='current', 
     hits = _collect_hits(flights, cfg, range_start, range_end)
 
     parking_map = _parking_interval_map()
-    parking_elements = set(cfg.get('parking_elements') or default_parking_elements())
     now_ms = int(time.time() * 1000)
     park_airports = {
         code for code, items in parking_map.items()
@@ -1067,6 +1111,7 @@ def query_history(preset: str, start_ms=None, end_ms=None, time_mode='current', 
             if parked:
                 popup_one = popup_badges_for_metars([metar], level)
                 labels = {item.get('text') for item in popup_one.get('all') or []}
+                parking_elements = set(params.get('parking_elements') or [])
                 if labels & parking_elements:
                     types.append(TYPE_PARK)
             if not types:
