@@ -57,6 +57,13 @@ class AircraftParkingParser:
         try:
             self.current_time = TimeManager.get_current_time_local(self.time_mode)
             now_ms = int(self.current_time.timestamp() * 1000)
+            if not AircraftParkingInfo.objects.exists():
+                deleted_tails, _ = AircraftParkingTail.objects.all().delete()
+                AircraftParkingSync.objects.filter(pk=SYNC_ID).delete()
+                logger.info(
+                    '停场机场表为空，已清除机号时段 %s 行和同步水位，将按过去 72 小时重建',
+                    deleted_tails,
+                )
             watermark = latest_fetched_at()
             df, used_at, mode = self._load_flights(flight_df, fetched_at, now_ms, watermark)
             if df is None or getattr(df, 'empty', True):
@@ -72,7 +79,12 @@ class AircraftParkingParser:
             batch_fp = batch_fingerprint(tail_fps)
             sync = self._sync_row()
 
-            if mode != 'bootstrap' and sync.batch_fingerprint and sync.batch_fingerprint == batch_fp:
+            if (
+                mode != 'bootstrap'
+                and sync.batch_fingerprint
+                and sync.batch_fingerprint == batch_fp
+                and AircraftParkingInfo.objects.exists()
+            ):
                 self._touch_watermark(used_at)
                 duration = (datetime.now() - start_time).total_seconds()
                 logger.info(f'停场解析跳过，航班指纹未变，耗时 {duration:.2f}s')
@@ -207,15 +219,24 @@ class AircraftParkingParser:
             fps[key] = tail_fingerprint(self._fingerprint_rows(group))
         return groups, fps
 
+    def _iter_flight_rows(self, group: pd.DataFrame):
+        cols = [name for name in (
+            'flightId', 'acReg', 'departureAirport', 'arrivalAirport', 'atd', 'ata',
+        ) if name in group.columns]
+        if not cols:
+            return
+        for item in group.loc[:, cols].to_dict('records'):
+            yield item
+
     def _fingerprint_rows(self, group: pd.DataFrame) -> list:
         rows = []
-        for rec in group.itertuples(index=False):
+        for rec in self._iter_flight_rows(group):
             rows.append([
-                self._attr_text(rec, 'flightId'),
-                self._attr_airport(rec, 'departureAirport'),
-                self._attr_airport(rec, 'arrivalAirport'),
-                self._attr_ms(rec, 'atd'),
-                self._attr_ms(rec, 'ata'),
+                self._cell_text(rec, 'flightId'),
+                self._cell_airport(rec, 'departureAirport'),
+                self._cell_airport(rec, 'arrivalAirport'),
+                self._cell_ms(rec, 'atd'),
+                self._cell_ms(rec, 'ata'),
             ])
         return rows
 
@@ -223,11 +244,11 @@ class AircraftParkingParser:
         events = []
         in_air = False
         window_lo = None
-        for rec in group.itertuples(index=False):
-            dep = self._attr_airport(rec, 'departureAirport')
-            arr = self._attr_airport(rec, 'arrivalAirport')
-            atd = self._attr_ms(rec, 'atd')
-            ata = self._attr_ms(rec, 'ata')
+        for rec in self._iter_flight_rows(group):
+            dep = self._cell_airport(rec, 'departureAirport')
+            arr = self._cell_airport(rec, 'arrivalAirport')
+            atd = self._cell_ms(rec, 'atd')
+            ata = self._cell_ms(rec, 'ata')
             if atd:
                 events.append((atd, 0, 'atd', dep))
                 window_lo = atd if window_lo is None else min(window_lo, atd)
@@ -310,24 +331,26 @@ class AircraftParkingParser:
             AircraftParkingInfo.objects.filter(id__in=old_ids).delete()
             logger.info(f'停场表超过 {self.max_records}，删除最旧 {len(old_ids)} 行')
 
-    def _attr_airport(self, rec, field) -> Optional[str]:
-        text = self._attr_text(rec, field)
+    def _cell_airport(self, rec, field) -> Optional[str]:
+        text = self._cell_text(rec, field)
         if not text:
             return None
         code = text.strip().upper()
         return code if len(code) == 4 else None
 
-    def _attr_text(self, rec, field) -> Optional[str]:
-        if not hasattr(rec, field):
+    def _cell_text(self, rec, field) -> Optional[str]:
+        if not isinstance(rec, dict) or field not in rec:
             return None
-        val = getattr(rec, field)
+        val = rec.get(field)
         if val is None or (isinstance(val, float) and pd.isna(val)):
             return None
         text = str(val).strip()
-        return text or None
+        if not text or text.lower() == 'nan' or text.lower() == 'none':
+            return None
+        return text
 
-    def _attr_ms(self, rec, field) -> Optional[int]:
-        text = self._attr_text(rec, field)
+    def _cell_ms(self, rec, field) -> Optional[int]:
+        text = self._cell_text(rec, field)
         if not text:
             return None
         try:
