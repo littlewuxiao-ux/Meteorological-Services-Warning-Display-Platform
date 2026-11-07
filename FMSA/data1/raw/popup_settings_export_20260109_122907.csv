@@ -1,4 +1,0 @@
-id,user_code,operation_metar_popup,operation_taf_popup,operation_NWP_popup,parking_metar_popup,parking_taf_popup_other,parking_NWP_popup,operation_metar_popup_thresholds,operation_taf_popup_thresholds,operation_NWP_popup_thresholds,operation_metar_popup_level,operation_taf_popup_level,operation_NWP_popup_level,parking_metar_popup_level,parking_taf_popup_level,parking_NWP_popup_level
-1,test,0,1,1,1,1,1,8,8,8,Y,Y,Y,Y,Y,Y
-2,42260383,1,1,1,0,1,1,2,2,2,Y,Y,Y,Y,Y,Y
-3,default,1,1,1,1,1,1,2,2,2,Y,Y,Y,Y,Y,Y
