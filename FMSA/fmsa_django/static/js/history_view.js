@@ -235,23 +235,189 @@
     });
   }
 
+  let calWhich = '';
+  let calView = { year: 0, month: 0 };
+  let calDraft = null;
+  let calEl = null;
+
+  function formatField(ms) {
+    if (ms == null) return '';
+    const value = msToInput(ms);
+    if (!value) return '';
+    const text = value.replace('T', ' ');
+    return displayUtc() ? `${text}Z` : text;
+  }
+
   function writeCustomInputs() {
     const start = document.getElementById('history-start');
     const end = document.getElementById('history-end');
-    if (start) start.value = customStartMs != null ? msToInput(customStartMs) : '';
-    if (end) end.value = customEndMs != null ? msToInput(customEndMs) : '';
+    if (start) start.textContent = formatField(customStartMs) || '开始时间';
+    if (end) end.textContent = formatField(customEndMs) || '结束时间';
   }
 
-  function commitCustomRange() {
-    const startMs = inputToMs((document.getElementById('history-start') || {}).value);
-    const endMs = inputToMs((document.getElementById('history-end') || {}).value);
-    if (startMs != null) customStartMs = startMs;
-    if (endMs != null) customEndMs = endMs;
+  function partsToMs(parts) {
+    const year = Number(parts && parts.year);
+    const month = Number(parts && parts.month);
+    const day = Number(parts && parts.day);
+    const hour = Number(parts && parts.hour);
+    const minute = Number(parts && parts.minute);
+    if (![year, month, day, hour, minute].every(Number.isFinite)) return null;
+    if (displayUtc()) return Date.UTC(year, month - 1, day, hour, minute);
+    return Date.UTC(year, month - 1, day, hour, minute) - 8 * 3600000;
+  }
+
+  function cloneParts(parts) {
+    return {
+      year: String(parts.year),
+      month: pad(Number(parts.month)),
+      day: pad(Number(parts.day)),
+      hour: pad(Number(parts.hour)),
+      minute: pad(Number(parts.minute)),
+    };
+  }
+
+  function shiftMonth(year, month, delta) {
+    let nextMonth = Number(month) + delta;
+    let nextYear = Number(year);
+    while (nextMonth < 1) {
+      nextMonth += 12;
+      nextYear -= 1;
+    }
+    while (nextMonth > 12) {
+      nextMonth -= 12;
+      nextYear += 1;
+    }
+    return { year: nextYear, month: nextMonth };
+  }
+
+  function ensureCal() {
+    if (calEl) return calEl;
+    calEl = document.createElement('div');
+    calEl.id = 'history-cal';
+    calEl.className = 'hs-cal';
+    calEl.hidden = true;
+    const hours = Array.from({ length: 24 }, (_, i) => `<option value="${pad(i)}">${pad(i)}</option>`).join('');
+    const minutes = Array.from({ length: 60 }, (_, i) => `<option value="${pad(i)}">${pad(i)}</option>`).join('');
+    calEl.innerHTML = `
+      <div class="hs-cal-nav">
+        <button type="button" class="hs-cal-nav-btn" data-cal-prev aria-label="上一月">‹</button>
+        <div class="hs-cal-title" data-cal-title></div>
+        <button type="button" class="hs-cal-nav-btn" data-cal-next aria-label="下一月">›</button>
+      </div>
+      <div class="hs-cal-week">${['日', '一', '二', '三', '四', '五', '六'].map((name) => `<span>${name}</span>`).join('')}</div>
+      <div class="hs-cal-days" data-cal-days></div>
+      <div class="hs-cal-time">
+        <label>时 <select data-cal-hour>${hours}</select></label>
+        <span>:</span>
+        <label>分 <select data-cal-minute>${minutes}</select></label>
+      </div>
+      <div class="hs-cal-actions">
+        <button type="button" class="hs-cal-ok" data-cal-ok>确认</button>
+      </div>
+    `;
+    document.body.appendChild(calEl);
+    calEl.addEventListener('click', (event) => {
+      if (event.target.closest('[data-cal-prev]')) {
+        calView = shiftMonth(calView.year, calView.month, -1);
+        renderCal();
+        return;
+      }
+      if (event.target.closest('[data-cal-next]')) {
+        calView = shiftMonth(calView.year, calView.month, 1);
+        renderCal();
+        return;
+      }
+      const dayBtn = event.target.closest('[data-cal-day]');
+      if (dayBtn) {
+        calDraft.year = dayBtn.getAttribute('data-year');
+        calDraft.month = pad(Number(dayBtn.getAttribute('data-month')));
+        calDraft.day = pad(Number(dayBtn.getAttribute('data-cal-day')));
+        renderCal();
+        return;
+      }
+      if (event.target.closest('[data-cal-ok]')) commitCal();
+    });
+    calEl.addEventListener('change', (event) => {
+      if (!calDraft) return;
+      if (event.target.matches('[data-cal-hour]')) calDraft.hour = event.target.value;
+      if (event.target.matches('[data-cal-minute]')) calDraft.minute = event.target.value;
+    });
+    return calEl;
+  }
+
+  function renderCal() {
+    const box = ensureCal();
+    if (!calDraft) return;
+    const title = box.querySelector('[data-cal-title]');
+    if (title) title.textContent = `${calView.year}年${pad(calView.month)}月`;
+    const hourSel = box.querySelector('[data-cal-hour]');
+    const minuteSel = box.querySelector('[data-cal-minute]');
+    if (hourSel) hourSel.value = pad(Number(calDraft.hour));
+    if (minuteSel) minuteSel.value = pad(Number(calDraft.minute));
+    const days = box.querySelector('[data-cal-days]');
+    if (!days) return;
+    const first = new Date(calView.year, calView.month - 1, 1);
+    const startPad = first.getDay();
+    const lastDate = new Date(calView.year, calView.month, 0).getDate();
+    const selected = Number(calDraft.year) === calView.year && Number(calDraft.month) === calView.month
+      ? Number(calDraft.day) : 0;
+    let html = '';
+    for (let i = 0; i < startPad; i += 1) html += '<span class="hs-cal-empty"></span>';
+    for (let day = 1; day <= lastDate; day += 1) {
+      const on = day === selected ? ' is-on' : '';
+      html += `<button type="button" class="hs-cal-day${on}" data-cal-day="${day}" data-year="${calView.year}" data-month="${calView.month}">${day}</button>`;
+    }
+    days.innerHTML = html;
+  }
+
+  function placeCal(anchor) {
+    const box = ensureCal();
+    box.hidden = false;
+    const rect = anchor.getBoundingClientRect();
+    const width = box.offsetWidth || 260;
+    const height = box.offsetHeight || 320;
+    let left = rect.left;
+    let top = rect.bottom + 4;
+    if (left + width > window.innerWidth - 8) left = Math.max(8, window.innerWidth - width - 8);
+    if (top + height > window.innerHeight - 8) top = Math.max(8, rect.top - height - 4);
+    box.style.left = `${Math.round(left)}px`;
+    box.style.top = `${Math.round(top)}px`;
+  }
+
+  function closeCal() {
+    calWhich = '';
+    calDraft = null;
+    if (calEl) calEl.hidden = true;
+    document.querySelectorAll('.hs-dt-field.is-open').forEach((el) => el.classList.remove('is-open'));
+  }
+
+  function openCal(which) {
+    if (preset() !== 'custom') return;
+    const field = document.getElementById(which === 'end' ? 'history-end' : 'history-start');
+    if (!field || field.disabled) return;
+    if (calWhich === which) {
+      closeCal();
+      return;
+    }
+    const ms = which === 'end' ? customEndMs : customStartMs;
+    const parts = ms != null ? timestampParts(ms, displayUtc()) : timestampParts(Date.now(), displayUtc());
+    calWhich = which;
+    calDraft = cloneParts(parts);
+    calView = { year: Number(calDraft.year), month: Number(calDraft.month) };
+    document.querySelectorAll('.hs-dt-field.is-open').forEach((el) => el.classList.remove('is-open'));
+    field.classList.add('is-open');
+    renderCal();
+    placeCal(field);
+  }
+
+  function commitCal() {
+    if (!calWhich || !calDraft) return;
+    const ms = partsToMs(calDraft);
+    if (ms == null) return;
+    if (calWhich === 'end') customEndMs = ms;
+    else customStartMs = ms;
     writeCustomInputs();
-    const start = document.getElementById('history-start');
-    const end = document.getElementById('history-end');
-    if (start) start.blur();
-    if (end) end.blur();
+    closeCal();
   }
 
   function timeLevelHtml() {
@@ -288,11 +454,10 @@
     const box = document.getElementById('history-custom-range');
     const start = document.getElementById('history-start');
     const end = document.getElementById('history-end');
-    const ok = document.getElementById('history-custom-ok');
     if (box) box.classList.toggle('is-disabled', !on);
     if (start) start.disabled = !on;
     if (end) end.disabled = !on;
-    if (ok) ok.disabled = !on;
+    if (!on) closeCal();
   }
 
   async function fillCustomDefaults() {
@@ -696,8 +861,15 @@
         if (preset() === 'custom') await fillCustomDefaults();
       });
     });
-    const customOk = document.getElementById('history-custom-ok');
-    if (customOk) customOk.addEventListener('click', commitCustomRange);
+    const customBox = document.getElementById('history-custom-range');
+    if (customBox) {
+      customBox.addEventListener('click', (event) => {
+        const field = event.target.closest('[data-hs-dt]');
+        if (!field || field.disabled) return;
+        event.stopPropagation();
+        openCal(field.getAttribute('data-hs-dt'));
+      });
+    }
     const queryBtn = document.getElementById('history-query');
     if (queryBtn) queryBtn.addEventListener('click', runQuery);
     const copyAllBtn = document.getElementById('history-copy-all');
@@ -756,6 +928,9 @@
       });
     }
     document.addEventListener('click', (event) => {
+      if (calWhich && !event.target.closest('#history-cal') && !event.target.closest('[data-hs-dt]')) {
+        closeCal();
+      }
       if (!openFilter) return;
       if (event.target.closest('.hs-th-filter')) return;
       openFilter = '';
@@ -763,6 +938,7 @@
     });
     const tz = document.getElementById('timezone-toggle-input');
     if (tz) tz.addEventListener('change', () => {
+      closeCal();
       syncPresetLabels();
       writeCustomInputs();
     });
@@ -799,11 +975,13 @@
 
   function stopHistoryView() {
     querySeq += 1;
+    closeCal();
   }
 
   window.startHistoryView = startHistoryView;
   window.stopHistoryView = stopHistoryView;
   window.refreshHistoryTimezone = function () {
+    closeCal();
     syncPresetLabels();
     writeCustomInputs();
   };

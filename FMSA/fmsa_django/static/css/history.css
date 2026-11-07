@@ -66,11 +66,23 @@
   font-size: 12px;
 }
 
-.hs-custom input {
+.hs-dt-field {
   height: 26px;
+  min-width: 148px;
   border: 1px solid #9aafc4;
   border-radius: 4px;
-  padding: 0 6px;
+  padding: 0 8px;
+  background: #fff;
+  color: #1b2838;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: left;
+  cursor: pointer;
+}
+
+.hs-dt-field.is-open {
+  border-color: #1b2838;
+  box-shadow: 0 0 0 1px #1b2838;
 }
 
 .hs-custom.is-disabled {
@@ -78,26 +90,115 @@
   filter: grayscale(0.35);
 }
 
-.hs-custom.is-disabled input,
-.hs-custom.is-disabled .hs-custom-ok {
+.hs-custom.is-disabled .hs-dt-field {
   cursor: not-allowed;
   background: #eef1f4;
   color: #8a97a6;
 }
 
-.hs-custom-ok {
-  height: 26px;
-  padding: 0 10px;
-  border: 1px solid #1b2838;
-  border-radius: 4px;
+.hs-cal {
+  position: fixed;
+  z-index: 80;
+  width: 248px;
+  padding: 8px;
+  border: 1px solid #c5d2e0;
+  border-radius: 6px;
   background: #fff;
+  box-shadow: 0 8px 20px rgba(27, 40, 56, 0.16);
+  color: #1b2838;
+}
+
+.hs-cal-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.hs-cal-title {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.hs-cal-nav-btn {
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: transparent;
+  color: #1b2838;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.hs-cal-week,
+.hs-cal-days {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+  text-align: center;
+}
+
+.hs-cal-week {
+  margin-bottom: 4px;
+  color: #66788a;
+  font-size: 11px;
+}
+
+.hs-cal-day,
+.hs-cal-empty {
+  height: 26px;
+}
+
+.hs-cal-day {
+  border: none;
+  border-radius: 4px;
+  background: transparent;
   color: #1b2838;
   font-size: 12px;
   cursor: pointer;
 }
 
-.hs-custom-ok:disabled {
-  cursor: not-allowed;
+.hs-cal-day:hover {
+  background: #eef2f6;
+}
+
+.hs-cal-day.is-on {
+  background: #1b2838;
+  color: #fff;
+}
+
+.hs-cal-time {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid #e4ebf2;
+  font-size: 12px;
+}
+
+.hs-cal-time select {
+  height: 24px;
+  border: 1px solid #9aafc4;
+  border-radius: 4px;
+}
+
+.hs-cal-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+
+.hs-cal-ok {
+  height: 26px;
+  padding: 0 12px;
+  border: 1px solid #187a42;
+  border-radius: 4px;
+  background: #1f8a4c;
+  color: #fff;
+  font-size: 12px;
+  cursor: pointer;
 }
 
 .hs-query,

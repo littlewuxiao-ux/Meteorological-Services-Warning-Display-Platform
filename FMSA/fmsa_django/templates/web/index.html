@@ -303,10 +303,9 @@
         <label><input type="radio" name="history-preset" value="custom">自定义</label>
       </div>
       <div class="hs-custom is-disabled" id="history-custom-range">
-        <input type="datetime-local" id="history-start" disabled>
+        <button type="button" class="hs-dt-field" id="history-start" data-hs-dt="start" disabled></button>
         <span>至</span>
-        <input type="datetime-local" id="history-end" disabled>
-        <button type="button" class="hs-custom-ok" id="history-custom-ok" disabled>确认</button>
+        <button type="button" class="hs-dt-field" id="history-end" data-hs-dt="end" disabled></button>
       </div>
       <button type="button" class="hs-query" id="history-query">查询</button>
       <button type="button" class="hs-copy-all" id="history-copy-all">全部复制</button>
