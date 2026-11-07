@@ -8,12 +8,11 @@ _SKIP = {'', '--', '-', 'system', 'scheduler'}
 
 _settings_user = contextvars.ContextVar('fmsa_settings_user', default=None)
 
-TIMER_KEYS = ('metar', 'taf', 'flight', 'aircraft_parking')
+TIMER_KEYS = ('metar', 'taf', 'flight')
 TIMER_NAMES = {
     'metar': '实况',
     'taf': '预报',
     'flight': '航班',
-    'aircraft_parking': '飞机停场信息',
 }
 
 
@@ -225,7 +224,8 @@ def timer_config(user_code=None):
 
     user = user_code or active_job_user()
     row = _json_row(DataRefreshTimer, user)
-    data = row.config if row and isinstance(row.config, dict) else {}
+    data = dict(row.config) if row and isinstance(row.config, dict) else {}
+    data.pop('aircraft_parking', None)
     return data
 
 

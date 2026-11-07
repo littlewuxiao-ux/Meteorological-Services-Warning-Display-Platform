@@ -1,22 +1,28 @@
-"""飞机停场：一机场一行，随航班同一批数据增量更新。"""
+"""飞机停场：按机号算段，再按机场并集；指纹未变则跳过。"""
 
 from __future__ import annotations
 
 import logging
 from datetime import datetime
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Optional, Tuple
 
 import pandas as pd
 from django.conf import settings
 
 from data_adapters.adapter_factory import AdapterFactory
-from runtime_db.models import AircraftParkingInfo
+from runtime_db.models import AircraftParkingInfo, AircraftParkingSync, AircraftParkingTail
 from utils.aircraft_parking import (
+    batch_fingerprint,
     latest_fetched_at,
     normalize_intervals,
-    parking_ac_regs,
-    parking_is_on,
+    occupancy_airports,
+    occupancy_from_tails,
     parking_payload,
+    parking_segments_from_events,
+    seed_from_segments,
+    splice_tail_segments,
+    tail_fingerprint,
+    union_airport_intervals,
 )
 from utils.time_manager import TimeManager
 
@@ -25,6 +31,7 @@ logger = logging.getLogger('fmsa.parsers')
 HOUR_MS = 3600 * 1000
 STALE_MS = 10 * 1000
 MAX_RECORDS = 500
+SYNC_ID = 1
 
 
 class AircraftParkingParser:
@@ -36,7 +43,6 @@ class AircraftParkingParser:
         self.past_hours = int(config.get('PAST_HOURS', 72))
         self.carrier_code = str(config.get('CARRIER_CODE', 'O3') or 'O3').strip()
         self.max_records = int(config.get('MAX_RECORDS', MAX_RECORDS) or MAX_RECORDS)
-        self._fingerprints = {}
 
     def parse_and_save(self):
         return self.parse_aircraft_parking_data()
@@ -49,6 +55,7 @@ class AircraftParkingParser:
         start_time = datetime.now()
         logger.info('开始解析飞机停场数据')
         try:
+            self.current_time = TimeManager.get_current_time_local(self.time_mode)
             now_ms = int(self.current_time.timestamp() * 1000)
             watermark = latest_fetched_at()
             df, used_at, mode = self._load_flights(flight_df, fetched_at, now_ms, watermark)
@@ -56,25 +63,84 @@ class AircraftParkingParser:
                 return {'success': False, 'message': '未获取到停场航班数据', 'airport_count': 0}
 
             df = self._o3_rows(df)
-            occupancy, intervals = self._load_state()
-            if mode == 'bootstrap':
-                occupancy, intervals = {}, {}
-                self._rebuild_from_flights(df, occupancy, intervals, now_ms)
-                self._fingerprints = self._all_fingerprints(df)
-            else:
-                self._apply_batch(df, occupancy, intervals, now_ms)
+            if mode != 'bootstrap' and not AircraftParkingTail.objects.exists():
+                logger.info('机号停场表为空，按过去 72 小时重建')
+                df = self._o3_rows(self._fetch_range(now_ms - self.past_hours * HOUR_MS, now_ms))
+                used_at = now_ms
+                mode = 'bootstrap'
+            groups, tail_fps = self._tail_groups(df)
+            batch_fp = batch_fingerprint(tail_fps)
+            sync = self._sync_row()
 
+            if mode != 'bootstrap' and sync.batch_fingerprint and sync.batch_fingerprint == batch_fp:
+                self._touch_watermark(used_at)
+                duration = (datetime.now() - start_time).total_seconds()
+                logger.info(f'停场解析跳过，航班指纹未变，耗时 {duration:.2f}s')
+                return {
+                    'success': True,
+                    'message': '航班未变化，跳过停场重算',
+                    'airport_count': len(occupancy_airports()),
+                    'duration': duration,
+                    'mode': 'skipped',
+                    'skipped': True,
+                }
+
+            stored = {} if mode == 'bootstrap' else self._load_tails()
+            if mode == 'bootstrap':
+                AircraftParkingTail.objects.all().delete()
+                logger.info('停场首次重建：清空机号时段后按 72 小时航班回放')
+
+            tail_segments = {}
+            changed = 0
+            for ac_reg, group in groups.items():
+                fp = tail_fps[ac_reg]
+                old = stored.get(ac_reg)
+                if old and old.get('fingerprint') == fp:
+                    tail_segments[ac_reg] = old.get('segments') or []
+                    continue
+                events, in_air, window_lo = self._events_from_group(group, now_ms)
+                seed_airport, seed_start = (None, None)
+                if old and window_lo is not None:
+                    seed_airport, seed_start = seed_from_segments(old.get('segments') or [], window_lo)
+                if window_lo is None and old:
+                    tail_segments[ac_reg] = old.get('segments') or []
+                    self._upsert_tail(ac_reg, fp, tail_segments[ac_reg])
+                    continue
+                fresh, _parked = parking_segments_from_events(
+                    events, now_ms, seed_airport, seed_start, in_air=in_air,
+                )
+                segs = splice_tail_segments(
+                    old.get('segments') if old else [], fresh, window_lo, now_ms,
+                )
+                tail_segments[ac_reg] = segs
+                self._upsert_tail(ac_reg, fp, segs)
+                changed += 1
+
+            for ac_reg, row in stored.items():
+                if ac_reg not in tail_segments:
+                    tail_segments[ac_reg] = row.get('segments') or []
+
+            occupancy = occupancy_from_tails(tail_segments)
+            intervals = union_airport_intervals(tail_segments, now_ms)
             touched = set(occupancy.values()) | set(intervals)
-            self._save_state(occupancy, intervals, used_at, now_ms, touched)
+            self._save_airports(occupancy, intervals, used_at, now_ms, touched)
+            sync.batch_fingerprint = batch_fp
+            sync.fetched_at = int(used_at)
+            sync.save(update_fields=['batch_fingerprint', 'fetched_at'])
+
             duration = (datetime.now() - start_time).total_seconds()
             parked = sorted({code for code in occupancy.values() if code})
-            logger.info(f'停场解析完成 {mode}，{len(parked)} 个机场有停场，耗时 {duration:.2f}s: {parked}')
+            logger.info(
+                f'停场解析完成 {mode}，重算 {changed} 架，{len(parked)} 个机场有停场，'
+                f'耗时 {duration:.2f}s: {parked}'
+            )
             return {
                 'success': True,
                 'message': '飞机停场数据解析成功',
                 'airport_count': len(parked),
                 'duration': duration,
                 'mode': mode,
+                'recomputed': changed,
             }
         except Exception as exc:
             logger.exception('解析飞机停场数据失败')
@@ -128,138 +194,79 @@ class AircraftParkingParser:
         out = df[(carrier == self.carrier_code) & (ac != '') & (ac.str.lower() != 'nan')]
         return out.copy()
 
-    def _load_state(self) -> Tuple[Dict[str, str], Dict[str, list]]:
-        occupancy = {}
-        intervals = {}
-        for row in AircraftParkingInfo.objects.all():
-            code = str(row.airport_4code or '').strip().upper()
-            if not code:
-                continue
-            intervals[code] = normalize_intervals(row.aircraft_parked_status_records)
-            for ac_reg in parking_ac_regs(row.parking):
-                occupancy[ac_reg] = code
-        return occupancy, intervals
-
-    def _all_fingerprints(self, df: pd.DataFrame) -> dict:
-        out = {}
+    def _tail_groups(self, df: pd.DataFrame) -> Tuple[Dict[str, pd.DataFrame], Dict[str, str]]:
+        groups = {}
+        fps = {}
         if df.empty or 'acReg' not in df.columns:
-            return out
-        for ac_reg, group in df.groupby('acReg'):
-            key = str(ac_reg).strip()
-            if key:
-                out[key] = self._fingerprint(group)
-        return out
-
-    def _fingerprint(self, group: pd.DataFrame) -> tuple:
-        rows = []
-        for _, row in group.iterrows():
-            rows.append((
-                self._text(row, 'flightId'),
-                self._airport(row, 'departureAirport'),
-                self._airport(row, 'arrivalAirport'),
-                self._ms(row, 'atd'),
-                self._ms(row, 'ata'),
-            ))
-        rows.sort()
-        return tuple(rows)
-
-    def _apply_batch(self, df: pd.DataFrame, occupancy: dict, intervals: dict, now_ms: int):
-        if df.empty or 'acReg' not in df.columns:
-            return
-        next_fp = {}
+            return groups, fps
         for ac_reg, group in df.groupby('acReg'):
             key = str(ac_reg).strip()
             if not key:
                 continue
-            fp = self._fingerprint(group)
-            next_fp[key] = fp
-            if self._fingerprints.get(key) == fp:
-                continue
-            self._apply_aircraft(key, group, occupancy, intervals, now_ms)
-        self._fingerprints = next_fp
+            groups[key] = group
+            fps[key] = tail_fingerprint(self._fingerprint_rows(group))
+        return groups, fps
 
-    def _rebuild_from_flights(self, df: pd.DataFrame, occupancy: dict, intervals: dict, now_ms: int):
-        if df.empty or 'acReg' not in df.columns:
-            return
-        for ac_reg, group in df.groupby('acReg'):
-            key = str(ac_reg).strip()
-            if key:
-                self._apply_aircraft(key, group, occupancy, intervals, now_ms, replace=True)
+    def _fingerprint_rows(self, group: pd.DataFrame) -> list:
+        rows = []
+        for rec in group.itertuples(index=False):
+            rows.append([
+                self._attr_text(rec, 'flightId'),
+                self._attr_airport(rec, 'departureAirport'),
+                self._attr_airport(rec, 'arrivalAirport'),
+                self._attr_ms(rec, 'atd'),
+                self._attr_ms(rec, 'ata'),
+            ])
+        return rows
 
-    def _apply_aircraft(self, ac_reg: str, group: pd.DataFrame, occupancy: dict, intervals: dict, now_ms: int, replace=False):
+    def _events_from_group(self, group: pd.DataFrame, now_ms: int):
         events = []
         in_air = False
-        last_ata_ap = None
-        last_ata_ms = None
-        for _, row in group.iterrows():
-            dep = self._airport(row, 'departureAirport')
-            arr = self._airport(row, 'arrivalAirport')
-            atd = self._ms(row, 'atd')
-            ata = self._ms(row, 'ata')
+        window_lo = None
+        for rec in group.itertuples(index=False):
+            dep = self._attr_airport(rec, 'departureAirport')
+            arr = self._attr_airport(rec, 'arrivalAirport')
+            atd = self._attr_ms(rec, 'atd')
+            ata = self._attr_ms(rec, 'ata')
             if atd:
                 events.append((atd, 0, 'atd', dep))
+                window_lo = atd if window_lo is None else min(window_lo, atd)
             if ata:
                 events.append((ata, 1, 'ata', arr))
-                if last_ata_ms is None or ata >= last_ata_ms:
-                    last_ata_ms = ata
-                    last_ata_ap = arr
+                window_lo = ata if window_lo is None else min(window_lo, ata)
             if atd and (ata is None or ata > now_ms) and atd <= now_ms:
                 in_air = True
         events.sort()
-        current = None if replace else occupancy.get(ac_reg)
-        if replace:
-            occupancy.pop(ac_reg, None)
-        for when, _order, kind, airport in events:
-            if not airport:
-                continue
-            if kind == 'atd':
-                parked = occupancy.get(ac_reg)
-                if parked:
-                    self._leave(ac_reg, parked, when, occupancy, intervals)
-            elif kind == 'ata':
-                parked = occupancy.get(ac_reg)
-                if parked and parked != airport:
-                    self._leave(ac_reg, parked, when, occupancy, intervals)
-                if occupancy.get(ac_reg) != airport:
-                    self._arrive(ac_reg, airport, when, occupancy, intervals)
-                current = airport
-        if in_air:
-            parked = occupancy.get(ac_reg)
-            if parked:
-                leave_at = None
-                for when, _order, kind, airport in events:
-                    if kind == 'atd' and airport == parked:
-                        leave_at = when
-                self._leave(ac_reg, parked, leave_at or now_ms, occupancy, intervals)
-            return
-        if occupancy.get(ac_reg):
-            return
-        if last_ata_ap and last_ata_ms and (current == last_ata_ap or current is None):
-            self._arrive(ac_reg, last_ata_ap, last_ata_ms, occupancy, intervals)
+        return events, in_air, window_lo
 
-    def _arrive(self, ac_reg: str, airport: str, when: int, occupancy: dict, intervals: dict):
-        occupancy[ac_reg] = airport
-        items = list(intervals.get(airport) or [])
-        open_row = next((item for item in items if item[1] is None), None)
-        if open_row is None:
-            items.append([int(when), None])
-        intervals[airport] = normalize_intervals(items, when)
+    def _sync_row(self) -> AircraftParkingSync:
+        row = AircraftParkingSync.objects.filter(pk=SYNC_ID).first()
+        if row:
+            return row
+        return AircraftParkingSync.objects.create(id=SYNC_ID)
 
-    def _leave(self, ac_reg: str, airport: str, when: int, occupancy: dict, intervals: dict):
-        if occupancy.get(ac_reg) == airport:
-            occupancy.pop(ac_reg, None)
-        others = [code for code, place in occupancy.items() if place == airport]
-        if others:
-            return
-        items = []
-        for start, end in intervals.get(airport) or []:
-            if end is None:
-                items.append([start, int(when)])
-            else:
-                items.append([start, end])
-        intervals[airport] = normalize_intervals(items, when)
+    def _load_tails(self) -> dict:
+        out = {}
+        for row in AircraftParkingTail.objects.all():
+            key = str(row.ac_reg or '').strip()
+            if key:
+                out[key] = {'fingerprint': row.fingerprint or '', 'segments': row.segments or []}
+        return out
 
-    def _save_state(self, occupancy: dict, intervals: dict, fetched_at: int, now_ms: int, touched: set):
+    def _upsert_tail(self, ac_reg: str, fingerprint: str, segments: list):
+        AircraftParkingTail.objects.update_or_create(
+            ac_reg=ac_reg,
+            defaults={'fingerprint': fingerprint or '', 'segments': segments or []},
+        )
+
+    def _touch_watermark(self, fetched_at: int):
+        used = int(fetched_at)
+        sync = self._sync_row()
+        sync.fetched_at = used
+        sync.save(update_fields=['fetched_at'])
+        AircraftParkingInfo.objects.update(fetched_at=used)
+
+    def _save_airports(self, occupancy: dict, intervals: dict, fetched_at: int, now_ms: int, touched: set):
         by_airport = {}
         for ac_reg, airport in occupancy.items():
             by_airport.setdefault(airport, []).append(ac_reg)
@@ -303,24 +310,24 @@ class AircraftParkingParser:
             AircraftParkingInfo.objects.filter(id__in=old_ids).delete()
             logger.info(f'停场表超过 {self.max_records}，删除最旧 {len(old_ids)} 行')
 
-    def _airport(self, row, field) -> Optional[str]:
-        text = self._text(row, field)
+    def _attr_airport(self, rec, field) -> Optional[str]:
+        text = self._attr_text(rec, field)
         if not text:
             return None
         code = text.strip().upper()
         return code if len(code) == 4 else None
 
-    def _text(self, row, field) -> Optional[str]:
-        if field not in row:
+    def _attr_text(self, rec, field) -> Optional[str]:
+        if not hasattr(rec, field):
             return None
-        val = row[field]
-        if pd.isna(val):
+        val = getattr(rec, field)
+        if val is None or (isinstance(val, float) and pd.isna(val)):
             return None
         text = str(val).strip()
         return text or None
 
-    def _ms(self, row, field) -> Optional[int]:
-        text = self._text(row, field)
+    def _attr_ms(self, rec, field) -> Optional[int]:
+        text = self._attr_text(rec, field)
         if not text:
             return None
         try:

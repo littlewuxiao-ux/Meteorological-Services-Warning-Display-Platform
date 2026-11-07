@@ -21,6 +21,8 @@ MapStyleConfig = StyleConfig
 
 from runtime_db.models import (
     AircraftParkingInfo,
+    AircraftParkingSync,
+    AircraftParkingTail,
     AirportRadarAlert,
     AirportTrendAlert,
     RadarJobRun,
@@ -31,6 +33,8 @@ from runtime_db.models import (
 __all__ = [
     'AccessSetting',
     'AircraftParkingInfo',
+    'AircraftParkingSync',
+    'AircraftParkingTail',
     'AirportAlertThresholds',
     'AirportInfo',
     'AirportPrefixArea',

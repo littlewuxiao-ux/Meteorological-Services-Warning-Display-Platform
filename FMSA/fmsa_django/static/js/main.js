@@ -2949,8 +2949,7 @@ function loadTimerConfigs() {
                 timerConfigs = {
                     metar: { init_time: 5.0, interval: 5.0 },
                     taf: { init_time: 5.0, interval: 15.0 },
-                    flight: { init_time: 5.0, interval: 15.0 },
-                    aircraft_parking: { init_time: 28.0, interval: 30.0 }
+                    flight: { init_time: 5.0, interval: 15.0 }
                 };
             }
         })
@@ -3371,8 +3370,7 @@ function updateFrontendData(data, dataType) {
 function autoUpdate(needUpdate) {
     const updateQueue = [];
 
-    // 按优先级排序：停场 > 航班 > 实况 > 预报
-    if (needUpdate.aircraft_parking) updateQueue.push('aircraft_parking');
+    // 按优先级排序：航班 > 实况 > 预报（停场随航班解析）
     if (needUpdate.flight) updateQueue.push('flight');
     if (needUpdate.metar) updateQueue.push('metar');
     if (needUpdate.taf) updateQueue.push('taf');

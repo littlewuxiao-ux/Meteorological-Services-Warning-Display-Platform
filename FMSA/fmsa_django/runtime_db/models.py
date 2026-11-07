@@ -580,6 +580,43 @@ class AircraftParkingInfo(models.Model):
         return f"{self.airport_4code} - {self.fetched_at}"
 
 
+class AircraftParkingSync(models.Model):
+    """停场解析水位：整批航班指纹与最近一次使用的航班获取时间。"""
+
+    id = models.PositiveSmallIntegerField(primary_key=True, default=1, editable=False)
+    batch_fingerprint = models.CharField(max_length=64, blank=True, default='', verbose_name='整批指纹')
+    fetched_at = models.BigIntegerField(blank=True, null=True, verbose_name='航班数据获取时间')
+
+    class Meta:
+        db_table = 'aircraft_parking_sync'
+        verbose_name = '飞机停场同步状态'
+        verbose_name_plural = '飞机停场同步状态'
+
+    def __str__(self):
+        return f'parking-sync {self.fetched_at}'
+
+
+class AircraftParkingTail(models.Model):
+    """一架 O3 飞机一行：停场段与用于跳过重算的航班指纹。"""
+
+    ac_reg = models.CharField(max_length=16, primary_key=True, verbose_name='飞机注册号')
+    fingerprint = models.CharField(max_length=64, blank=True, default='', verbose_name='航班指纹')
+    segments = models.JSONField(
+        default=list,
+        blank=True,
+        verbose_name='停场时段',
+        help_text='[[机场, 开始, 结束], ...]，进行中结束为 null',
+    )
+
+    class Meta:
+        db_table = 'aircraft_parking_tail'
+        verbose_name = '飞机停场机号记录'
+        verbose_name_plural = '飞机停场机号记录'
+
+    def __str__(self):
+        return self.ac_reg
+
+
 class WxmsgImportAlert(models.Model):
     """气象报文入库告警及处理记录表"""
 

@@ -194,7 +194,7 @@ class SystemConfig(models.Model):
 
 
 class DataRefreshTimer(models.Model):
-    """每个用户一份刷新间隔。config 的键是 metar / taf / flight / aircraft_parking。"""
+    """每个用户一份刷新间隔。config 的键是 metar / taf / flight。停场随航班解析，无独立间隔。"""
 
     user_code = models.CharField(max_length=12, unique=True, verbose_name='用户代码')
     config = models.JSONField(default=dict, verbose_name='刷新配置')

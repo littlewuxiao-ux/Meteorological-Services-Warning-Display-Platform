@@ -27,7 +27,6 @@ DATA_NAMES = {
     'metar': '实况',
     'taf': '预报',
     'flight': '航班',
-    'aircraft_parking': '飞机停场信息',
 }
 
 
@@ -479,6 +478,7 @@ def settings_data_refresh_timer_detail(request, timer_id, time_mode='current'):
     try:
         data = json.loads(request.body)
         config = dict(timer_config(user_code) or {})
+        config.pop('aircraft_parking', None)
         current = dict(config.get(timer_id) or {})
         if 'init_time' in data:
             current['init_time'] = _validate_timer_value('init_time', data['init_time'], 0, 50)
