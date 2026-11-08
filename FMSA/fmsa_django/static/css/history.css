@@ -99,13 +99,30 @@
 .hs-cal {
   position: fixed;
   z-index: 80;
-  width: 248px;
+  display: flex;
+  flex-direction: column;
+  width: auto;
   padding: 8px;
   border: 1px solid #c5d2e0;
   border-radius: 6px;
   background: #fff;
   box-shadow: 0 8px 20px rgba(27, 40, 56, 0.16);
   color: #1b2838;
+}
+
+.hs-cal[hidden] {
+  display: none !important;
+}
+
+.hs-cal-body {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+}
+
+.hs-cal-main {
+  width: 232px;
+  min-width: 232px;
 }
 
 .hs-cal-nav {
@@ -169,36 +186,133 @@
 
 .hs-cal-time {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px solid #e4ebf2;
-  font-size: 12px;
+  flex-direction: row;
+  align-items: stretch;
+  gap: 4px;
+  width: 88px;
+  margin: 0;
+  padding: 0 0 0 8px;
+  border-left: 1px solid #e4ebf2;
 }
 
-.hs-cal-time select {
+.hs-wheel {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: stretch;
+  min-width: 0;
+  min-height: 0;
+  gap: 2px;
+}
+
+.hs-wheel-name {
+  flex: 0 0 auto;
+  color: #66788a;
+  font-size: 11px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.hs-wheel-view {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  perspective: 200px;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+  border-radius: 5px;
+  background:
+    linear-gradient(180deg, #fff 0%, rgba(255, 255, 255, 0) 8%, rgba(255, 255, 255, 0) 92%, #fff 100%),
+    #f4f7fb;
+}
+
+.hs-wheel-view.is-grabbing {
+  cursor: grabbing;
+}
+
+.hs-wheel-center {
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  top: 50%;
+  width: auto;
   height: 24px;
-  border: 1px solid #9aafc4;
+  margin-top: -12px;
   border-radius: 4px;
+  background: transparent;
+  box-shadow: inset 0 0 0 1px #9aafc4;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.hs-wheel-view.is-tick .hs-wheel-center {
+  animation: hs-wheel-tick 0.12s ease-out;
+}
+
+@keyframes hs-wheel-tick {
+  0% { box-shadow: inset 0 0 0 1px #1b2838; }
+  100% { box-shadow: inset 0 0 0 1px #9aafc4; }
+}
+
+.hs-wheel-scene {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  transform-style: preserve-3d;
+  pointer-events: none;
+}
+
+.hs-wheel-item {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 32px;
+  margin: 0;
+  color: #1b2838;
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  text-align: center;
+  transform-style: preserve-3d;
+  backface-visibility: hidden;
+  pointer-events: none;
+}
+
+.hs-wheel-item.is-on {
+  z-index: 2;
 }
 
 .hs-cal-actions {
   display: flex;
   justify-content: flex-end;
+  gap: 8px;
   margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid #e4ebf2;
 }
 
+.hs-cal-cancel,
 .hs-cal-ok {
   height: 26px;
   padding: 0 12px;
-  border: 1px solid #187a42;
   border-radius: 4px;
-  background: #1f8a4c;
-  color: #fff;
   font-size: 12px;
   cursor: pointer;
+}
+
+.hs-cal-cancel {
+  border: 1px solid #9aafc4;
+  background: #fff;
+  color: #1b2838;
+}
+
+.hs-cal-ok {
+  border: 1px solid #187a42;
+  background: #1f8a4c;
+  color: #fff;
 }
 
 .hs-query,
@@ -286,10 +400,9 @@
 
 .hs-group-head {
   display: flex;
-  flex-wrap: nowrap;
-  align-items: center;
-  gap: 10px 12px;
-  overflow-x: auto;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
 }
 
 .hs-parking-row {
@@ -326,8 +439,7 @@
 
 .hs-group-fields {
   display: flex;
-  flex: 1;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px 14px;
 }

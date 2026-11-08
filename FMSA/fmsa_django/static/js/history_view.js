@@ -290,33 +290,311 @@
     return { year: nextYear, month: nextMonth };
   }
 
+  const WHEEL = {
+    slotPx: 22,
+    angle: 12,
+    radius: 96,
+    span: 3,
+  };
+  const WHEEL_HOURS = Array.from({ length: 24 }, (_, i) => i);
+  const WHEEL_MINUTES = Array.from({ length: 12 }, (_, i) => i * 5);
+  let wheels = [];
+  let wheelRaf = 0;
+  let wheelAudio = null;
+  let lastWheelTick = 0;
+
+  function snapMinute(value) {
+    const n = Math.round(Number(value) / 5) * 5;
+    if (!Number.isFinite(n) || n < 0) return 0;
+    return n >= 60 ? 0 : n;
+  }
+
+  function wrapSlot(index, count) {
+    return ((Math.round(index) % count) + count) % count;
+  }
+
+  function tickWheel(wheel) {
+    playWheelTick();
+    if (!wheel || !wheel.view) return;
+    wheel.view.classList.remove('is-tick');
+    void wheel.view.offsetWidth;
+    wheel.view.classList.add('is-tick');
+  }
+
+  function playWheelTick() {
+    const now = performance.now();
+    if (now - lastWheelTick < 28) return;
+    lastWheelTick = now;
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      if (!wheelAudio) wheelAudio = new AudioCtx();
+      if (wheelAudio.state === 'suspended') wheelAudio.resume();
+      const t = wheelAudio.currentTime;
+      const osc = wheelAudio.createOscillator();
+      const gain = wheelAudio.createGain();
+      osc.type = 'square';
+      osc.frequency.value = 1400;
+      gain.gain.setValueAtTime(0.035, t);
+      gain.gain.exponentialRampToValueAtTime(0.0008, t + 0.03);
+      osc.connect(gain);
+      gain.connect(wheelAudio.destination);
+      osc.start(t);
+      osc.stop(t + 0.032);
+    } catch (err) { /* 无声也保留吸附 */ }
+  }
+
+  function syncDraftFromWheels() {
+    if (!calDraft) return;
+    wheels.forEach((wheel) => {
+      const value = wheel.values[wrapSlot(wheel.index, wheel.values.length)];
+      if (wheel.kind === 'hour') calDraft.hour = pad(value);
+      if (wheel.kind === 'minute') calDraft.minute = pad(value);
+    });
+  }
+
+  function paintWheel(wheel) {
+    const n = wheel.values.length;
+    const scene = wheel.scene;
+    if (!scene) return;
+    const needed = WHEEL.span * 2 + 1;
+    while (scene.children.length < needed) {
+      const item = document.createElement('span');
+      item.className = 'hs-wheel-item';
+      scene.appendChild(item);
+    }
+    while (scene.children.length > needed) scene.removeChild(scene.lastChild);
+    const base = Math.round(wheel.index);
+    for (let k = -WHEEL.span; k <= WHEEL.span; k += 1) {
+      const item = scene.children[k + WHEEL.span];
+      const slot = base + k;
+      const offset = slot - wheel.index;
+      const value = wheel.values[((slot % n) + n) % n];
+      const dist = Math.abs(offset);
+      const tilt = offset * WHEEL.angle;
+      const scale = dist < 0.5 ? 1 : Math.max(0.72, 1 - dist * 0.1);
+      const opacity = dist < 0.5 ? 1 : Math.max(0.18, 0.42 * Math.exp(-0.42 * (dist - 1)));
+      item.style.visibility = 'visible';
+      item.textContent = pad(value);
+      item.style.opacity = String(opacity);
+      item.style.zIndex = String(Math.round((3 - dist) * 8));
+      item.style.filter = 'none';
+      item.style.transform = `translate(-50%, -50%) translateY(${(offset * WHEEL.slotPx).toFixed(2)}px) rotateX(${(-tilt).toFixed(2)}deg) scale(${scale.toFixed(3)})`;
+      item.classList.toggle('is-on', dist < 0.5);
+    }
+  }
+
+  function nearestWheelIndex(wheel) {
+    return Math.round(wheel.index);
+  }
+
+  function stopWheelLoop() {
+    if (wheelRaf) {
+      cancelAnimationFrame(wheelRaf);
+      wheelRaf = 0;
+    }
+  }
+
+  function wheelLoop(now) {
+    wheelRaf = 0;
+    let moving = false;
+    wheels.forEach((wheel) => {
+      if (wheel.dragging) {
+        moving = true;
+        paintWheel(wheel);
+        return;
+      }
+      const dt = Math.min(32, now - (wheel.lastT || now)) / 1000;
+      wheel.lastT = now;
+      if (dt <= 0) {
+        moving = true;
+        return;
+      }
+      const prevSlot = Math.round(wheel.index);
+      if (Math.abs(wheel.vel) > 2.2) {
+        wheel.vel *= Math.exp(-3.1 * dt);
+        wheel.index += wheel.vel * dt;
+        moving = true;
+      } else {
+        const target = nearestWheelIndex(wheel);
+        const dist = target - wheel.index;
+        wheel.vel += dist * 90 * dt;
+        wheel.vel *= Math.exp(-14 * dt);
+        wheel.index += wheel.vel * dt;
+        if (Math.abs(dist) < 0.004 && Math.abs(wheel.vel) < 0.12) {
+          wheel.index = target;
+          wheel.vel = 0;
+        } else {
+          moving = true;
+        }
+      }
+      const slot = Math.round(wheel.index);
+      if (slot !== prevSlot) tickWheel(wheel);
+      paintWheel(wheel);
+    });
+    syncDraftFromWheels();
+    if (moving) wheelRaf = requestAnimationFrame(wheelLoop);
+  }
+
+  function kickWheelLoop() {
+    if (!wheelRaf) wheelRaf = requestAnimationFrame(wheelLoop);
+  }
+
+  function bindWheel(wheel) {
+    const view = wheel.view;
+    if (!view || view.dataset.bound === '1') return;
+    view.dataset.bound = '1';
+    const samples = [];
+
+    function sampleVel(y, t) {
+      samples.push({ y, t });
+      if (samples.length > 5) samples.shift();
+    }
+
+    function releaseVel() {
+      if (samples.length < 2) return 0;
+      const a = samples[0];
+      const b = samples[samples.length - 1];
+      const dt = b.t - a.t;
+      if (dt < 8) return 0;
+      return -((b.y - a.y) / dt) * (1000 / WHEEL.slotPx);
+    }
+
+    view.addEventListener('pointerdown', (event) => {
+      if (event.button && event.button !== 0) return;
+      event.preventDefault();
+      view.setPointerCapture(event.pointerId);
+      wheel.dragging = true;
+      wheel.vel = 0;
+      wheel.startY = event.clientY;
+      wheel.startIndex = wheel.index;
+      wheel.moved = 0;
+      samples.length = 0;
+      sampleVel(event.clientY, event.timeStamp);
+      view.classList.add('is-grabbing');
+      stopWheelLoop();
+      paintWheel(wheel);
+    });
+    view.addEventListener('pointermove', (event) => {
+      if (!wheel.dragging) return;
+      const dy = event.clientY - wheel.startY;
+      wheel.moved = Math.max(wheel.moved, Math.abs(dy));
+      const prevSlot = Math.round(wheel.index);
+      wheel.index = wheel.startIndex - dy / WHEEL.slotPx;
+      if (Math.round(wheel.index) !== prevSlot) tickWheel(wheel);
+      sampleVel(event.clientY, event.timeStamp);
+      paintWheel(wheel);
+      syncDraftFromWheels();
+    });
+    function endDrag(event) {
+      if (!wheel.dragging) return;
+      wheel.dragging = false;
+      view.classList.remove('is-grabbing');
+      if (wheel.moved < 5) {
+        const rect = view.getBoundingClientRect();
+        const offset = (event.clientY - (rect.top + rect.height / 2)) / WHEEL.slotPx;
+        wheel.index = nearestWheelIndex(wheel) + Math.round(offset);
+        wheel.vel = 0;
+      } else {
+        wheel.vel = releaseVel();
+        const max = 28;
+        if (wheel.vel > max) wheel.vel = max;
+        if (wheel.vel < -max) wheel.vel = -max;
+      }
+      wheel.lastT = performance.now();
+      kickWheelLoop();
+    }
+    view.addEventListener('pointerup', endDrag);
+    view.addEventListener('pointercancel', endDrag);
+    view.addEventListener('wheel', (event) => {
+      event.preventDefault();
+      const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+      wheel.dragging = false;
+      wheel.vel += (delta / WHEEL.slotPx) * 18;
+      const max = 28;
+      if (wheel.vel > max) wheel.vel = max;
+      if (wheel.vel < -max) wheel.vel = -max;
+      wheel.lastT = performance.now();
+      kickWheelLoop();
+    }, { passive: false });
+  }
+
+  function makeWheel(kind, values, view) {
+    return {
+      kind,
+      values,
+      view,
+      scene: view.querySelector('.hs-wheel-scene'),
+      index: 0,
+      vel: 0,
+      dragging: false,
+      lastT: 0,
+      startY: 0,
+      startIndex: 0,
+      moved: 0,
+    };
+  }
+
+  function jumpWheelsFromDraft() {
+    if (!calDraft || wheels.length !== 2) return;
+    const hour = Number(calDraft.hour);
+    const minute = snapMinute(calDraft.minute);
+    calDraft.minute = pad(minute);
+    wheels[0].index = Number.isFinite(hour) ? hour : 0;
+    wheels[0].vel = 0;
+    wheels[1].index = minute / 5;
+    wheels[1].vel = 0;
+    wheels.forEach((wheel) => paintWheel(wheel));
+    syncDraftFromWheels();
+  }
+
   function ensureCal() {
     if (calEl) return calEl;
     calEl = document.createElement('div');
     calEl.id = 'history-cal';
     calEl.className = 'hs-cal';
     calEl.hidden = true;
-    const hours = Array.from({ length: 24 }, (_, i) => `<option value="${pad(i)}">${pad(i)}</option>`).join('');
-    const minutes = Array.from({ length: 60 }, (_, i) => `<option value="${pad(i)}">${pad(i)}</option>`).join('');
     calEl.innerHTML = `
-      <div class="hs-cal-nav">
-        <button type="button" class="hs-cal-nav-btn" data-cal-prev aria-label="上一月">‹</button>
-        <div class="hs-cal-title" data-cal-title></div>
-        <button type="button" class="hs-cal-nav-btn" data-cal-next aria-label="下一月">›</button>
-      </div>
-      <div class="hs-cal-week">${['日', '一', '二', '三', '四', '五', '六'].map((name) => `<span>${name}</span>`).join('')}</div>
-      <div class="hs-cal-days" data-cal-days></div>
-      <div class="hs-cal-time">
-        <label>时 <select data-cal-hour>${hours}</select></label>
-        <span>:</span>
-        <label>分 <select data-cal-minute>${minutes}</select></label>
+      <div class="hs-cal-body">
+        <div class="hs-cal-main">
+          <div class="hs-cal-nav">
+            <button type="button" class="hs-cal-nav-btn" data-cal-prev aria-label="上一月">‹</button>
+            <div class="hs-cal-title" data-cal-title></div>
+            <button type="button" class="hs-cal-nav-btn" data-cal-next aria-label="下一月">›</button>
+          </div>
+          <div class="hs-cal-week">${['日', '一', '二', '三', '四', '五', '六'].map((name) => `<span>${name}</span>`).join('')}</div>
+          <div class="hs-cal-days" data-cal-days></div>
+        </div>
+        <div class="hs-cal-time">
+          <div class="hs-wheel">
+            <span class="hs-wheel-name">时</span>
+            <div class="hs-wheel-view" data-wheel="hour">
+              <div class="hs-wheel-center"></div>
+              <div class="hs-wheel-scene"></div>
+            </div>
+          </div>
+          <div class="hs-wheel">
+            <span class="hs-wheel-name">分</span>
+            <div class="hs-wheel-view" data-wheel="minute">
+              <div class="hs-wheel-center"></div>
+              <div class="hs-wheel-scene"></div>
+            </div>
+          </div>
+        </div>
       </div>
       <div class="hs-cal-actions">
+        <button type="button" class="hs-cal-cancel" data-cal-cancel>取消</button>
         <button type="button" class="hs-cal-ok" data-cal-ok>确认</button>
       </div>
     `;
     document.body.appendChild(calEl);
+    wheels = [
+      makeWheel('hour', WHEEL_HOURS, calEl.querySelector('[data-wheel="hour"]')),
+      makeWheel('minute', WHEEL_MINUTES, calEl.querySelector('[data-wheel="minute"]')),
+    ];
+    wheels.forEach(bindWheel);
     calEl.addEventListener('click', (event) => {
+      event.stopPropagation();
       if (event.target.closest('[data-cal-prev]')) {
         calView = shiftMonth(calView.year, calView.month, -1);
         renderCal();
@@ -332,15 +610,11 @@
         calDraft.year = dayBtn.getAttribute('data-year');
         calDraft.month = pad(Number(dayBtn.getAttribute('data-month')));
         calDraft.day = pad(Number(dayBtn.getAttribute('data-cal-day')));
-        renderCal();
+        markSelectedDay();
         return;
       }
       if (event.target.closest('[data-cal-ok]')) commitCal();
-    });
-    calEl.addEventListener('change', (event) => {
-      if (!calDraft) return;
-      if (event.target.matches('[data-cal-hour]')) calDraft.hour = event.target.value;
-      if (event.target.matches('[data-cal-minute]')) calDraft.minute = event.target.value;
+      if (event.target.closest('[data-cal-cancel]')) closeCal();
     });
     return calEl;
   }
@@ -350,10 +624,6 @@
     if (!calDraft) return;
     const title = box.querySelector('[data-cal-title]');
     if (title) title.textContent = `${calView.year}年${pad(calView.month)}月`;
-    const hourSel = box.querySelector('[data-cal-hour]');
-    const minuteSel = box.querySelector('[data-cal-minute]');
-    if (hourSel) hourSel.value = pad(Number(calDraft.hour));
-    if (minuteSel) minuteSel.value = pad(Number(calDraft.minute));
     const days = box.querySelector('[data-cal-days]');
     if (!days) return;
     const first = new Date(calView.year, calView.month - 1, 1);
@@ -370,6 +640,28 @@
     days.innerHTML = html;
   }
 
+  function markSelectedDay() {
+    if (!calEl || !calDraft) return;
+    const year = Number(calDraft.year);
+    const month = Number(calDraft.month);
+    const day = Number(calDraft.day);
+    calEl.querySelectorAll('[data-cal-day]').forEach((btn) => {
+      const on = Number(btn.getAttribute('data-year')) === year
+        && Number(btn.getAttribute('data-month')) === month
+        && Number(btn.getAttribute('data-cal-day')) === day;
+      btn.classList.toggle('is-on', on);
+    });
+  }
+
+  function syncWheelMetrics() {
+    const view = wheels[0] && wheels[0].view;
+    if (!view) return;
+    const h = view.clientHeight;
+    if (h < 40) return;
+    WHEEL.slotPx = (h / 2 - 8) / 3;
+    wheels.forEach(paintWheel);
+  }
+
   function placeCal(anchor) {
     const box = ensureCal();
     box.hidden = false;
@@ -382,9 +674,15 @@
     if (top + height > window.innerHeight - 8) top = Math.max(8, rect.top - height - 4);
     box.style.left = `${Math.round(left)}px`;
     box.style.top = `${Math.round(top)}px`;
+    syncWheelMetrics();
   }
 
   function closeCal() {
+    wheels.forEach((wheel) => {
+      wheel.dragging = false;
+      wheel.vel = 0;
+    });
+    stopWheelLoop();
     calWhich = '';
     calDraft = null;
     if (calEl) calEl.hidden = true;
@@ -407,16 +705,20 @@
     document.querySelectorAll('.hs-dt-field.is-open').forEach((el) => el.classList.remove('is-open'));
     field.classList.add('is-open');
     renderCal();
+    jumpWheelsFromDraft();
     placeCal(field);
   }
 
   function commitCal() {
-    if (!calWhich || !calDraft) return;
-    const ms = partsToMs(calDraft);
-    if (ms == null) return;
-    if (calWhich === 'end') customEndMs = ms;
-    else customStartMs = ms;
-    writeCustomInputs();
+    if (calDraft) {
+      syncDraftFromWheels();
+      const ms = partsToMs(calDraft);
+      if (ms != null) {
+        if (calWhich === 'end') customEndMs = ms;
+        else customStartMs = ms;
+        writeCustomInputs();
+      }
+    }
     closeCal();
   }
 
@@ -928,9 +1230,10 @@
       });
     }
     document.addEventListener('click', (event) => {
-      if (calWhich && !event.target.closest('#history-cal') && !event.target.closest('[data-hs-dt]')) {
-        closeCal();
-      }
+      const path = typeof event.composedPath === 'function' ? event.composedPath() : [event.target];
+      const inCal = path.some((node) => node && (node.id === 'history-cal' || node === calEl));
+      const inField = path.some((node) => node && node.getAttribute && node.hasAttribute('data-hs-dt'));
+      if (calWhich && !inCal && !inField) closeCal();
       if (!openFilter) return;
       if (event.target.closest('.hs-th-filter')) return;
       openFilter = '';
