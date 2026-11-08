@@ -307,9 +307,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     const serverDefaultAirports = serverSettingsConfig?.default_airports || {};
     const serverThresholds = serverSettingsConfig?.thresholds || {};
     const serverPublish = serverSettingsConfig?.publish || {};
-    if (serverPaths.taf_excel_path) localStorage.setItem('taf_excel_path', serverPaths.taf_excel_path);
-    if (serverPaths.manual_excel_path) localStorage.setItem('manual_excel_path', serverPaths.manual_excel_path);
-    if (serverPaths.backup_save_path) localStorage.setItem('backup_save_path', serverPaths.backup_save_path);
+    ['taf_excel_path', 'manual_excel_path', 'manual_forecast_path', 'backup_save_path'].forEach(key => {
+        if (Object.prototype.hasOwnProperty.call(serverPaths, key)) {
+            if (serverPaths[key]) localStorage.setItem(key, serverPaths[key]);
+            else localStorage.removeItem(key);
+        }
+    });
     if (serverDefaultAirports.manual) localStorage.setItem('sf_def_manual_aps', serverDefaultAirports.manual);
     if (serverDefaultAirports.taf) localStorage.setItem('sf_def_taf_aps', serverDefaultAirports.taf);
     if (serverPublish.airport_groups && serverPublish.airport_groups.length) localStorage.setItem('pb_airport_groups', JSON.stringify(serverPublish.airport_groups));
