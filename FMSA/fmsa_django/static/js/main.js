@@ -602,19 +602,24 @@ function fillMarksHourTicks(beijingTimeline, utcTimeline) {
     const winStart = getMarksWindowStartMs();
     const dur = getMarksWindowDurationMs();
     const winEnd = winStart + dur;
+    const nowMs = typeof getMarksNowMs === 'function' ? getMarksNowMs() : Date.now();
+    const expandTickMin = nowMs - 2.5 * 3600000;
+    const collapseTickMin = nowMs - 0.5 * 3600000;
     const makeTick = (parent, ms, text) => {
+        if (ms < expandTickMin) return;
         const pct = ((ms - winStart) / dur) * 100;
-        if (pct < -0.1 || pct > 100.1) return;
+        if (pct < -8 || pct > 100.1) return;
         const el = document.createElement('div');
         el.className = 'timeline-slot timeline-slot-abs';
+        if (ms < collapseTickMin) el.classList.add('timeline-slot-collapse-hide');
         el.style.left = `${pct}%`;
         el.textContent = text;
         parent.appendChild(el);
     };
-    const firstHour = new Date(winStart);
+    const firstHour = new Date(expandTickMin);
     firstHour.setSeconds(0, 0);
     firstHour.setMinutes(0, 0, 0);
-    if (firstHour.getTime() <= winStart) firstHour.setHours(firstHour.getHours() + 1);
+    if (firstHour.getTime() < expandTickMin) firstHour.setHours(firstHour.getHours() + 1);
     for (let t = firstHour.getTime(); t <= winEnd; t += 3600000) {
         const dt = new Date(t);
         let bjH, utcH;

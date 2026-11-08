@@ -117,7 +117,7 @@ function withMarksIncludePast(enabled, fn) {
 }
 
 function marksWindowIncludesPast() {
-    return getMarksPastExpanded(window._marksRenderScope || 'home');
+    return true;
 }
 
 /** marks 可见窗口起点（折叠=now，展开=now-2h） */
@@ -1165,6 +1165,16 @@ function removeMarksPastHandle(scope) {
     if (el) el.remove();
 }
 
+function marksHandleLeftPx(scope, expanded, tlRect) {
+    const rect = tlRect || (() => {
+        const timelines = marksPastHandleTimelines(scope);
+        return timelines.length ? timelines[0].getBoundingClientRect() : null;
+    })();
+    if (!rect) return 0;
+    if (expanded) return Math.round(rect.left + rect.width * getMarksPastRatio() - 7);
+    return Math.round(rect.left);
+}
+
 function positionMarksPastHandle(scope) {
     const sc = scope || 'home';
     const wrap = document.getElementById(marksPastHandleId(sc));
@@ -1197,12 +1207,16 @@ function positionMarksPastHandle(scope) {
     const top = Math.max(firstRect.top, hostTop);
     const bottom = Math.max(top, lastRect.bottom);
     const height = Math.max(36, bottom - top);
-    wrap.style.left = `${Math.round(tlRect.left)}px`;
     wrap.style.top = `${Math.round(top)}px`;
     wrap.style.height = `${Math.round(height)}px`;
+    wrap.style.width = '14px';
     const expanded = getMarksPastExpanded(sc);
     wrap.classList.toggle('open', expanded);
+    wrap.classList.remove('collapsed-peek', 'peek-hot');
     wrap.title = expanded ? '收起过去2小时' : '展开过去2小时';
+    if (!window._flightMarksAnimating) {
+        wrap.style.left = `${marksHandleLeftPx(sc, expanded, tlRect)}px`;
+    }
     const knob = wrap.querySelector('.flight-past-handle-knob');
     if (knob) {
         const visTop = Math.max(top, 0);
@@ -1424,23 +1438,46 @@ function updateMarksNowBadge(titleTimeline, winStart, dur) {
     host.appendChild(badge);
 }
 
+function _marksCollapsedTransform() {
+    return `translateX(calc(-100% * var(--marks-past-ratio, 0.0556) + 7px))`;
+}
+
+function _animateMarksHandle(scope, expanding) {
+    const wrap = document.getElementById(marksPastHandleId(scope));
+    if (!wrap) return;
+    const from = marksHandleLeftPx(scope, !expanding);
+    const to = marksHandleLeftPx(scope, expanding);
+    wrap.classList.toggle('open', expanding);
+    wrap.title = expanding ? '收起过去2小时' : '展开过去2小时';
+    wrap.style.transition = 'none';
+    wrap.style.width = '14px';
+    wrap.style.left = `${from}px`;
+    requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+            wrap.style.transition = expanding ? 'left 0.35s ease-out' : 'left 0.3s ease-in';
+            wrap.style.left = `${to}px`;
+        });
+    });
+}
+
 function _playMarksExpandAnimation(expanding, scope) {
     const sc = scope || 'home';
-    const pastPct = getMarksPastRatio() * 100;
     const targets = _marksAnimTargets(sc);
     if (!targets.length) {
         if (!expanding) {
             setMarksPastExpanded(sc, false);
             if (sc === 'home' && typeof syncFlightMarksBodyClass === 'function') syncFlightMarksBodyClass();
-            redrawMarksScope(sc);
+            positionMarksPastHandle(sc);
         }
         return;
     }
 
+    _animateMarksHandle(sc, expanding);
     if (expanding) {
+        const from = _marksCollapsedTransform();
         targets.forEach((el) => {
             el.style.transition = 'none';
-            el.style.transform = `translateX(-${pastPct}%)`;
+            el.style.transform = from;
         });
         requestAnimationFrame(() => {
             requestAnimationFrame(() => {
@@ -1455,7 +1492,9 @@ function _playMarksExpandAnimation(expanding, scope) {
                 el.style.transition = '';
                 el.style.transform = '';
             });
-            positionAllMarksPastHandles();
+            const wrap = document.getElementById(marksPastHandleId(sc));
+            if (wrap) wrap.style.transition = '';
+            positionMarksPastHandle(sc);
         }, 380);
     } else {
         targets.forEach((el) => {
@@ -1464,20 +1503,23 @@ function _playMarksExpandAnimation(expanding, scope) {
         });
         requestAnimationFrame(() => {
             requestAnimationFrame(() => {
+                const to = _marksCollapsedTransform();
                 targets.forEach((el) => {
                     el.style.transition = 'transform 0.3s ease-in';
-                    el.style.transform = `translateX(-${pastPct}%)`;
+                    el.style.transform = to;
                 });
             });
         });
         setTimeout(() => {
+            setMarksPastExpanded(sc, false);
+            if (sc === 'home' && typeof syncFlightMarksBodyClass === 'function') syncFlightMarksBodyClass();
             targets.forEach((el) => {
                 el.style.transition = '';
                 el.style.transform = '';
             });
-            setMarksPastExpanded(sc, false);
-            if (sc === 'home' && typeof syncFlightMarksBodyClass === 'function') syncFlightMarksBodyClass();
-            redrawMarksScope(sc);
+            const wrap = document.getElementById(marksPastHandleId(sc));
+            if (wrap) wrap.style.transition = '';
+            positionMarksPastHandle(sc);
         }, 320);
     }
 }
@@ -1499,7 +1541,6 @@ function toggleFlightMarksPast(event, scope) {
     if (willExpand) {
         setMarksPastExpanded(sc, true);
         if (sc === 'home' && typeof syncFlightMarksBodyClass === 'function') syncFlightMarksBodyClass();
-        redrawMarksScope(sc);
         _playMarksExpandAnimation(true, sc);
         setTimeout(() => { window._flightMarksAnimating = false; }, 400);
     } else {
@@ -1510,25 +1551,14 @@ function toggleFlightMarksPast(event, scope) {
 
 const MARKS_LEGEND_POS_KEY = 'fmsa_marks_legend_pos';
 
-function marksLegendDirHtml(center) {
-    if (center) {
-        return `
-            <span class="fml-item"><span class="fml-tri fml-tri-down"></span>朝下＝进港/落地</span>
-            <span class="fml-item"><span class="fml-tri fml-tri-up"></span>朝上＝起飞/离港</span>`;
-    }
-    return `
-        <span class="fml-item"><span class="fml-tri fml-tri-down"></span>上行＝进港/落地</span>
-        <span class="fml-item"><span class="fml-tri fml-tri-up"></span>下行＝起飞/离港</span>`;
-}
-
 function syncMarksLegendLayout() {
     const el = document.getElementById('flight-marks-legend');
     if (!el) return;
     const center = isFlightMarksLayoutCenter();
-    const input = el.querySelector('.fml-layout-input');
-    if (input) input.checked = center;
-    const dir = el.querySelector('.fml-dir');
-    if (dir) dir.innerHTML = marksLegendDirHtml(center);
+    const split = el.querySelector('input[name="fml-layout"][value="split"]');
+    const mid = el.querySelector('input[name="fml-layout"][value="center"]');
+    if (split) split.checked = !center;
+    if (mid) mid.checked = center;
     document.body.classList.toggle('flight-marks-layout-center', center);
 }
 
@@ -1596,7 +1626,7 @@ function ensureFlightMarksLegend() {
             }
         });
     }
-    if (!el.querySelector('.fml-layout-float')) {
+    if (!el.querySelector('.fml-layout-radios')) {
         el.innerHTML = `
             <div class="fml-head">
                 <div class="fml-handle" title="按住拖动">航班标记说明</div>
@@ -1608,29 +1638,37 @@ function ensureFlightMarksLegend() {
                     <span class="fml-swatch"><span class="fml-mark fml-mark-g"></span>绿色告警</span>
                     <span class="fml-swatch"><span class="fml-mark fml-mark-n"></span>无告警</span>
                 </div>
-                <div class="fml-right">
-                    <div class="fml-row fml-dir"></div>
-                    <div class="fml-row fml-row-lines">
-                        <span class="fml-item"><span class="fml-tick fml-tick-white"></span>白＝飞机在地面</span>
-                        <span class="fml-item"><span class="fml-tick fml-tick-black"></span>黑＝飞机在空中</span>
-                        <span class="fml-item"><span class="fml-tick fml-tick-blink"></span>闪＝超时未起/未落</span>
+                <div class="fml-center">
+                    <div class="fml-legend-row">
+                        <span class="fml-item"><span class="fml-pair"><span class="fml-tri fml-tri-down fml-tick-white"></span><span class="fml-tri fml-tri-down fml-tick-black"></span></span>进港/落地</span>
+                        <span class="fml-item"><span class="fml-pair"><span class="fml-tri fml-tri-up fml-tick-white"></span><span class="fml-tri fml-tri-up fml-tick-black"></span></span>起飞/离港</span>
+                        <span class="fml-item"><span class="fml-pair"><span class="fml-tri fml-tri-down fml-tick-white"></span><span class="fml-tri fml-tri-up fml-tick-white"></span></span>飞机在地面</span>
                     </div>
-                    <label class="fml-layout-toggle fml-layout-float" title="切换航班排列">
-                        <input type="checkbox" class="fml-layout-input">
-                        <span class="fml-layout-track">
-                            <span class="fml-layout-label">上下行</span>
-                            <span class="fml-layout-label">居中</span>
-                            <span class="fml-layout-thumb"></span>
-                        </span>
-                    </label>
+                    <div class="fml-legend-row">
+                        <span class="fml-item"><span class="fml-pair"><span class="fml-tri fml-tri-down fml-tick-black"></span><span class="fml-tri fml-tri-up fml-tick-black"></span></span>飞机在空中</span>
+                        <span class="fml-item"><span class="fml-pair"><span class="fml-tri fml-tri-down fml-tick-blink"></span><span class="fml-tri fml-tri-up fml-tick-blink"></span></span>超时未落/超时未起</span>
+                    </div>
+                </div>
+                <div class="fml-right">
+                    <div class="fml-layout-radios" title="切换航班排列">
+                        <label class="fml-radio">
+                            <input type="radio" name="fml-layout" class="fml-layout-input" value="split">
+                            <span class="fml-radio-mark"></span>
+                            <span class="fml-radio-text">起飞落地分行显示</span>
+                        </label>
+                        <label class="fml-radio">
+                            <input type="radio" name="fml-layout" class="fml-layout-input-center" value="center">
+                            <span class="fml-radio-mark"></span>
+                            <span class="fml-radio-text">全部居中显示</span>
+                        </label>
+                    </div>
                 </div>
             </div>`;
-        const layoutInput = el.querySelector('.fml-layout-input');
-        if (layoutInput) {
-            layoutInput.addEventListener('change', () => {
-                setFlightMarksLayout(layoutInput.checked ? 'center' : 'split');
+        el.querySelectorAll('input[name="fml-layout"]').forEach((input) => {
+            input.addEventListener('change', () => {
+                if (input.checked) setFlightMarksLayout(input.value);
             });
-        }
+        });
         el.dataset.dragBound = '';
         _bindMarksLegendDrag(el);
     }
@@ -1745,6 +1783,10 @@ function initFlightMarksMode() {
     }
 }
 
+if (document.body) {
+    syncFlightMarksBodyClass();
+    syncFlightMarksCssVars();
+}
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', initFlightMarksMode);
 } else {

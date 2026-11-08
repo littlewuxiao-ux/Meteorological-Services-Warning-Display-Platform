@@ -1237,12 +1237,27 @@ body.display-timezone-utc .title-row.main-title-row .timeline-row {
   min-height: 75px;
   height: auto;
   box-sizing: border-box;
+  position: relative;
+  overflow: hidden;
 }
 
 .weather-info-container {
   padding: 0;
   border-radius: 3px;
   background-color: rgba(255, 255, 255, 0.1);
+}
+
+.metar-alert-corner {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 12px;
+  height: 12px;
+  background: currentColor;
+  border-radius: 50%;
+  z-index: 10;
+  pointer-events: none;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.7);
 }
 
 .weather-item {
@@ -3110,6 +3125,15 @@ body.airport-detail-theme-light .airport-search-empty {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
   border-left: 1px solid #bdc3c7;
   border-right: 1px solid #bdc3c7;
+}
+
+.gantt-bar.gantt-bar-hover {
+  overflow: hidden;
+  text-overflow: clip;
+  opacity: 1;
+  filter: none;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.22);
+  pointer-events: auto;
 }
 
 /* 甘特条带颜色由JavaScript动态设置，遵循4色规则：红、黄、绿、蓝 */
@@ -5685,6 +5709,7 @@ p.settings-hint {
   overflow: hidden;
   position: relative;
 }
+.flight-marks-mode .main-title-row .title-timeline,
 .flight-marks-mode .airport-detail-title-row .title-timeline,
 .flight-marks-mode .airport-search-block .title-timeline {
   overflow: visible;
@@ -5706,9 +5731,27 @@ p.settings-hint {
 .flight-marks-past-open .main-title-row .title-timeline {
   position: relative;
 }
-/* 收起时 NOW 中心落在轴起点，允许标牌向左伸出，避免被裁成左对齐 */
 .flight-marks-mode .main-title-row .title-timeline {
   overflow: visible;
+}
+.flight-marks-mode .title-row.main-title-row .timeline-row,
+body.display-timezone-utc.flight-marks-mode .title-row.main-title-row .timeline-row,
+.flight-marks-mode .airport-detail-title-row .timeline-row,
+.flight-marks-mode .airport-search-block .timeline-row {
+  background-color: transparent;
+}
+.flight-marks-mode:not(.flight-marks-past-open) .timeline-slot-collapse-hide,
+#airport-detail-modal:not(.flight-marks-past-open) .timeline-slot-collapse-hide,
+.airport-search-block:not(.flight-marks-past-open) .timeline-slot-collapse-hide {
+  visibility: hidden;
+}
+.flight-marks-mode:not(.flight-marks-past-open) #content-main .forecast-timeline > .marks-slide-layer,
+.flight-marks-mode:not(.flight-marks-past-open) .main-title-row .title-timeline > .timeline-row,
+#airport-detail-modal:not(.flight-marks-past-open) .forecast-timeline > .marks-slide-layer,
+#airport-detail-modal:not(.flight-marks-past-open) .title-timeline > .timeline-row,
+.airport-search-block:not(.flight-marks-past-open) .forecast-timeline > .marks-slide-layer,
+.airport-search-block:not(.flight-marks-past-open) .title-timeline > .timeline-row {
+  transform: translateX(calc(-100% * var(--marks-past-ratio, 0.0556) + 7px));
 }
 
 /* NOW：叠在时间轴轨道内侧下方，不占行、不挤整点 */
@@ -5921,57 +5964,63 @@ body:not(.flight-marks-mode) .flight-past-handle-float {
   border-bottom: none;
   margin-bottom: 0;
 }
-.fml-layout-toggle {
-  cursor: pointer;
+.fml-layout-radios {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
   flex-shrink: 0;
 }
-.fml-layout-float {
-  position: absolute;
-  top: 1px;
-  right: 0;
-  z-index: 2;
-}
-.fml-layout-toggle input {
-  display: none;
-}
-.fml-layout-track {
+.fml-radio {
   position: relative;
   display: flex;
-  width: 96px;
-  height: 18px;
-  border-radius: 3px;
-  border: 1px solid rgba(255, 255, 255, 0.55);
-  background: #243447;
-  overflow: hidden;
-}
-.fml-layout-label {
-  flex: 1;
-  text-align: center;
-  font-size: 11px;
-  font-weight: 700;
-  line-height: 16px;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
   color: #fff;
-  position: relative;
-  z-index: 2;
+  font-size: 12px;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+.fml-radio input {
+  position: absolute;
+  opacity: 0;
   pointer-events: none;
 }
-.fml-layout-thumb {
-  position: absolute;
-  left: 0;
-  top: 0;
-  width: 50%;
-  height: 100%;
-  background: var(--alert-g);
-  z-index: 1;
-  transition: transform 0.2s ease;
+.fml-radio-mark {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  border: 1.5px solid rgba(255, 255, 255, 0.85);
+  border-radius: 50%;
+  background: transparent;
+  position: relative;
 }
-.fml-layout-toggle input:checked + .fml-layout-track .fml-layout-thumb {
-  transform: translateX(100%);
+.fml-radio-mark::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #fff;
+  transform: translate(-50%, -50%) scale(0);
+  transition: transform 0.12s ease;
+}
+.fml-radio input:checked + .fml-radio-mark::after {
+  transform: translate(-50%, -50%) scale(1);
+}
+.fml-radio:hover .fml-radio-mark {
+  border-color: #fff;
+}
+.fml-radio-text {
+  font-weight: 600;
 }
 .fml-body {
   display: flex;
   flex-direction: row;
-  align-items: center;
+  align-items: stretch;
   gap: 10px;
 }
 .fml-left {
@@ -5980,6 +6029,7 @@ body:not(.flight-marks-mode) .flight-past-handle-float {
   grid-template-rows: auto auto;
   gap: 4px 10px;
   flex-shrink: 0;
+  align-content: center;
 }
 .fml-swatch {
   display: inline-flex;
@@ -6011,16 +6061,46 @@ body:not(.flight-marks-mode) .flight-past-handle-float {
 .fml-mark-y { background: rgba(var(--alert-y-rgb), 0.8); }
 .fml-mark-g { background: rgba(var(--alert-g-rgb), 0.8); }
 .fml-mark-n { background: rgba(var(--alert-n-rgb), 0.8); }
+.fml-center {
+  flex: 0 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 0 12px;
+  border-left: 1px solid rgba(255, 255, 255, 0.2);
+  border-right: 1px solid rgba(255, 255, 255, 0.2);
+}
+.fml-legend-row {
+  display: flex;
+  flex-wrap: nowrap;
+  justify-content: center;
+  align-items: center;
+  gap: 14px;
+}
 .fml-right {
   position: relative;
   display: flex;
   flex-direction: column;
+  align-items: center;
+  justify-content: center;
   gap: 4px;
-  padding-left: 10px;
-  border-left: 1px solid rgba(255, 255, 255, 0.2);
+  padding-left: 0;
+  border-left: none;
 }
 .fml-dir {
-  padding-right: 104px;
+  padding-right: 0;
+}
+.fml-legend-pairs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+}
+.fml-pair {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
 }
 .fml-row {
   display: flex;
@@ -6058,6 +6138,9 @@ body:not(.flight-marks-mode) .flight-past-handle-float {
 }
 .fml-tri-up {
   clip-path: polygon(50% 0%, 0% 100%, 100% 100%);
+}
+.fml-tick-white {
+  background: #fff;
 }
 .fml-tick-black {
   background: #000;
@@ -6162,8 +6245,12 @@ body:not(.flight-marks-mode) .flight-past-handle-float {
 }
 
 /* 展开后：过去 2h 灰色背景带（画在裁剪容器上，不随 slide 移动） */
-.flight-marks-past-open .forecast-timeline::before,
-.flight-marks-past-open .title-timeline::before {
+.flight-marks-past-open #content-main .forecast-timeline::before,
+.flight-marks-past-open .main-title-row .title-timeline::before,
+#airport-detail-modal.flight-marks-past-open .forecast-timeline::before,
+#airport-detail-modal.flight-marks-past-open .title-timeline::before,
+.airport-search-block.flight-marks-past-open .forecast-timeline::before,
+.airport-search-block.flight-marks-past-open .title-timeline::before {
   content: '';
   position: absolute;
   left: 0;

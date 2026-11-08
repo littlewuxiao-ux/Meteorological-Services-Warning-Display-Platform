@@ -87,7 +87,7 @@ function createWeatherInfo(metar) {
 
     return `<div class="weather-info-container" style="position: relative;" title="${metar.metar_content || ''}">
         ${rows.join('')}
-        <div style="position: absolute; top: -30px; right: -10px; color: ${alertColor}; font-size: 40px; z-index: 10;">◥</div>
+        <div class="metar-alert-corner" style="color: ${alertColor};"></div>
     </div>`;
 }
 

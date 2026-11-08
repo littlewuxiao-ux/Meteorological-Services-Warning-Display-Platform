@@ -89,8 +89,7 @@ function createPlainTransitionBar(seg) {
                     z-index: 2;
                     display: flex;
                     align-items: center;
-                    justify-content: center;"
-             title="${escapeGantt(seg.title || '➤➤')}">
+                    justify-content: center;">
             ➤➤
         </div>
     `;
@@ -223,8 +222,7 @@ function createSingleGanttBar(startTime, endTime, content, warning, type) {
                     width: ${position.width}%; 
                     background-color: ${backgroundColor}; 
                     color: white; 
-                    z-index: 1;"
-             title="${escapeGantt(content || '')}">
+                    z-index: 1;">
             ${escapeGantt(content || '')}
         </div>
     `;
@@ -308,9 +306,6 @@ function createBecmgTransitionBar(taf, becmgIndex) {
         backgroundStyle = `background: linear-gradient(to right, ${previousColor}, ${becmgColor});`;
     }
 
-    // 创建悬浮提示内容
-    const tooltipContent = `${previousContent}➤➤${becmgContent}`;
-
     return `
         <div class="gantt-bar gantt-becmg-transition" 
              style="position: absolute; 
@@ -321,8 +316,7 @@ function createBecmgTransitionBar(taf, becmgIndex) {
                     z-index: 2;
                     display: flex;
                     align-items: center;
-                    justify-content: center;"
-             title="${tooltipContent}">
+                    justify-content: center;">
             ➤➤
         </div>
     `;
@@ -551,4 +545,166 @@ function createNoTafDataOverlay(airportElement, airportHeight, horizontalWidth) 
     overlay.textContent = '没有有效的TAF数据';
 
     return overlay;
+}
+
+const GANTT_HOVER_GROW_Y = 8;
+
+const ganttHoverState = { bar: null, clone: null, tris: [] };
+
+function ganttForceOpaque(css) {
+    if (!css) return css;
+    return String(css).replace(/rgba\(\s*([^,]+),([^,]+),([^,]+),\s*[\d.]+\s*\)/gi, 'rgba($1,$2,$3, 1)');
+}
+
+function ganttHoverLeftBound(bar) {
+    const row = bar.closest('.airport-row');
+    if (!row) return 0;
+    const weather = row.querySelector('.weather-info');
+    if (weather) return weather.getBoundingClientRect().right;
+    const timeline = row.querySelector('.forecast-timeline');
+    if (timeline) return timeline.getBoundingClientRect().left;
+    return row.getBoundingClientRect().left;
+}
+
+function restoreGanttHover() {
+    const { bar, clone, tris } = ganttHoverState;
+    if (clone && clone.parentNode) clone.parentNode.removeChild(clone);
+    (tris || []).forEach((el) => {
+        if (el && el.parentNode) el.parentNode.removeChild(el);
+    });
+    if (bar) {
+        bar.classList.remove('gantt-bar-source');
+        bar.style.visibility = '';
+    }
+    ganttHoverState.bar = null;
+    ganttHoverState.clone = null;
+    ganttHoverState.tris = [];
+}
+
+function ganttHoverGroupContains(node) {
+    const { clone, tris } = ganttHoverState;
+    if (!node) return false;
+    if (clone && (node === clone || (clone.contains && clone.contains(node)))) return true;
+    return (tris || []).some((t) => t === node || (t && t.contains && t.contains(node)));
+}
+
+function onGanttHoverGroupLeave(e) {
+    if (ganttHoverGroupContains(e.relatedTarget)) return;
+    restoreGanttHover();
+}
+
+function measureGanttNeededWidth(bar) {
+    const cs = window.getComputedStyle(bar);
+    const probe = document.createElement('span');
+    probe.textContent = (bar.textContent || '').replace(/\s+/g, ' ');
+    probe.style.cssText = [
+        'position:absolute',
+        'left:-9999px',
+        'top:0',
+        'white-space:nowrap',
+        'visibility:hidden',
+        `font:${cs.font}`,
+        `letter-spacing:${cs.letterSpacing}`,
+        `word-spacing:${cs.wordSpacing}`
+    ].join(';');
+    document.body.appendChild(probe);
+    const textW = probe.getBoundingClientRect().width;
+    probe.remove();
+    const pad = (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0);
+    const border = (parseFloat(cs.borderLeftWidth) || 0) + (parseFloat(cs.borderRightWidth) || 0);
+    return Math.ceil(textW + pad + border + 6);
+}
+
+function applyGanttHover(bar) {
+    if (!bar || bar.classList.contains('gantt-bar-hover') || ganttHoverState.bar === bar) return;
+    restoreGanttHover();
+
+    const rect = bar.getBoundingClientRect();
+    const needed = measureGanttNeededWidth(bar);
+    const extra = Math.max(0, needed - rect.width);
+    let left = rect.left - extra / 2;
+    let right = rect.right + extra / 2;
+    const minLeft = ganttHoverLeftBound(bar);
+    const maxRight = document.documentElement.clientWidth;
+    if (left < minLeft) {
+        right += minLeft - left;
+        left = minLeft;
+    }
+    if (right > maxRight) {
+        left -= right - maxRight;
+        right = maxRight;
+        if (left < minLeft) left = minLeft;
+    }
+    const width = Math.max(1, right - left);
+    const height = rect.height + GANTT_HOVER_GROW_Y;
+    const top = rect.top + rect.height / 2 - height / 2;
+    const inModal = !!(bar.closest('#airport-detail-modal') || bar.closest('#airport-search-modal'));
+
+    const clone = bar.cloneNode(true);
+    clone.classList.add('gantt-bar-hover');
+    clone.style.position = 'fixed';
+    clone.style.left = `${Math.round(left)}px`;
+    clone.style.top = `${Math.round(top)}px`;
+    clone.style.width = `${Math.round(width)}px`;
+    clone.style.height = `${Math.round(height)}px`;
+    clone.style.transform = 'none';
+    clone.style.zIndex = inModal ? '20040' : '40';
+    clone.style.margin = '0';
+    clone.style.opacity = '1';
+    clone.style.filter = 'none';
+    if (bar.style.background) clone.style.background = ganttForceOpaque(bar.style.background);
+    const bgc = bar.style.backgroundColor || window.getComputedStyle(bar).backgroundColor;
+    if (bgc) clone.style.backgroundColor = ganttForceOpaque(bgc);
+    clone.addEventListener('pointerleave', onGanttHoverGroupLeave);
+
+    bar.classList.add('gantt-bar-source');
+    bar.style.visibility = 'hidden';
+    document.body.appendChild(clone);
+
+    const cloneRect = { left, top, right: left + width, bottom: top + height };
+    const tris = [];
+    const row = bar.closest('.airport-row');
+    if (row) {
+        row.querySelectorAll('.temperature-triangle').forEach((tri) => {
+            const r = tri.getBoundingClientRect();
+            const overlap = r.right > cloneRect.left && r.left < cloneRect.right
+                && r.bottom > cloneRect.top && r.top < cloneRect.bottom;
+            if (!overlap) return;
+            const tclone = tri.cloneNode(true);
+            tclone.classList.add('gantt-hover-temp');
+            tclone.style.position = 'fixed';
+            tclone.style.left = `${Math.round(r.left)}px`;
+            tclone.style.top = `${Math.round(r.top)}px`;
+            tclone.style.transform = 'none';
+            tclone.style.zIndex = inModal ? '20041' : '41';
+            tclone.style.margin = '0';
+            tclone.style.pointerEvents = 'auto';
+            tclone.style.cursor = 'pointer';
+            if (tri.getAttribute('title')) tclone.setAttribute('title', tri.getAttribute('title'));
+            tclone.addEventListener('pointerleave', onGanttHoverGroupLeave);
+            document.body.appendChild(tclone);
+            tris.push(tclone);
+        });
+    }
+
+    ganttHoverState.bar = bar;
+    ganttHoverState.clone = clone;
+    ganttHoverState.tris = tris;
+}
+
+function bindGanttBarHover() {
+    if (window._ganttHoverBound) return;
+    window._ganttHoverBound = true;
+    document.addEventListener('pointerover', (e) => {
+        const bar = e.target && e.target.closest ? e.target.closest('.gantt-bar') : null;
+        if (!bar || bar.classList.contains('gantt-bar-hover')) return;
+        applyGanttHover(bar);
+    });
+    document.addEventListener('scroll', restoreGanttHover, true);
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', bindGanttBarHover);
+} else {
+    bindGanttBarHover();
 }
