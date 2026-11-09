@@ -99,7 +99,7 @@ const PUBLISH_REGION_NAMES = [
   ...Object.keys(AIRPORT_CFG.international)
 ];
 
-const ALL_WX_PHENOMENA = ['小雨','中雨','大雨','暴雨','小阵雨','中阵雨','大阵雨','弱冻雨','中冻雨','大冻雨','小雪','中雪','大雪','小阵雪','中阵雪','大阵雪','雨夹雪','弱雷雨','中雷雨','强雷雨','干雷','雾','霾','浮尘','沙暴'];
+const ALL_WX_PHENOMENA = ['小雨','中雨','大雨','暴雨','小阵雨','中阵雨','大阵雨','小雨夹雪','中雨夹雪','大雨夹雪','雨夹雪','弱冻雨','中冻雨','大冻雨','小雪','中雪','大雪','小阵雪','中阵雪','大阵雪','弱雷雨','中雷雨','强雷雨','干雷','雾','霾','浮尘','沙暴'];
 const WX_DEFAULT_HIDDEN = new Set(['小雨', '小阵雨']);
 
 const WX_SNOW_KEYWORDS = ['雪', '冰粒', '冰晶'];
@@ -2325,6 +2325,7 @@ function getCellStyleByContent(v) {
     if (!v || v === '' || v === '—' || v === '适航') return { bg: 'transparent', fg: '#333' }; 
     if (v.includes('雷') || v.includes('雹')) return { bg: '#dc2626', fg: '#FFFFFF' }; 
     if (WX_HAIL_KEYWORDS.some(kw => v.includes(kw))) return { bg: '#bae6fd', fg: '#000000' };
+    if (v.includes('雨夹雪')) return { bg: '#64748b', fg: '#FFFFFF' };
     if (WX_HVY_RAIN_KEYWORDS.some(kw => v.includes(kw))) return { bg: '#0f766e', fg: '#FFFFFF' }; 
     if (WX_RAIN_KEYWORDS.some(kw => v.includes(kw))) return { bg: '#16a34a', fg: '#FFFFFF' }; 
     if (WX_SNOW_KEYWORDS.some(kw => v.includes(kw))) return { bg: '#64748b', fg: '#FFFFFF' }; 
@@ -2567,6 +2568,7 @@ function analyzeCategory(val) {
     val.split(' ').forEach(v => {
         if (v.includes('雷') || v.includes('雹')) cats.add('ts');
         else if (WX_HAIL_KEYWORDS.some(kw => v.includes(kw))) cats.add('other');
+        else if (v.includes('雨夹雪') || WX_SNOW_KEYWORDS.some(kw => v.includes(kw))) cats.add('snow');
         else if (WX_HVY_RAIN_KEYWORDS.some(kw => v.includes(kw))) cats.add('hvy-rain');
         else if (v.includes('雨')) cats.add('rain');
         else if (WX_SNOW_KEYWORDS.some(kw => v.includes(kw))) cats.add('snow');
