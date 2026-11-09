@@ -2488,6 +2488,8 @@ function checkPublishedSpecialConditions(force = false) {
     for (let i = 0; i <= pbState.validityHours; i++) {
       const text = rows.map(row => row[i]?.text || '').join(' ');
       const noteText = (data.notes || [data.note || '']).join(' ');
+      // 已编发固态/冻结性降水本身即为积冰条件，不能因没有温度数据而漏判。
+      if (/雪|冻雨|冰粒|冰晶/.test(text)) reasons.add('地面结冰');
       const temperatures = [...text.matchAll(/(-?\d+(?:\.\d+)?)\s*(?:℃|°C|度)/gi)].map(m => Number(m[1]));
       const temperature = temperatures.length ? Math.min(...temperatures) : ap.nwp?.temperature_2m?.[i];
       if (temperature == null || !Number.isFinite(Number(temperature))) continue;
@@ -2558,10 +2560,12 @@ function checkPublishedSpecialConditions(force = false) {
 // 汇总说明允许人工调整（例如补充机场、修改条件文字），并随当前发布草稿保存。
 document.getElementById('pb-special-condition-label')?.addEventListener('click', () => {
   // 特殊条件入口只根据当前已编发内容增量检查，不重新加载预报表。
+  document.querySelector('#forecast-table input.cell-editor')?.blur();
   window.saveConfirmedDataToLocal?.();
+  clearTimeout(specialConditionCheckTimer);
   checkPublishedSpecialConditions(true);
   const input = document.getElementById('pb-special-airports');
-  setTimeout(() => {
+  (() => {
     if (!input || !pbState.pendingSpecialConditions?.size) return;
     const additions = [];
     pbState.pendingSpecialConditions.forEach(item => {
@@ -2588,7 +2592,7 @@ document.getElementById('pb-special-condition-label')?.addEventListener('click',
     if (dot) dot.hidden = true;
     const label = document.getElementById('pb-special-condition-label');
     if (label) label.title = additions.length ? `已新增 ${additions.length} 项条件` : '已检查编发内容，无新增条件机场';
-  }, 0);
+  })();
 });
 document.getElementById('pb-special-airports')?.addEventListener('input', event => {
   pbState.specialConditionManual = true;
