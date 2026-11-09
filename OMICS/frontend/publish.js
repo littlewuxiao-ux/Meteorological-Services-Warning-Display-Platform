@@ -2449,6 +2449,7 @@ function getAirportSpecialConditions(nwp) {
 function updateSpecialConditionFooter() {
   const input = document.getElementById('pb-special-airports');
   if (!input) return;
+  if (pbState.specialConditionManual) return;
   const grouped = new Map();
   const specialAirports = [...pbState.specialConditionAirports.keys()].map(icao => ({ icao }));
   sortPublishAirportAnalysis(specialAirports).forEach(ap => {
@@ -2477,7 +2478,7 @@ function schedulePublishedConditionCheck() {
   specialConditionCheckTimer = setTimeout(checkPublishedSpecialConditions, 0);
 }
 
-function checkPublishedSpecialConditions() {
+function checkPublishedSpecialConditions(force = false) {
   const pending = new Map();
   (window.currentApAnalysis || []).forEach(ap => {
     const data = pbState.confirmedData[ap.icao];
@@ -2503,8 +2504,8 @@ function checkPublishedSpecialConditions() {
     const signature = JSON.stringify([rows, data.notes, pbState.startDate, pbState.startHour, pbState.validityHours]);
     reasons.forEach(reason => {
       const key = `${ap.icao}:${reason}`;
-      if (!pbState.specialConditionAirports.get(ap.icao)?.has(reason)
-          && pbState.specialConditionDecisions.get(key) !== signature) pending.set(key, { icao: ap.icao, reason, signature });
+      if (force || (!pbState.specialConditionAirports.get(ap.icao)?.has(reason)
+          && pbState.specialConditionDecisions.get(key) !== signature)) pending.set(key, { icao: ap.icao, reason, signature });
     });
   });
   pbState.pendingSpecialConditions = pending;
@@ -2557,7 +2558,8 @@ function checkPublishedSpecialConditions() {
 // 汇总说明允许人工调整（例如补充机场、修改条件文字），并随当前发布草稿保存。
 document.getElementById('pb-special-condition-label')?.addEventListener('click', () => {
   // 特殊条件入口只根据当前已编发内容增量检查，不重新加载预报表。
-  checkPublishedSpecialConditions();
+  window.saveConfirmedDataToLocal?.();
+  checkPublishedSpecialConditions(true);
   const input = document.getElementById('pb-special-airports');
   setTimeout(() => {
     if (!input || !pbState.pendingSpecialConditions?.size) return;
@@ -2569,15 +2571,23 @@ document.getElementById('pb-special-condition-label')?.addEventListener('click',
       pbState.specialConditionAirports.get(item.icao).add(item.reason);
       const name = window.GLOBAL_AIRPORT_NAME_MAP[item.icao] || item.icao;
       const label = item.reason === '极寒' ? '极寒条件' : '地面积冰条件';
-      if (!String(input.value || '').includes(`${name}，${label}`)) additions.push(`${name}，${label}`);
+      const exists = String(input.value || '').split(/[；;\n]/).some(part =>
+        (part.includes(name) || part.toUpperCase().includes(item.icao))
+        && (item.reason === '极寒' ? /极寒/.test(part) : /地面[积结]冰/.test(part)));
+      if (!exists) additions.push(`${name}（${label}）`);
     });
     if (additions.length) {
       const existing = String(input.value || '').trim();
       input.value = existing && existing !== '无' ? `${existing}；${additions.join('；')}` : additions.join('；');
+      pbState.specialConditionManual = true;
       localStorage.setItem('pb_special_condition_text', input.value);
       window.saveConfirmedDataToLocal?.();
     }
     pbState.pendingSpecialConditions.clear();
+    const dot = document.getElementById('pb-special-condition-alert');
+    if (dot) dot.hidden = true;
+    const label = document.getElementById('pb-special-condition-label');
+    if (label) label.title = additions.length ? `已新增 ${additions.length} 项条件` : '已检查编发内容，无新增条件机场';
   }, 0);
 });
 document.getElementById('pb-special-airports')?.addEventListener('input', event => {
