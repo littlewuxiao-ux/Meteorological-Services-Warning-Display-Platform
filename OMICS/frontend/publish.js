@@ -1502,6 +1502,9 @@ function setupGlobalToolbar() {
                 if (dateInput) dateInput.value = nowBjt.toISOString().slice(0, 10);
                 applyTimePreset(preset);
             }
+            // 全量刷新：重新计算并覆盖地面结冰/极寒机场名单。
+            pbState.specialConditionAirports = new Map();
+            pbState.specialConditionManual = false;
             loadForecastData();
         };
     }
@@ -2553,8 +2556,29 @@ function checkPublishedSpecialConditions() {
 
 // 汇总说明允许人工调整（例如补充机场、修改条件文字），并随当前发布草稿保存。
 document.getElementById('pb-special-condition-label')?.addEventListener('click', () => {
-  pbState.specialConditionManual = false;
-  if (typeof window.loadForecastData === 'function') window.loadForecastData(true);
+  // 特殊条件入口只根据当前已编发内容增量检查，不重新加载预报表。
+  checkPublishedSpecialConditions();
+  const input = document.getElementById('pb-special-airports');
+  setTimeout(() => {
+    if (!input || !pbState.pendingSpecialConditions?.size) return;
+    const additions = [];
+    pbState.pendingSpecialConditions.forEach(item => {
+      const key = `${item.icao}:${item.reason}`;
+      pbState.specialConditionDecisions.set(key, item.signature);
+      if (!pbState.specialConditionAirports.has(item.icao)) pbState.specialConditionAirports.set(item.icao, new Set());
+      pbState.specialConditionAirports.get(item.icao).add(item.reason);
+      const name = window.GLOBAL_AIRPORT_NAME_MAP[item.icao] || item.icao;
+      const label = item.reason === '极寒' ? '极寒条件' : '地面积冰条件';
+      if (!String(input.value || '').includes(`${name}，${label}`)) additions.push(`${name}，${label}`);
+    });
+    if (additions.length) {
+      const existing = String(input.value || '').trim();
+      input.value = existing && existing !== '无' ? `${existing}；${additions.join('；')}` : additions.join('；');
+      localStorage.setItem('pb_special_condition_text', input.value);
+      window.saveConfirmedDataToLocal?.();
+    }
+    pbState.pendingSpecialConditions.clear();
+  }, 0);
 });
 document.getElementById('pb-special-airports')?.addEventListener('input', event => {
   pbState.specialConditionManual = true;
