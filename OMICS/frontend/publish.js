@@ -2551,7 +2551,7 @@ function checkPublishedSpecialConditions() {
 }
 
 // 汇总说明允许人工调整（例如补充机场、修改条件文字），并随当前发布草稿保存。
-document.getElementById('pb-special-airports')?.addEventListener('click', () => {
+document.getElementById('pb-special-condition-label')?.addEventListener('click', () => {
   pbState.specialConditionManual = false;
   if (typeof window.loadForecastData === 'function') window.loadForecastData(true);
 });
