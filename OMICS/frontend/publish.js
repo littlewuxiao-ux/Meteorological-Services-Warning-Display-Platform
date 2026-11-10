@@ -99,7 +99,7 @@ const PUBLISH_REGION_NAMES = [
   ...Object.keys(AIRPORT_CFG.international)
 ];
 
-const ALL_WX_PHENOMENA = ['小雨','中雨','大雨','暴雨','小阵雨','中阵雨','大阵雨','弱冻雨','中冻雨','大冻雨','小雪','中雪','大雪','小阵雪','中阵雪','大阵雪','雨夹雪','弱雷雨','中雷雨','强雷雨','干雷','雾','霾','浮尘','沙暴'];
+const ALL_WX_PHENOMENA = ['小雨','中雨','大雨','暴雨','小阵雨','中阵雨','大阵雨','小雨夹雪','中雨夹雪','大雨夹雪','雨夹雪','弱冻雨','中冻雨','大冻雨','小雪','中雪','大雪','小阵雪','中阵雪','大阵雪','弱雷雨','中雷雨','强雷雨','干雷','雾','霾','浮尘','沙暴'];
 const WX_DEFAULT_HIDDEN = new Set(['小雨', '小阵雨']);
 
 const WX_SNOW_KEYWORDS = ['雪', '冰粒', '冰晶'];
@@ -1502,6 +1502,9 @@ function setupGlobalToolbar() {
                 if (dateInput) dateInput.value = nowBjt.toISOString().slice(0, 10);
                 applyTimePreset(preset);
             }
+            // 全量刷新：重新计算并覆盖地面结冰/极寒机场名单。
+            pbState.specialConditionAirports = new Map();
+            pbState.specialConditionManual = false;
             loadForecastData();
         };
     }
@@ -2325,6 +2328,7 @@ function getCellStyleByContent(v) {
     if (!v || v === '' || v === '—' || v === '适航') return { bg: 'transparent', fg: '#333' }; 
     if (v.includes('雷') || v.includes('雹')) return { bg: '#dc2626', fg: '#FFFFFF' }; 
     if (WX_HAIL_KEYWORDS.some(kw => v.includes(kw))) return { bg: '#bae6fd', fg: '#000000' };
+    if (v.includes('雨夹雪')) return { bg: '#64748b', fg: '#FFFFFF' };
     if (WX_HVY_RAIN_KEYWORDS.some(kw => v.includes(kw))) return { bg: '#0f766e', fg: '#FFFFFF' }; 
     if (WX_RAIN_KEYWORDS.some(kw => v.includes(kw))) return { bg: '#16a34a', fg: '#FFFFFF' }; 
     if (WX_SNOW_KEYWORDS.some(kw => v.includes(kw))) return { bg: '#64748b', fg: '#FFFFFF' }; 
@@ -2445,6 +2449,7 @@ function getAirportSpecialConditions(nwp) {
 function updateSpecialConditionFooter() {
   const input = document.getElementById('pb-special-airports');
   if (!input) return;
+  if (pbState.specialConditionManual) return;
   const grouped = new Map();
   const specialAirports = [...pbState.specialConditionAirports.keys()].map(icao => ({ icao }));
   sortPublishAirportAnalysis(specialAirports).forEach(ap => {
@@ -2473,7 +2478,7 @@ function schedulePublishedConditionCheck() {
   specialConditionCheckTimer = setTimeout(checkPublishedSpecialConditions, 0);
 }
 
-function checkPublishedSpecialConditions() {
+function checkPublishedSpecialConditions(force = false) {
   const pending = new Map();
   (window.currentApAnalysis || []).forEach(ap => {
     const data = pbState.confirmedData[ap.icao];
@@ -2483,6 +2488,8 @@ function checkPublishedSpecialConditions() {
     for (let i = 0; i <= pbState.validityHours; i++) {
       const text = rows.map(row => row[i]?.text || '').join(' ');
       const noteText = (data.notes || [data.note || '']).join(' ');
+      // 已编发固态/冻结性降水本身即为积冰条件，不能因没有温度数据而漏判。
+      if (/雪|冻雨|冰粒|冰晶/.test(text)) reasons.add('地面结冰');
       const temperatures = [...text.matchAll(/(-?\d+(?:\.\d+)?)\s*(?:℃|°C|度)/gi)].map(m => Number(m[1]));
       const temperature = temperatures.length ? Math.min(...temperatures) : ap.nwp?.temperature_2m?.[i];
       if (temperature == null || !Number.isFinite(Number(temperature))) continue;
@@ -2499,8 +2506,8 @@ function checkPublishedSpecialConditions() {
     const signature = JSON.stringify([rows, data.notes, pbState.startDate, pbState.startHour, pbState.validityHours]);
     reasons.forEach(reason => {
       const key = `${ap.icao}:${reason}`;
-      if (!pbState.specialConditionAirports.get(ap.icao)?.has(reason)
-          && pbState.specialConditionDecisions.get(key) !== signature) pending.set(key, { icao: ap.icao, reason, signature });
+      if (force || (!pbState.specialConditionAirports.get(ap.icao)?.has(reason)
+          && pbState.specialConditionDecisions.get(key) !== signature)) pending.set(key, { icao: ap.icao, reason, signature });
     });
   });
   pbState.pendingSpecialConditions = pending;
@@ -2551,9 +2558,41 @@ function checkPublishedSpecialConditions() {
 }
 
 // 汇总说明允许人工调整（例如补充机场、修改条件文字），并随当前发布草稿保存。
-document.getElementById('pb-special-airports')?.addEventListener('click', () => {
-  pbState.specialConditionManual = false;
-  if (typeof window.loadForecastData === 'function') window.loadForecastData(true);
+document.getElementById('pb-special-condition-label')?.addEventListener('click', () => {
+  // 特殊条件入口只根据当前已编发内容增量检查，不重新加载预报表。
+  document.querySelector('#forecast-table input.cell-editor')?.blur();
+  window.saveConfirmedDataToLocal?.();
+  clearTimeout(specialConditionCheckTimer);
+  checkPublishedSpecialConditions(true);
+  const input = document.getElementById('pb-special-airports');
+  (() => {
+    if (!input || !pbState.pendingSpecialConditions?.size) return;
+    const additions = [];
+    pbState.pendingSpecialConditions.forEach(item => {
+      const key = `${item.icao}:${item.reason}`;
+      pbState.specialConditionDecisions.set(key, item.signature);
+      if (!pbState.specialConditionAirports.has(item.icao)) pbState.specialConditionAirports.set(item.icao, new Set());
+      pbState.specialConditionAirports.get(item.icao).add(item.reason);
+      const name = window.GLOBAL_AIRPORT_NAME_MAP[item.icao] || item.icao;
+      const label = item.reason === '极寒' ? '极寒条件' : '地面积冰条件';
+      const exists = String(input.value || '').split(/[；;\n]/).some(part =>
+        (part.includes(name) || part.toUpperCase().includes(item.icao))
+        && (item.reason === '极寒' ? /极寒/.test(part) : /地面[积结]冰/.test(part)));
+      if (!exists) additions.push(`${name}（${label}）`);
+    });
+    if (additions.length) {
+      const existing = String(input.value || '').trim();
+      input.value = existing && existing !== '无' ? `${existing}；${additions.join('；')}` : additions.join('；');
+      pbState.specialConditionManual = true;
+      localStorage.setItem('pb_special_condition_text', input.value);
+      window.saveConfirmedDataToLocal?.();
+    }
+    pbState.pendingSpecialConditions.clear();
+    const dot = document.getElementById('pb-special-condition-alert');
+    if (dot) dot.hidden = true;
+    const label = document.getElementById('pb-special-condition-label');
+    if (label) label.title = additions.length ? `已新增 ${additions.length} 项条件` : '已检查编发内容，无新增条件机场';
+  })();
 });
 document.getElementById('pb-special-airports')?.addEventListener('input', event => {
   pbState.specialConditionManual = true;
@@ -2567,6 +2606,7 @@ function analyzeCategory(val) {
     val.split(' ').forEach(v => {
         if (v.includes('雷') || v.includes('雹')) cats.add('ts');
         else if (WX_HAIL_KEYWORDS.some(kw => v.includes(kw))) cats.add('other');
+        else if (v.includes('雨夹雪') || WX_SNOW_KEYWORDS.some(kw => v.includes(kw))) cats.add('snow');
         else if (WX_HVY_RAIN_KEYWORDS.some(kw => v.includes(kw))) cats.add('hvy-rain');
         else if (v.includes('雨')) cats.add('rain');
         else if (WX_SNOW_KEYWORDS.some(kw => v.includes(kw))) cats.add('snow');
