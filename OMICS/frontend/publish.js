@@ -146,6 +146,7 @@ const pbState = {
   draftData: {},
   cfgIceTemp: 10, cfgIceDewPointDiff: 0, cfgIceVis: 1500, cfgIcePrecipHours: 12, cfgExtColdTemp: -30,
   specialConditionAirports: new Map(),
+  specialConditionWeather: new Map(),
   specialConditionManual: false,
   noFlightAirports: new Set(),
   manuallyEditedNoFlightNotes: new Set(),
@@ -2569,6 +2570,12 @@ document.getElementById('pb-special-condition-label')?.addEventListener('click',
   const hasExisting = !!existing && existing !== '无';
   const overwrite = hasExisting && confirm('是否覆盖现有地面结冰/极寒机场？\n确定：覆盖；取消：保留原文，只新增尚未列出的机场。');
   const candidates = new Map();
+  // 数据加载只缓存天气；条件评估仅在用户点击刷新入口时执行。
+  pbState.specialConditionWeather.forEach((nwp, icao) => {
+    if (!pbState.runningAllAirports.has(icao)) return;
+    const reasons = getAirportSpecialConditions(nwp);
+    if (reasons.size) candidates.set(icao, reasons);
+  });
   (window.currentApAnalysis || []).forEach(ap => {
     const reasons = getAirportSpecialConditions(ap.nwp);
     if (reasons.size) candidates.set(ap.icao, reasons);
@@ -2578,15 +2585,17 @@ document.getElementById('pb-special-condition-label')?.addEventListener('click',
     if (!candidates.has(item.icao)) candidates.set(item.icao, new Set());
     candidates.get(item.icao).add(item.reason);
   });
-  const additions = [];
+  const grouped = new Map();
   candidates.forEach((reasons, icao) => {
     const name = window.GLOBAL_AIRPORT_NAME_MAP[icao] || icao;
     const alreadyListed = hasExisting && !overwrite && (existing.includes(name) || existing.toUpperCase().includes(icao));
     if (!alreadyListed) {
-      const labels = [...reasons].map(reason => reason === '极寒' ? '极寒条件' : '地面积冰条件');
-      additions.push(`${name}（${labels.join('/')}）`);
+      const labels = [...reasons].sort().map(reason => reason === '极寒' ? '极寒条件' : '地面积冰条件').join('/');
+      if (!grouped.has(labels)) grouped.set(labels, []);
+      grouped.get(labels).push(name);
     }
   });
+  const additions = [...grouped].map(([labels, names]) => `${names.join('、')}（${labels}）`);
   input.value = hasExisting && !overwrite ? [existing, ...additions].join('；') : additions.join('；');
   pbState.specialConditionAirports = candidates;
   pbState.specialConditionManual = true;
@@ -2932,13 +2941,7 @@ async function loadForecastData(retainOrder = false, onlyAirports = null) {
                         hasAlertEC = true;
                     }
                 }
-                if (pbState.runningAllAirports.has(icao)) {
-                    const specialConditions = getAirportSpecialConditions(nwp);
-                    if (specialConditions.size) {
-                        if (!pbState.specialConditionAirports.has(icao)) pbState.specialConditionAirports.set(icao, new Set());
-                        specialConditions.forEach(reason => pbState.specialConditionAirports.get(icao).add(reason));
-                    }
-                }
+                pbState.specialConditionWeather.set(icao, nwp);
             }
             if (tafHourly) {
                 for (let i = 0; i <= pbState.validityHours; i++) {
