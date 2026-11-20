@@ -508,7 +508,14 @@ function setupClearAirportsControls() {
         if (specialControl?.checked) {
             pbState.specialConditionManual = false;
             pbState.specialConditionAirports.clear();
-            updateSpecialConditionFooter();
+            pbState.pendingSpecialConditions.clear();
+            pbState.specialConditionDecisions.clear();
+            clearTimeout(specialConditionCheckTimer);
+            const input = document.getElementById('pb-special-airports');
+            if (input) input.value = '';
+            const indicator = document.getElementById('pb-special-condition-alert');
+            if (indicator) indicator.hidden = true;
+            localStorage.setItem('pb_special_condition_text', '');
             window.saveConfirmedDataToLocal?.();
         }
         close();
