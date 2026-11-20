@@ -1503,8 +1503,6 @@ function setupGlobalToolbar() {
                 applyTimePreset(preset);
             }
             // 全量刷新：重新计算并覆盖地面结冰/极寒机场名单。
-            pbState.specialConditionAirports = new Map();
-            pbState.specialConditionManual = false;
             loadForecastData();
         };
     }
@@ -2245,7 +2243,10 @@ function translateMETARtoCN(code) {
             const intensity = core.startsWith('+') ? '+' : core.startsWith('-') ? '-' : '';
             res.push(map[`${intensity}${core.includes('SH') ? 'SHRA' : 'RA'}`]);
         }
-        else if (core.includes('SN')) res.push("雪");
+        else if (core.includes('SN')) {
+            const intensity = core.startsWith('-') ? '小' : core.startsWith('+') ? '大' : '中';
+            res.push(`${intensity}${core.includes('SH') ? '阵雪' : '雪'}`);
+        }
         else res.push(core);
     });
     return res.join(' ');
@@ -2446,7 +2447,8 @@ function getAirportSpecialConditions(nwp) {
   return reasons;
 }
 
-function updateSpecialConditionFooter() {
+function updateSpecialConditionFooter(explicit = false) {
+  if (!explicit) return;
   const input = document.getElementById('pb-special-airports');
   if (!input) return;
   if (pbState.specialConditionManual) return;
@@ -2475,14 +2477,13 @@ function updateSpecialConditionFooter() {
 let specialConditionCheckTimer;
 function schedulePublishedConditionCheck() {
   clearTimeout(specialConditionCheckTimer);
-  specialConditionCheckTimer = setTimeout(checkPublishedSpecialConditions, 0);
 }
 
 function checkPublishedSpecialConditions(force = false) {
   const pending = new Map();
   (window.currentApAnalysis || []).forEach(ap => {
     const data = pbState.confirmedData[ap.icao];
-    if (!data || !isAirportRegionEnabled(ap.icao)) return;
+    if (!data) return;
     const rows = data.rows || [data.cells || []];
     const reasons = new Set();
     for (let i = 0; i <= pbState.validityHours; i++) {
@@ -2511,6 +2512,7 @@ function checkPublishedSpecialConditions(force = false) {
     });
   });
   pbState.pendingSpecialConditions = pending;
+  if (force) return;
   const input = document.getElementById('pb-special-airports');
   if (!input) return;
   let dot = document.getElementById('pb-special-condition-alert');
@@ -2559,40 +2561,38 @@ function checkPublishedSpecialConditions(force = false) {
 
 // 汇总说明允许人工调整（例如补充机场、修改条件文字），并随当前发布草稿保存。
 document.getElementById('pb-special-condition-label')?.addEventListener('click', () => {
-  // 特殊条件入口只根据当前已编发内容增量检查，不重新加载预报表。
   document.querySelector('#forecast-table input.cell-editor')?.blur();
   window.saveConfirmedDataToLocal?.();
-  clearTimeout(specialConditionCheckTimer);
-  checkPublishedSpecialConditions(true);
   const input = document.getElementById('pb-special-airports');
-  (() => {
-    if (!input || !pbState.pendingSpecialConditions?.size) return;
-    const additions = [];
-    pbState.pendingSpecialConditions.forEach(item => {
-      const key = `${item.icao}:${item.reason}`;
-      pbState.specialConditionDecisions.set(key, item.signature);
-      if (!pbState.specialConditionAirports.has(item.icao)) pbState.specialConditionAirports.set(item.icao, new Set());
-      pbState.specialConditionAirports.get(item.icao).add(item.reason);
-      const name = window.GLOBAL_AIRPORT_NAME_MAP[item.icao] || item.icao;
-      const label = item.reason === '极寒' ? '极寒条件' : '地面积冰条件';
-      const exists = String(input.value || '').split(/[；;\n]/).some(part =>
-        (part.includes(name) || part.toUpperCase().includes(item.icao))
-        && (item.reason === '极寒' ? /极寒/.test(part) : /地面[积结]冰/.test(part)));
-      if (!exists) additions.push(`${name}（${label}）`);
-    });
-    if (additions.length) {
-      const existing = String(input.value || '').trim();
-      input.value = existing && existing !== '无' ? `${existing}；${additions.join('；')}` : additions.join('；');
-      pbState.specialConditionManual = true;
-      localStorage.setItem('pb_special_condition_text', input.value);
-      window.saveConfirmedDataToLocal?.();
+  if (!input) return;
+  const existing = input.value.trim();
+  const hasExisting = !!existing && existing !== '无';
+  const overwrite = hasExisting && confirm('是否覆盖现有地面结冰/极寒机场？\n确定：覆盖；取消：保留原文，只新增尚未列出的机场。');
+  const candidates = new Map();
+  (window.currentApAnalysis || []).forEach(ap => {
+    const reasons = getAirportSpecialConditions(ap.nwp);
+    if (reasons.size) candidates.set(ap.icao, reasons);
+  });
+  checkPublishedSpecialConditions(true);
+  pbState.pendingSpecialConditions.forEach(item => {
+    if (!candidates.has(item.icao)) candidates.set(item.icao, new Set());
+    candidates.get(item.icao).add(item.reason);
+  });
+  const additions = [];
+  candidates.forEach((reasons, icao) => {
+    const name = window.GLOBAL_AIRPORT_NAME_MAP[icao] || icao;
+    const alreadyListed = hasExisting && !overwrite && (existing.includes(name) || existing.toUpperCase().includes(icao));
+    if (!alreadyListed) {
+      const labels = [...reasons].map(reason => reason === '极寒' ? '极寒条件' : '地面积冰条件');
+      additions.push(`${name}（${labels.join('/')}）`);
     }
-    pbState.pendingSpecialConditions.clear();
-    const dot = document.getElementById('pb-special-condition-alert');
-    if (dot) dot.hidden = true;
-    const label = document.getElementById('pb-special-condition-label');
-    if (label) label.title = additions.length ? `已新增 ${additions.length} 项条件` : '已检查编发内容，无新增条件机场';
-  })();
+  });
+  input.value = hasExisting && !overwrite ? [existing, ...additions].join('；') : additions.join('；');
+  pbState.specialConditionAirports = candidates;
+  pbState.specialConditionManual = true;
+  pbState.pendingSpecialConditions.clear();
+  localStorage.setItem('pb_special_condition_text', input.value);
+  window.saveConfirmedDataToLocal?.();
 });
 document.getElementById('pb-special-airports')?.addEventListener('input', event => {
   pbState.specialConditionManual = true;
@@ -2838,7 +2838,7 @@ async function loadForecastData(retainOrder = false, onlyAirports = null) {
         Object.keys(pbState.confirmedData).forEach(ap => { if(!seen.has(ap)){ seen.add(ap); combinedAps.push(ap); } });
 
         // 特殊条件检查独立使用所有运行机场；显示列表仍按原有筛选规则生成。
-        const specialAps = allRunningAirports.filter(icao => !pbState.manuallyRemovedAirports?.has(icao));
+        const specialAps = [...new Set([...allRunningAirports, ...pbState.runningAllAirports])];
         const requestAps = [...new Set([...(onlyAirports || combinedAps), ...specialAps])];
         const validAps = requestAps.filter(icao => window.AIRPORT_COORDS[icao] || pbState.customCoords[icao]);
 
